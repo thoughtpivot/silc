@@ -4,11 +4,12 @@
 
 # IDE / OS
 .idea/
-.vscode/
+.vscode/*
+!.vscode/settings.json
 *.swp
 .DS_Store
 
-# Per-program generated runtime (beside .sil entry files)
+# Per-program generated runtime (beside .silc/.raku entry files)
 .runtime/
 
 # Models (local artifacts)

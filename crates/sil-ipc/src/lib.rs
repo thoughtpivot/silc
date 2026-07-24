@@ -1,6 +1,6 @@
-//! SIL-owned shared-memory ABI and UDS signaling.
+//! Silc-owned shared-memory ABI and UDS signaling.
 //!
-//! The future runtime will map versioned SIL Shared Buffers into Go, Python,
+//! The future runtime will map versioned Silc Shared Buffers into Go, Python,
 //! and Bun workers. Apache Arrow is not required by this boundary; external
 //! interoperability adapters may be added separately.
 //!

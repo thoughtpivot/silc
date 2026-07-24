@@ -1,5 +1,4 @@
 use std::env;
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::process;
 
@@ -8,10 +7,10 @@ fn main() {
     match args.next() {
         None => {
             println!("silc {}", env!("CARGO_PKG_VERSION"));
-            println!("usage: silc <program.sil>");
+            println!("usage: silc <program.silc|program.raku>");
         }
         Some(path) => {
-            if let Err(err) = prepare_runtime(Path::new(&path)) {
+            if let Err(err) = compile(Path::new(&path)) {
                 eprintln!("silc: {err}");
                 process::exit(1);
             }
@@ -19,18 +18,17 @@ fn main() {
     }
 }
 
-fn prepare_runtime(entry: &Path) -> Result<(), String> {
+fn compile(entry: &Path) -> Result<(), String> {
     if !entry.exists() {
         return Err(format!("file not found: {}", entry.display()));
     }
-    if entry
+    let supported_extension = entry
         .extension()
         .and_then(|ext| ext.to_str())
-        .map(|ext| ext != "sil")
-        .unwrap_or(true)
-    {
+        .is_some_and(|ext| matches!(ext, "silc" | "raku"));
+    if !supported_extension {
         return Err(format!(
-            "expected a .sil entry file, got {}",
+            "expected a .silc or .raku entry file (rename .sil to .silc), got {}",
             entry.display()
         ));
     }
@@ -40,20 +38,47 @@ fn prepare_runtime(entry: &Path) -> Result<(), String> {
         .filter(|p| !p.as_os_str().is_empty())
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."));
+    let stem = entry
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .ok_or_else(|| format!("invalid entry filename: {}", entry.display()))?;
+    let runtime_root = workdir.join(".runtime").join(stem);
 
-    let runtime_root = workdir.join(".runtime");
-    for target in ["go", "python", "typescript"] {
-        let dir = runtime_root.join(target);
-        fs::create_dir_all(&dir).map_err(|e| format!("failed to create {}: {e}", dir.display()))?;
-    }
+    let source = std::fs::read_to_string(entry)
+        .map_err(|error| format!("failed to read {}: {error}", entry.display()))?;
+    let program = sil_parser::parse(&source).map_err(|error| error.to_string())?;
+    program.validate()?;
+    let decisions = sil_router::route_program(&program);
+    let output = sil_codegen::emit(
+        &program,
+        &decisions,
+        entry,
+        &runtime_root,
+        env!("CARGO_PKG_VERSION"),
+    )?;
 
     println!("silc {}", env!("CARGO_PKG_VERSION"));
     println!("entry:   {}", entry.display());
     println!("workdir: {}", workdir.display());
-    println!("runtime: {}", runtime_root.display());
+    println!(
+        "parsed:  {} contract(s), {} module(s)",
+        program.contracts.len(),
+        program.modules.len()
+    );
+    println!("routes:");
+    for decision in &decisions {
+        println!(
+            "  {:<24} -> {:<6} ({})",
+            decision.module,
+            decision.target.as_str(),
+            decision.provenance
+        );
+    }
+    println!("runtime: {}", output.root.display());
+    println!("manifest: {}", output.manifest.display());
+    println!("generated: {} file(s)", output.generated.len());
     println!();
-    println!("scaffold: created .runtime/{{go,python,typescript}}");
-    println!("runtime direction: Go, Python, and Bun-executed TypeScript");
-    println!("compile and execute are not implemented yet.");
+    println!("Gate B scaffold complete: parse -> validate -> route -> stub emit");
+    println!("worker execution and IPC are not implemented yet.");
     Ok(())
 }

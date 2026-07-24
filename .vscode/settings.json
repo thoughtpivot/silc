@@ -1,0 +1,6 @@
+{
+  "files.associations": {
+    "*.silc": "raku",
+    "*.raku": "raku"
+  }
+}

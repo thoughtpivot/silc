@@ -8,7 +8,7 @@ on:
 
 jobs:
   check:
-    name: fmt + check
+    name: fmt + check + test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,3 +23,6 @@ jobs:
 
       - name: Cargo check
         run: cargo check --workspace
+
+      - name: Cargo test
+        run: cargo test --workspace

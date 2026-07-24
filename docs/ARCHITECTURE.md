@@ -1,19 +1,24 @@
-# ThoughtPivot SIL Architecture
+# ThoughtPivot Silc Architecture
 
 This repository uses **subject-based architecture** for the compiler's semantic
 core. Code is organized around durable language concepts instead of allowing
 compiler phases to become the owners of the model.
 
-The scaffold contains boundaries and subject placeholders only. Lexer, parser,
-routing, code generation, IPC, and supervisor behavior remain future work.
+The first pass implements subjects, lexing, parsing, deterministic routing, and
+inspectable stub generation. Runtime execution, IPC, and supervision remain
+future work.
 
 Runtime and IPC direction is fixed by
-[ADR-001](ADR-001-runtime-and-ipc.md): SIL emits TypeScript for Bun and uses a
+[ADR-001](ADR-001-runtime-and-ipc.md): Silc emits TypeScript for Bun and uses a
 ThoughtPivot-owned shared-memory ABI rather than requiring Apache Arrow.
+
+Surface syntax is Raku-inspired
+([ADR-002](ADR-002-silc-surface-syntax.md)): `.silc` is primary and conforming
+`.raku` files are accepted. `.sil` is not supported.
 
 ## The subject boundary
 
-A SIL subject is a durable semantic concept that has shared types, owns
+A Silc subject is a durable semantic concept that has shared types, owns
 invariants, and participates in several workflows. The initial subjects are:
 
 | Subject | Owns |
@@ -59,7 +64,7 @@ contracts, router contracts, and codegen contracts. Boundary crates depend
 inward on `sil-core`; `sil-core` does not depend on them.
 
 ```text
-SIL source  (workdir/myprogram.sil)
+Silc source  (workdir/myprogram.silc)
     │
     ▼
 sil-lexer ──► sil-parser
@@ -102,7 +107,7 @@ sil-lexer ──► sil-parser
 4. **Cross-subject access is explicit.** Rust paths should name the owner, for
    example `sil_core::contract::Contract` and
    `sil_core::pipeline::Pipeline`.
-5. **Sub-workflows remain under their subject.** If Contract gains SIL buffer layout
+5. **Sub-workflows remain under their subject.** If Contract gains Silc buffer layout
    lowering or Pipeline gains graph analysis, those modules begin beneath
    their subject rather than as detached top-level utility crates.
 6. **Shared means truly domain-neutral.** Source spans, diagnostics, and stable
@@ -120,10 +125,9 @@ Routing is an application service, while `Target` is the durable subject. The
 router reads `Module`, `Constraint`, and `Pipeline`, then records a
 `Target` decision with provenance:
 
-1. explicit domain and hard constraints;
+1. module kind traits and hard constraints;
 2. namespace evidence from pipeline steps;
-3. local ONNX classification;
-4. deterministic fallback.
+3. deterministic fallback.
 
 Routing policy stays in `sil-router`; target identity, capabilities, and
 resolved assignment types stay in `sil-core::target`.
@@ -133,14 +137,14 @@ resolved assignment types stay in `sil-core::target`.
 Generators are adapters grouped by target (`go`, `python`, `typescript`).
 The TypeScript adapter emits source for Bun, which is the runtime engine.
 They consume one validated semantic model and must not define parallel AST
-types. Reusable lowering that expresses SIL meaning belongs to the owning
+types. Reusable lowering that expresses Silc meaning belongs to the owning
 subject; target-specific rendering belongs to `sil-codegen`.
 
 ### IPC
 
 IPC is both a runtime boundary and a significant technical subsystem. Contract
 owns logical schema and layout requirements. `sil-codegen` lowers validated
-Contracts into generated accessors. `sil-ipc` owns the versioned SIL Shared
+Contracts into generated accessors. `sil-ipc` owns the versioned Silc Shared
 Buffer ABI, mmap/shared-memory allocation, process-safe handles, lifecycle
 rules, and UDS signaling. Large payloads remain mapped while small control
 frames identify `{ segment_id, offset, len, schema_id }`. This avoids letting
@@ -148,7 +152,7 @@ transport details leak into every semantic subject while preserving Contract as
 the source of truth.
 
 Apache Arrow is not required by the runtime. A future export adapter may expose
-SIL buffers as Arrow for external analytical tools.
+Silc buffers as Arrow for external analytical tools.
 
 ## Crate map
 
@@ -160,7 +164,7 @@ SIL buffers as Arrow for external analytical tools.
 | `sil-parser` | Syntax-to-subject adapter |
 | `sil-router` | Target-resolution service |
 | `sil-codegen` | Go/Python/Bun-TypeScript output adapters |
-| `sil-ipc` | SIL shared-memory ABI and UDS runtime boundary |
+| `sil-ipc` | Silc shared-memory ABI and UDS runtime boundary |
 
 ## Project layout and execution
 
@@ -168,14 +172,15 @@ SIL buffers as Arrow for external analytical tools.
 
 | Concept | Meaning |
 | --- | --- |
-| Entry file | A `.sil` program, e.g. `myprogram.sil` |
+| Entry file | A `.silc` or conforming `.raku` program |
 | Workdir | Directory that contains the entry file |
 | `.runtime/` | Generated output under the workdir only |
 
 **Invocation**
 
-- `silc myprogram.sil`
-- or `chmod +x myprogram.sil` after a `#!/usr/bin/env silc` shebang, then `./myprogram.sil`
+- `silc myprogram.silc`
+- `silc myprogram.raku`
+- or `chmod +x myprogram.silc` after a `#!/usr/bin/env silc` shebang, then `./myprogram.silc`
 
 **`.runtime` contract**
 
@@ -198,7 +203,7 @@ SIL buffers as Arrow for external analytical tools.
 
 Before adding a crate or top-level module, ask:
 
-- Is this a durable SIL concept with shared types and owned invariants? Put it
+- Is this a durable Silc concept with shared types and owned invariants? Put it
   in `sil-core` as a subject.
 - Is it translating across a boundary or coordinating subjects? Keep it as a
   boundary service.
@@ -211,12 +216,12 @@ does not.
 
 ## Future work
 
-- Implement subject types and invariants in `sil-core`
-- Implement the `logos` lexer and parser
-- Implement the three-tier semantic router, including ONNX
-- Implement target adapters for `examples/article_pipeline.sil`
-- Implement the SIL Shared Buffer ABI, UDS signaling, and multi-process supervisor
+- Expand subject validation beyond the example suite
+- Expand the parser beyond the first-pass grammar
+- Add program-level orchestration semantics
+- Replace generated stubs with executable target adapters
+- Implement the Silc Shared Buffer ABI, UDS signaling, and multi-process supervisor
 - Add `mise`-managed locked Go/Python/Bun toolchains
 
-See [`examples/article_pipeline.sil`](../examples/article_pipeline.sil) for the
+See [`examples/article_pipeline.silc`](../examples/article_pipeline.silc) for the
 NetworkIngress → EmbeddingEngine → RealtimeCache example.

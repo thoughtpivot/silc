@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "SIL lexical analysis (logos) — stub"
+description = "Silc lexical analysis (Raku-inspired surface)"
 
 [dependencies]
+logos = "0.14"

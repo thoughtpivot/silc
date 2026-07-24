@@ -1,11 +1,11 @@
-# ADR-001: Bun Runtime and SIL-Owned Shared-Memory IPC
+# ADR-001: Bun Runtime and Silc-Owned Shared-Memory IPC
 
 - **Status:** Accepted
 - **Date:** 2026-07-25
 
 ## Context
 
-SIL compiles semantic programs into a local polyglot runtime. The runtime needs
+Silc compiles semantic programs into a local polyglot runtime. The runtime needs
 three complementary execution engines:
 
 - Go for systems, streams, and storage;
@@ -13,8 +13,8 @@ three complementary execution engines:
 - TypeScript for asynchronous I/O and web protocols.
 
 The original vision named Node as the TypeScript engine and Apache Arrow as the
-required shared-memory format. Neither is required by Rust or by SIL's
-language model. Because SIL generates every worker and owns its Contracts, the
+required shared-memory format. Neither is required by Rust or by Silc's
+language model. Because Silc generates every worker and owns its Contracts, the
 compiler can generate direct accessors for a smaller, purpose-built memory
 layout.
 
@@ -22,17 +22,17 @@ layout.
 
 ### Runtime engines
 
-SIL targets **Go, Python, and Bun**. TypeScript remains the generated language
+Silc targets **Go, Python, and Bun**. TypeScript remains the generated language
 and the directory name remains `typescript`; Bun is the process that executes
 that source. The supervisor will pin and invoke Bun rather than Node.
 
 Bun is the default because its native TypeScript execution and mmap support fit
-SIL's generated, local-worker model. Node compatibility is not a requirement
+Silc's generated, local-worker model. Node compatibility is not a requirement
 for the primary runtime.
 
 ### Data plane
 
-ThoughtPivot owns a versioned **SIL Shared Buffer ABI**. The Rust supervisor
+ThoughtPivot owns a versioned **Silc Shared Buffer ABI**. The Rust supervisor
 allocates a POSIX shared-memory segment or an mmap-backed file under
 `.runtime/`. Contracts lower deterministically into that layout, and codegen
 emits typed views for Go, Python, and Bun.
@@ -63,8 +63,8 @@ change the data-plane ABI.
 
 ### Apache Arrow
 
-Apache Arrow is not part of SIL's required hot path. A future adapter may
-project SIL buffers into Arrow for interoperability with external analytical
+Apache Arrow is not part of Silc's required hot path. A future adapter may
+project Silc buffers into Arrow for interoperability with external analytical
 tools. Such an adapter must not become a mandatory dependency for generated
 workers.
 
@@ -81,7 +81,7 @@ workers.
 ### Positive
 
 - No PyArrow, arrow-go, or arrow-js dependency on every generated program.
-- The data layout can match SIL Contracts exactly.
+- The data layout can match Silc Contracts exactly.
 - Bun can consume mapped bytes as typed views while Python and Go use their
   native buffer facilities.
 - Generated workers remain small and deterministic.

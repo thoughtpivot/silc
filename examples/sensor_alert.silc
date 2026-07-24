@@ -1,0 +1,34 @@
+#!/usr/bin/env silc
+# Temperature ingest → anomaly score → persist alert
+@version("1.0")
+
+subset Celsius of num64;
+
+class SensorReading {
+    has Str $.sensor_id;
+    has Celsius $.temp;
+}
+
+class SensorIngest is service {
+    method read_temp(Str $sensor_id, :$timeout = 500ms) {
+        $sensor_id
+            ==> http::get()
+            ==> schema::bind(SensorReading)
+    }
+}
+
+class AnomalyScorer is processor {
+    method score(SensorReading $reading) {
+        $reading.temp
+            ==> numpy::zscore()
+            ==> tensor::classify(:prefer<CPU>)
+    }
+}
+
+class AlertStore is sink is latency(5ms) {
+    method persist_alert(SensorReading $reading) {
+        $reading
+            ==> ipc::share_buffer()
+            ==> store::upsert_primary()
+    }
+}
