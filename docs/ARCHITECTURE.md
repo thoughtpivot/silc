@@ -168,7 +168,8 @@ Silc buffers as Arrow for external analytical tools.
 
 ## Project layout and execution
 
-`silc` is the compile-then-run entrypoint (CLI or shebang `#!/usr/bin/env silc`).
+`silc` is the compile entrypoint (CLI or shebang `#!/usr/bin/env silc`). Worker
+execution and IPC remain future work; the MVP emits inspectable stubs.
 
 | Concept | Meaning |
 | --- | --- |
@@ -178,9 +179,14 @@ Silc buffers as Arrow for external analytical tools.
 
 **Invocation**
 
+- `silc init` or `silc init <path>` — scaffold `AGENTS.md`, `main.silc`, `.gitignore`
 - `silc myprogram.silc`
 - `silc myprogram.raku`
 - or `chmod +x myprogram.silc` after a `#!/usr/bin/env silc` shebang, then `./myprogram.silc`
+
+Bare `init` is the subcommand; a file named `init.silc` still compiles as a
+path. Init never overwrites existing `AGENTS.md` / `main.silc`, and only appends
+`.runtime/` to an existing `.gitignore` when missing.
 
 **`.runtime` contract**
 

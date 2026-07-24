@@ -262,29 +262,45 @@ external analytical tools. See [ADR-001](docs/ADR-001-runtime-and-ipc.md) and
 
 ## Developer Experience
 
-The end-state workflow for humans and AI tools is intentionally small. Full compile-and-run is not implemented yet in this scaffold; the shape below is the contract.
+The end-state workflow for humans and AI tools is intentionally small. Full
+worker execution and IPC are not implemented yet; today’s MVP is
+parse → validate → route → stub emit.
 
-1. Create a working directory and a `.silc` or conforming `.raku` entry file.
-2. Write dense Silc (often ~30 lines) — either by hand or via an AI tool.
-3. Run it with **`silc`**:
+### Initialize a project
 
 ```bash
-mkdir myapp && cd myapp
-# create myprogram.silc (optionally with a shebang)
-silc myprogram.silc
+silc init myapp
+cd myapp
+# or: silc init   # current directory
+```
+
+`silc init [path]` is non-destructive. It creates:
+
+| File | Purpose |
+| --- | --- |
+| `AGENTS.md` | AI-facing guidance (Raku-inspired subset, links to this repo) |
+| `main.silc` | Starter program with shebang and tri-runtime modules |
+| `.gitignore` | Ensures `.runtime/` is ignored (merges if a file already exists) |
+
+It refuses to overwrite an existing `AGENTS.md` or `main.silc`.
+
+### Compile
+
+```bash
+silc main.silc
 ```
 
 Or make the file executable via shebang:
 
-```sil
+```silc
 #!/usr/bin/env silc
 @version("1.0")
 # ... rest of program
 ```
 
 ```bash
-chmod +x myprogram.silc
-./myprogram.silc
+chmod +x main.silc
+./main.silc
 ```
 
 `silc` resolves the **workdir** as the directory containing the entry file. On
@@ -294,7 +310,9 @@ runs will reuse valid artifacts.
 
 ```
 myapp/
-├── myprogram.silc          # source of truth (human / AI authored)
+├── AGENTS.md               # for AI tools — points at github.com/thoughtpivot/silc
+├── main.silc               # source of truth (human / AI authored)
+├── .gitignore
 └── .runtime/              # generated — do not hand-edit
     ├── go/
     ├── python/
@@ -326,7 +344,9 @@ By shifting software creation from probabilistic text generation to deterministi
 ```bash
 # Requires Rust (rustup / stable)
 cargo check --workspace
+cargo run -p silc -- init /tmp/silc-demo
 cargo run -p silc -- examples/article_pipeline.silc
+cargo install --path crates/silc   # optional: put `silc` on PATH
 ```
 
 Example suite:

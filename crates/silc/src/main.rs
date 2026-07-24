@@ -1,16 +1,26 @@
+mod init;
+
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process;
 
 fn main() {
     let mut args = env::args().skip(1);
-    match args.next() {
+    match args.next().as_deref() {
         None => {
             println!("silc {}", env!("CARGO_PKG_VERSION"));
             println!("usage: silc <program.silc|program.raku>");
+            println!("       silc init [path]");
+        }
+        Some("init") => {
+            let path = args.next();
+            if let Err(err) = init::run(path.as_deref()) {
+                eprintln!("silc: {err}");
+                process::exit(1);
+            }
         }
         Some(path) => {
-            if let Err(err) = compile(Path::new(&path)) {
+            if let Err(err) = compile(Path::new(path)) {
                 eprintln!("silc: {err}");
                 process::exit(1);
             }
