@@ -71,8 +71,9 @@ fn compile_and_maybe_run(entry: &Path) -> Result<(), String> {
             println!();
             println!("stub emit complete — worker execution requires runnable v1 operations");
             println!(
-                "(html::form, http::serve, text::score, ipc::publish, store::sqlite, store::commit)"
+                "(ui::web or html::form+http::serve, text::score, ipc::publish, store::sqlite, store::commit)"
             );
+            println!("ui::terminal is a documented Bun/OpenTUI stub (not executable in v1)");
             Ok(())
         }
         ExecutionMode::Runnable => supervisor::run_feedback(&output, &lock),
@@ -124,6 +125,7 @@ fn compile_common(
     )?;
 
     if output.execution_mode == ExecutionMode::Runnable {
+        supervisor::build_ui_web(&lock, &output.root)?;
         supervisor::build_go_worker(&lock, &output.root)?;
     }
 

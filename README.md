@@ -236,8 +236,12 @@ A key innovation of the ThoughtPivot compiler is its ability to route Silc modul
 ```
 
 * **Tier 1:** module kind traits plus hard constraints (`is latency(2ms)` → Go).
-* **Tier 2:** namespaces (`http`/`ws` → Bun; `tensor`/`numpy`/`pandas` → Python; `store`/`ipc`/`sys` → Go).
+* **Tier 2:** namespaces (`ui`/`http`/`ws` → Bun; `tensor`/`numpy`/`pandas` → Python; `store`/`ipc`/`sys` → Go).
 * **Tier 3:** a future local classifier, deferred until deterministic routing is proven.
+
+Declarative UI ops (`ui::web`, `ui::terminal`) keep HTML/CSS/frameworks out of
+Silc source. The compiler owns Vue (web) and reserves OpenTUI (terminal). See
+[ADR-003](docs/ADR-003-declarative-ui.md).
 
 ---
 
@@ -295,12 +299,15 @@ runnable build transparently provisions pinned engines into
 ```bash
 silc build main.silc          # compile only
 silc main.silc                # compile; run if program is runnable v1
-silc examples/feedback_portal.silc   # HTML + SQLite feedback portal
+silc examples/feedback_portal.silc   # ui::web (Vue/Bun) + SQLite feedback portal
 ```
 
-Runnable v1 programs use `html::form`, `http::serve`, `text::score`,
-`ipc::publish`, `store::sqlite`, and `store::commit`. Other examples still
-parse/route and emit inspectable stubs.
+Runnable v1 programs use `ui::web` (or legacy `html::form` + `http::serve`),
+`text::score`, `ipc::publish`, `store::sqlite`, and `store::commit`.
+`ui::terminal` is a documented Bun/OpenTUI stub (not executable yet). Other
+examples still parse/route and emit inspectable stubs. Authors never write
+HTML, CSS, Vue, or package manifests — those are compiler-owned under
+`.runtime/`.
 
 ```
 myapp/

@@ -531,7 +531,7 @@ mod tests {
 
     #[test]
     fn rejects_mixing_ui_web_and_terminal() {
-        let (contracts, mut modules) = feedback_modules(vec![
+        let (contracts, modules) = feedback_modules(vec![
             PipelineStep::Call {
                 namespace: Some("ui".into()),
                 name: "web".into(),
@@ -550,11 +550,7 @@ mod tests {
             version: Some("1.0".into()),
             subsets: vec![],
             contracts,
-            modules: {
-                // keep modules as built
-                let _ = &mut modules;
-                modules
-            },
+            modules,
         };
         let err = classify_program(&program).unwrap_err();
         assert!(err.contains("ui::terminal"), "{err}");

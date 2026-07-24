@@ -9,6 +9,7 @@ use sil_ipc::{
 use std::collections::HashMap;
 use std::fs;
 use std::io::{BufReader, BufWriter};
+use std::net::TcpListener;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -83,11 +84,83 @@ pub fn build_go_worker(lock: &RuntimeLock, runtime_root: &Path) -> Result<PathBu
     Ok(out)
 }
 
+/// Install compiler-pinned Vue deps and bundle ui::web assets with Silc-owned Bun.
+pub fn build_ui_web(lock: &RuntimeLock, runtime_root: &Path) -> Result<(), String> {
+    let ts_dir = runtime_root.join("typescript");
+    if !ts_dir.join("package.json").is_file() {
+        return Err("missing compiler-generated typescript/package.json for ui::web".into());
+    }
+    if !ts_dir.join("src/main.ts").is_file() {
+        return Err("missing compiler-generated typescript/src/main.ts for ui::web".into());
+    }
+
+    let install = Command::new(&lock.bun_bin)
+        .current_dir(&ts_dir)
+        .args(["install", "--frozen-lockfile"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| format!("failed to install ui::web deps with Silc Bun: {e}"))?;
+    if !install.status.success() {
+        return Err(format!(
+            "Silc Bun install for ui::web failed:\n{}\n{}",
+            String::from_utf8_lossy(&install.stdout),
+            String::from_utf8_lossy(&install.stderr)
+        ));
+    }
+
+    let dist = ts_dir.join("dist");
+    fs::create_dir_all(&dist).map_err(|e| format!("create dist: {e}"))?;
+
+    // Bundle JS only; CSS is published as a separate compiler-owned asset.
+    // Use a cwd-relative outfile — Bun 1.2.x mishandles absolute --outfile paths.
+    let build = Command::new(&lock.bun_bin)
+        .current_dir(&ts_dir)
+        .args([
+            "build",
+            "./src/main.ts",
+            "--outfile=dist/app.js",
+            "--target=browser",
+            "--minify",
+            "--define",
+            "__VUE_OPTIONS_API__=true",
+            "--define",
+            "__VUE_PROD_DEVTOOLS__=false",
+            "--define",
+            "__VUE_PROD_HYDRATION_MISMATCH_DETAILS__=false",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| format!("failed to bundle ui::web with Silc Bun: {e}"))?;
+    if !build.status.success() {
+        return Err(format!(
+            "Silc Bun ui::web bundle failed:\n{}\n{}",
+            String::from_utf8_lossy(&build.stdout),
+            String::from_utf8_lossy(&build.stderr)
+        ));
+    }
+
+    // Always publish the compiler HTML shell and theme under dist/assets paths.
+    fs::copy(ts_dir.join("index.html"), dist.join("index.html"))
+        .map_err(|e| format!("copy ui::web index.html: {e}"))?;
+    fs::copy(ts_dir.join("src/theme.css"), dist.join("theme.css"))
+        .map_err(|e| format!("copy ui::web theme.css: {e}"))?;
+
+    if !dist.join("app.js").is_file() {
+        return Err("Silc ui::web bundle did not produce dist/app.js".into());
+    }
+    Ok(())
+}
+
 pub fn run_feedback(output: &EmitResult, lock: &RuntimeLock) -> Result<(), String> {
     let graph = output
         .graph
         .as_ref()
         .ok_or_else(|| "program is not executable in Silc v1".to_string())?;
+    // Fail before spawning any workers. Previously Bun could report READY over
+    // UDS and then fail its HTTP bind, leaving the supervisor claiming success.
+    ensure_http_port_available(graph.http_port)?;
     let ipc_dir = output.root.join("ipc");
     let data_dir = output.root.join("data");
     fs::create_dir_all(&ipc_dir).map_err(|e| e.to_string())?;
@@ -152,6 +225,7 @@ pub fn run_feedback(output: &EmitResult, lock: &RuntimeLock) -> Result<(), Strin
         .arg(output.root.join("typescript/worker.ts"))
         .env("SILC_SOCKET", &socket_path)
         .env("SILC_HTTP_PORT", graph.http_port.to_string())
+        .env("SILC_HTTP_ROUTE", &graph.http_route)
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()
@@ -160,8 +234,10 @@ pub fn run_feedback(output: &EmitResult, lock: &RuntimeLock) -> Result<(), Strin
     wait_for_pool(&workers, "bun", 1, Duration::from_secs(30))?;
 
     println!(
-        "silc: feedback portal listening on http://127.0.0.1:{}",
-        graph.http_port
+        "silc: ui::web ({}) listening on http://127.0.0.1:{}{}",
+        graph.ui_surface.substrate(),
+        graph.http_port,
+        graph.http_route
     );
     println!("silc: press Ctrl-C to stop");
 
@@ -185,6 +261,16 @@ pub fn run_feedback(output: &EmitResult, lock: &RuntimeLock) -> Result<(), Strin
     }
     let _ = fs::remove_file(&socket_path);
     println!("silc: stopped");
+    Ok(())
+}
+
+fn ensure_http_port_available(port: u16) -> Result<(), String> {
+    let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|error| {
+        format!(
+            "ui::web cannot listen on http://127.0.0.1:{port}: {error} (choose another :port or stop the existing process)"
+        )
+    })?;
+    drop(listener);
     Ok(())
 }
 

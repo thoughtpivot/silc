@@ -41,6 +41,26 @@ fn feedback_portal_http_sqlite_e2e() {
         String::from_utf8_lossy(&build.stderr)
     );
 
+    let runtime = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../examples/.runtime/feedback_portal/typescript");
+    assert!(
+        runtime.join("dist/index.html").is_file(),
+        "ui::web index missing"
+    );
+    assert!(
+        runtime.join("dist/app.js").is_file(),
+        "ui::web app.js missing"
+    );
+    assert!(
+        runtime.join("dist/theme.css").is_file(),
+        "ui::web theme missing"
+    );
+    let app_js = std::fs::read_to_string(runtime.join("dist/app.js")).unwrap_or_default();
+    assert!(
+        app_js.contains("Silc") || app_js.contains("submit") || app_js.len() > 100,
+        "bundled app.js looks empty"
+    );
+
     let log_path = temp.join("run.log");
     let log = std::fs::File::create(&log_path).unwrap();
     let mut child = Command::new(silc_bin())
@@ -53,9 +73,16 @@ fn feedback_portal_http_sqlite_e2e() {
     let ready = Instant::now();
     let mut healthy = false;
     while ready.elapsed() < Duration::from_secs(120) {
-        if ureq::get("http://127.0.0.1:18080/health").call().is_ok() {
-            healthy = true;
-            break;
+        if let Ok(resp) = ureq::get("http://127.0.0.1:18080/health").call() {
+            let body = resp.into_string().unwrap_or_default();
+            if body.contains("\"ok\":true") || body.contains("\"ok\": true") {
+                assert!(
+                    body.contains("vue") || body.contains("web"),
+                    "health should advertise ui substrate: {body}"
+                );
+                healthy = true;
+                break;
+            }
         }
         if let Ok(Some(status)) = child.try_wait() {
             let log = std::fs::read_to_string(&log_path).unwrap_or_default();
@@ -65,6 +92,25 @@ fn feedback_portal_http_sqlite_e2e() {
     }
     assert!(healthy, "health never became ready");
     thread::sleep(Duration::from_millis(300));
+
+    let page = ureq::get("http://127.0.0.1:18080/")
+        .call()
+        .expect("get ui")
+        .into_string()
+        .unwrap();
+    assert!(
+        page.contains("id=\"app\"") || page.contains("silc"),
+        "expected Vue shell HTML, got: {page}"
+    );
+    assert!(
+        page.contains("/assets/app.js") || page.contains("app.js"),
+        "expected bundled app asset link"
+    );
+
+    let asset = ureq::get("http://127.0.0.1:18080/assets/app.js")
+        .call()
+        .expect("get app.js");
+    assert_eq!(asset.status(), 200);
 
     let resp = ureq::post("http://127.0.0.1:18080/submit")
         .set("content-type", "application/json")

@@ -13,6 +13,16 @@ const FEEDBACK_TS: &str = include_str!("../templates/feedback_worker.ts");
 const FEEDBACK_PY: &str = include_str!("../templates/feedback_worker.py");
 const FEEDBACK_GO: &str = include_str!("../templates/feedback_worker.go");
 const FEEDBACK_GOMOD: &str = include_str!("../templates/go.mod");
+const UI_WEB_PACKAGE_JSON: &str = include_str!("../templates/ui_web_package.json");
+const UI_WEB_BUN_LOCK: &str = include_str!("../templates/ui_web_bun.lock");
+const UI_WEB_INDEX_HTML: &str = include_str!("../templates/ui_web_index.html");
+const UI_WEB_MAIN_TS: &str = include_str!("../templates/ui_web_main.ts");
+const UI_WEB_APP_TS: &str = include_str!("../templates/ui_web_app.ts");
+const UI_WEB_THEME_CSS: &str = include_str!("../templates/ui_web_theme.css");
+
+/// Compiler-pinned Vue version for ui::web (must match ui_web_package.json).
+pub const UI_WEB_VUE_VERSION: &str = "3.5.13";
+pub const UI_WEB_SUBSTRATE: &str = "vue";
 
 #[derive(Debug, Clone)]
 pub struct EmitResult {
@@ -112,18 +122,41 @@ pub fn emit(
             "sink": g.sink,
         });
         manifest["http_port"] = serde_json::json!(g.http_port);
+        manifest["http_route"] = serde_json::json!(g.http_route);
         manifest["sqlite_table"] = serde_json::json!(g.sqlite_table);
+        manifest["ui"] = serde_json::json!({
+            "profile": "web",
+            "surface": g.ui_surface.as_str(),
+            "substrate": UI_WEB_SUBSTRATE,
+            "vue_version": UI_WEB_VUE_VERSION,
+            "assets": [
+                "typescript/src/main.ts",
+                "typescript/src/App.ts",
+                "typescript/src/theme.css",
+                "typescript/index.html",
+                "typescript/package.json",
+                "typescript/bun.lock",
+                "typescript/dist/index.html",
+                "typescript/dist/app.js",
+                "typescript/dist/theme.css",
+            ],
+            "dependencies": {
+                "vue": UI_WEB_VUE_VERSION,
+            },
+            "provenance": "compiler-owned ui::web → Vue/Bun (ADR-003)",
+        });
         manifest["entrypoints"] = serde_json::json!({
             "bun": "typescript/worker.ts",
             "python": "python/worker.py",
             "go_source": "go/worker.go",
             "go_binary": "go/worker",
+            "ui_web_entry": "typescript/src/main.ts",
             "supervisor_socket": SUPERVISOR_SOCKET,
         });
         manifest["engines"] = serde_json::json!({
-            "bun": {"path": null, "version": "1.2.19"},
-            "python": {"path": null, "version": "3.12.11"},
-            "go": {"path": null, "version": "1.24.5"},
+            "bun": {"path": null, "version": "1.2.18"},
+            "python": {"path": null, "version": "3.12.12"},
+            "go": {"path": null, "version": "1.23.6"},
         });
     }
 
@@ -154,11 +187,42 @@ fn emit_runnable(
     clear_dir_sources(&root.join("go"), &["go"])?;
     clear_dir_sources(&root.join("typescript"), &["ts"])?;
     clear_dir_sources(&root.join("python"), &["py"])?;
+    let ts_src = root.join("typescript/src");
+    let ts_dist = root.join("typescript/dist");
+    fs::create_dir_all(&ts_src).map_err(|error| format!("create {}: {error}", ts_src.display()))?;
+    fs::create_dir_all(&ts_dist)
+        .map_err(|error| format!("create {}: {error}", ts_dist.display()))?;
+    clear_dir_sources(&ts_src, &["ts", "css"])?;
+    clear_dir_sources(&ts_dist, &["js", "css", "html", "map"])?;
 
     let files = [
         (
             root.join("typescript/worker.ts"),
             render_template(FEEDBACK_TS, graph, schema_id),
+        ),
+        (
+            root.join("typescript/package.json"),
+            UI_WEB_PACKAGE_JSON.to_string(),
+        ),
+        (
+            root.join("typescript/bun.lock"),
+            UI_WEB_BUN_LOCK.to_string(),
+        ),
+        (
+            root.join("typescript/index.html"),
+            UI_WEB_INDEX_HTML.to_string(),
+        ),
+        (
+            root.join("typescript/src/main.ts"),
+            UI_WEB_MAIN_TS.to_string(),
+        ),
+        (
+            root.join("typescript/src/App.ts"),
+            UI_WEB_APP_TS.to_string(),
+        ),
+        (
+            root.join("typescript/src/theme.css"),
+            UI_WEB_THEME_CSS.to_string(),
         ),
         (
             root.join("python/worker.py"),
@@ -171,6 +235,10 @@ fn emit_runnable(
         (root.join("go/go.mod"), FEEDBACK_GOMOD.to_string()),
     ];
     for (path, contents) in files {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|error| format!("create {}: {error}", parent.display()))?;
+        }
         fs::write(&path, contents).map_err(|error| format!("write {}: {error}", path.display()))?;
         generated.push(path);
     }
@@ -201,6 +269,7 @@ fn clear_dir_sources(dir: &Path, extensions: &[&str]) -> Result<(), String> {
 fn render_template(template: &str, graph: &ExecutableGraph, schema_id: u32) -> String {
     template
         .replace("__PORT__", &graph.http_port.to_string())
+        .replace("__ROUTE__", &graph.http_route)
         .replace("__TABLE__", &graph.sqlite_table)
         .replace("__SCHEMA_ID__", &schema_id.to_string())
         .replace("__SOCKET_PATH__", SUPERVISOR_SOCKET)
@@ -389,9 +458,14 @@ mod tests {
         let ts = fs::read_to_string(output.join("typescript/worker.ts")).unwrap();
         let py = fs::read_to_string(output.join("python/worker.py")).unwrap();
         let go = fs::read_to_string(output.join("go/worker.go")).unwrap();
+        let app = fs::read_to_string(output.join("typescript/src/App.ts")).unwrap();
+        let theme = fs::read_to_string(output.join("typescript/src/theme.css")).unwrap();
+        let pkg = fs::read_to_string(output.join("typescript/package.json")).unwrap();
+        let lock = fs::read_to_string(output.join("typescript/bun.lock")).unwrap();
         for source in [&ts, &py, &go] {
             assert!(!source.contains("TODO"));
             assert!(!source.contains("__PORT__"));
+            assert!(!source.contains("__ROUTE__"));
             assert!(!source.contains("__TABLE__"));
             assert!(!source.contains("__SCHEMA_ID__"));
             assert!(!source.contains("__SOCKET_PATH__"));
@@ -400,11 +474,18 @@ mod tests {
         assert!(ts.contains(r#"role: "bun""#));
         assert!(ts.contains("/submit"));
         assert!(ts.contains(r#"type: "INGEST""#));
+        assert!(ts.contains("dist"));
+        assert!(app.contains("defineComponent"));
+        assert!(app.contains("/submit"));
+        assert!(theme.contains("--silc-accent"));
+        assert!(pkg.contains(UI_WEB_VUE_VERSION));
+        assert!(lock.contains(&format!("vue@{UI_WEB_VUE_VERSION}")));
+        assert!(lock.contains("sha512-"));
         assert!(py.contains(r#""role": "python""#));
         assert!(py.contains(r#"!= "python""#));
         assert!(py.contains("hashlib"));
         assert!(go.contains(r#""role": "go""#));
-        assert!(go.contains("journal_mode=WAL"));
+        assert!(go.contains("journal_mode(WAL)") || go.contains("journal_mode=WAL"));
         assert!(go.contains("feedback"));
 
         let manifest = fs::read_to_string(&result.manifest).unwrap();
@@ -417,6 +498,9 @@ mod tests {
         assert!(manifest.contains("\"TextAnalyzer\""));
         assert!(manifest.contains("\"FeedbackDb\""));
         assert!(manifest.contains("\"engines\""));
+        assert!(manifest.contains("\"substrate\": \"vue\""));
+        assert!(manifest.contains("\"profile\": \"web\""));
+        assert!(manifest.contains("ui::web"));
         fs::remove_dir_all(output).ok();
     }
 }
