@@ -1,0 +1,26 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/silc",
+    "crates/sil-lexer",
+    "crates/sil-core",
+    "crates/sil-parser",
+    "crates/sil-router",
+    "crates/sil-codegen",
+    "crates/sil-ipc",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/thoughtpivot/sil"
+authors = ["ThoughtPivot"]
+
+[workspace.dependencies]
+sil-core = { path = "crates/sil-core" }
+sil-lexer = { path = "crates/sil-lexer" }
+sil-parser = { path = "crates/sil-parser" }
+sil-router = { path = "crates/sil-router" }
+sil-codegen = { path = "crates/sil-codegen" }
+sil-ipc = { path = "crates/sil-ipc" }

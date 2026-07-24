@@ -1,0 +1,19 @@
+[package]
+name = "silc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "ThoughtPivot SIL compiler CLI"
+
+[[bin]]
+name = "silc"
+path = "src/main.rs"
+
+[dependencies]
+sil-core = { workspace = true }
+sil-lexer = { workspace = true }
+sil-parser = { workspace = true }
+sil-router = { workspace = true }
+sil-codegen = { workspace = true }
+sil-ipc = { workspace = true }

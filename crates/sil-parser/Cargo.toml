@@ -1,0 +1,11 @@
+[package]
+name = "sil-parser"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "SIL parser — stub"
+
+[dependencies]
+sil-core = { workspace = true }
+sil-lexer = { workspace = true }

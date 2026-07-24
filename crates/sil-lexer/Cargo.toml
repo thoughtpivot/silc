@@ -1,0 +1,9 @@
+[package]
+name = "sil-lexer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "SIL lexical analysis (logos) — stub"
+
+[dependencies]

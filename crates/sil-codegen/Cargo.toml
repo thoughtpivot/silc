@@ -1,0 +1,10 @@
+[package]
+name = "sil-codegen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "SIL target code generation (Go / Python / Bun-TypeScript) — stub"
+
+[dependencies]
+sil-core = { workspace = true }

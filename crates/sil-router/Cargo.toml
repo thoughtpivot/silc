@@ -1,0 +1,10 @@
+[package]
+name = "sil-router"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "SIL semantic router (Go / Python / Bun-TypeScript) — stub"
+
+[dependencies]
+sil-core = { workspace = true }

@@ -1,0 +1,51 @@
+#!/usr/bin/env silc
+@version("1.0")
+contract ArticlePayload {
+    id: UUID,
+    url: String @format(uri),
+    raw_content: String,
+    vector_embedding: Vector<f32>[768]
+}
+
+@domain(async_io)
+service NetworkIngress {
+    constraints {
+        timeout: 1500ms,
+        concurrency: 5000_rps
+    }
+
+    fn fetch_article(target_url: String) -> ArticlePayload {
+        pipeline {
+            target_url |> http::get() |> html::extract_body() |> schema::bind(ArticlePayload)
+        }
+    }
+}
+
+@domain(data_science)
+processor EmbeddingEngine {
+    property model_ref: String = "sentence-transformers/all-mpnet-base-v2"
+
+    fn generate_vectors(payload: ArticlePayload) -> ArticlePayload {
+        constraints {
+            batch_size: 64,
+            device: AutoDetect(prefer: CUDA)
+        }
+        pipeline {
+            payload.raw_content |> tensor::tokenize() |> tensor::infer(model: model_ref) |> payload::attach_vector()
+        }
+    }
+}
+
+@domain(systems)
+sink RealtimeCache {
+    constraints {
+        max_latency: 2ms,
+        storage_engine: MemoryMapped
+    }
+
+    fn persist(payload: ArticlePayload) -> Result<UUID, SystemError> {
+        pipeline {
+            payload |> ipc::share_buffer() |> store::upsert_primary()
+        }
+    }
+}
