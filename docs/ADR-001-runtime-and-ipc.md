@@ -1,7 +1,10 @@
 # ADR-001: Bun Runtime and Silc-Owned Shared-Memory IPC
 
-- **Status:** Accepted
+- **Status:** Accepted (v1 partial implementation)
 - **Date:** 2026-07-25
+- **Implemented:** Silc-owned Bun + CPython + Go cache (`~/.silc/runtimes/`),
+  file-backed mmap slots, framed UDS control plane, feedback-portal supervisor.
+  See [SILC-IPC-ABI-v1.md](SILC-IPC-ABI-v1.md).
 
 ## Context
 
@@ -24,18 +27,26 @@ layout.
 
 Silc targets **Go, Python, and Bun**. TypeScript remains the generated language
 and the directory name remains `typescript`; Bun is the process that executes
-that source. The supervisor will pin and invoke Bun rather than Node.
+that source. Silc provisions pinned, checksum-verified engines into its own
+cache and invokes them by absolute path rather than consulting user PATH.
 
 Bun is the default because its native TypeScript execution and mmap support fit
 Silc's generated, local-worker model. Node compatibility is not a requirement
 for the primary runtime.
 
+Bun also executes compiler-owned UI substrates: Vue for `ui::web` and, in a
+future runnable path, OpenTUI for `ui::terminal`. Those frameworks are
+implementation details under `.runtime/`; Silc source never names them. See
+[ADR-003-declarative-ui.md](ADR-003-declarative-ui.md).
+
 ### Data plane
 
-ThoughtPivot owns a versioned **Silc Shared Buffer ABI**. The Rust supervisor
-allocates a POSIX shared-memory segment or an mmap-backed file under
-`.runtime/`. Contracts lower deterministically into that layout, and codegen
-emits typed views for Go, Python, and Bun.
+ThoughtPivot owns a versioned **Silc Shared Buffer ABI**. ABI v1 uses a bounded
+pool of portable mmap-backed files under `.runtime/`. The Rust supervisor owns
+allocation and lifecycle; Python mutates and Go consumes the same mapped slot.
+Bun ingress is copied once into the supervisor-owned slot. ABI v1 carries a
+schema-tagged JSON payload; deterministic typed contract views are the next ABI
+layer rather than a claim of the current implementation.
 
 The ABI will define, at minimum:
 
@@ -45,9 +56,9 @@ The ABI will define, at minimum:
 - field offsets and typed data regions;
 - ownership, lifetime, and producer/consumer state.
 
-Large payloads stay in shared memory. Consumers access mapped bytes through
-native slices, memory views, or typed arrays without serializing the payload
-through JSON, Protobuf, or an HTTP stack.
+Payloads stay in shared memory between processor and sink. JSON parsing still
+occurs within the mapped buffer in v1; the transport does not send payload
+bytes through an HTTP or UDS message between those workers.
 
 ### Control plane
 
@@ -58,8 +69,9 @@ shared data with fields equivalent to:
 { segment_id, offset, len, schema_id }
 ```
 
-The exact binary control frame is a later implementation decision. It does not
-change the data-plane ABI.
+ABI v1 uses `u32le payload_len | u16le protocol_version | JSON frame`, with
+versioned `HELLO`, `READY`, `INGEST`, `NOTIFY`, `ACK`, `ERROR`, `RESPONSE`, and
+`SHUTDOWN` messages. See [SILC-IPC-ABI-v1.md](SILC-IPC-ABI-v1.md).
 
 ### Apache Arrow
 
@@ -94,8 +106,10 @@ workers.
 - Bun APIs used by the runtime must be pinned and validated before production.
 - External Arrow interoperability requires a separate adapter.
 
-## Non-goals for the scaffold
+## Non-goals for ABI v1
 
-This ADR does not implement mmap allocation, UDS signaling, generated accessors,
-runtime installation, process supervision, or benchmarks. The current
-repository remains scaffold and documentation only.
+- Typed zero-copy contract field views
+- General execution lowering beyond the feedback operation set
+- Per-worker crash recovery (v1 restarts the runtime)
+- Linux-specific `shm_open` optimization
+- Self-contained deployment bundles

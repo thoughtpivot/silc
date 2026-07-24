@@ -4,9 +4,10 @@ This repository uses **subject-based architecture** for the compiler's semantic
 core. Code is organized around durable language concepts instead of allowing
 compiler phases to become the owners of the model.
 
-The first pass implements subjects, lexing, parsing, deterministic routing, and
-inspectable stub generation. Runtime execution, IPC, and supervision remain
-future work.
+The first runnable vertical slice implements subjects, lexing, parsing,
+deterministic routing, runnable Bun/Python/Go codegen, supervisor-owned mmap +
+UDS IPC, and transactional SQLite persistence for the feedback portal. Other
+operation sets still emit inspectable stubs.
 
 Runtime and IPC direction is fixed by
 [ADR-001](ADR-001-runtime-and-ipc.md): Silc emits TypeScript for Bun and uses a
@@ -140,6 +141,15 @@ They consume one validated semantic model and must not define parallel AST
 types. Reusable lowering that expresses Silc meaning belongs to the owning
 subject; target-specific rendering belongs to `sil-codegen`.
 
+### Declarative UI
+
+UI intent lives in the `ui` namespace (`ui::web`, `ui::terminal`). Authors never
+emit HTML, CSS, Vue, OpenTUI, or package manifests. The compiler lowers
+`ui::web` to a Bun-owned Vue app plus HTTP/API worker under `.runtime/`;
+`ui::terminal` is reserved for a Bun + OpenTUI substrate (stub in v1). See
+[ADR-003-declarative-ui.md](ADR-003-declarative-ui.md). Legacy `html::form` +
+`http::serve` remain compatibility aliases for the same web profile.
+
 ### IPC
 
 IPC is both a runtime boundary and a significant technical subsystem. Contract
@@ -168,8 +178,9 @@ Silc buffers as Arrow for external analytical tools.
 
 ## Project layout and execution
 
-`silc` is the compile entrypoint (CLI or shebang `#!/usr/bin/env silc`). Worker
-execution and IPC remain future work; the MVP emits inspectable stubs.
+`silc` is the compile-and-run entrypoint (CLI or shebang
+`#!/usr/bin/env silc`). Runnable-v1 programs execute under the Rust supervisor;
+other programs emit inspectable stubs.
 
 | Concept | Meaning |
 | --- | --- |
@@ -179,22 +190,28 @@ execution and IPC remain future work; the MVP emits inspectable stubs.
 
 **Invocation**
 
-- `silc init` or `silc init <path>` — scaffold `AGENTS.md`, `main.silc`, `.gitignore`
-- `silc myprogram.silc`
-- `silc myprogram.raku`
-- or `chmod +x myprogram.silc` after a `#!/usr/bin/env silc` shebang, then `./myprogram.silc`
+- `silc init` / `silc init <path>` — scaffold project files, provision Silc-owned
+  Bun/CPython/Go into `~/.silc/runtimes/`, and write `.silc/runtimes.lock.json`
+- `silc build <entry>` — compile only
+- `silc <entry>` — compile; run when the program is runnable v1
+- shebang `#!/usr/bin/env silc` still works
 
-Bare `init` is the subcommand; a file named `init.silc` still compiles as a
-path. Init never overwrites existing `AGENTS.md` / `main.silc`, and only appends
-`.runtime/` to an existing `.gitignore` when missing.
+The first runnable build provisions checksum-verified Bun/CPython/Go into
+`~/.silc/runtimes/` and writes compiler-owned `.silc/runtimes.lock.json`.
+Engines are never copied into the workdir. `.runtime/` holds per-app workers,
+IPC, and SQLite only. There is no user/AI runtime configuration surface.
+
+Bare `init` is the subcommand; `init.silc` still compiles as a path.
 
 **`.runtime` contract**
 
 - Path: `{workdir}/.runtime/`
-- Contents: generated Go / Python / TypeScript-for-Bun, and later IPC/supervisor artifacts
+- Contents: generated Go / Python / TypeScript-for-Bun (including Vue UI assets for
+  `ui::web`), IPC slots/run metadata, and application data
 - First run builds this tree (slower); later runs reuse it when still valid
 - Gitignored; inspectable for debugging; not the authoring surface
 - User programs never emit into this repository’s `runtime/` directory
+- Frontend dependency installs and bundles are compiler-owned (Silc Bun only)
 
 **Repo `runtime/` vs project `.runtime/`**
 
@@ -225,9 +242,10 @@ does not.
 - Expand subject validation beyond the example suite
 - Expand the parser beyond the first-pass grammar
 - Add program-level orchestration semantics
-- Replace generated stubs with executable target adapters
-- Implement the Silc Shared Buffer ABI, UDS signaling, and multi-process supervisor
-- Add `mise`-managed locked Go/Python/Bun toolchains
+- Generalize executable target adapters beyond the feedback operation set
+- Runnable `ui::terminal` via compiler-owned OpenTUI/Bun (see ADR-003)
+- Add typed field views atop the implemented mmap/UDS ABI
+- Add program-level crash recovery and deployment bundles
 
 See [`examples/article_pipeline.silc`](../examples/article_pipeline.silc) for the
 NetworkIngress → EmbeddingEngine → RealtimeCache example.

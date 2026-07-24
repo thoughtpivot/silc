@@ -26,6 +26,7 @@ fn usage_mentions_init() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
     assert!(stdout.contains("silc init"));
+    assert!(stdout.contains("silc build"));
 }
 
 #[test]

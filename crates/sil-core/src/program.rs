@@ -70,6 +70,8 @@ impl Program {
                 }
             }
         }
+        // Runnable-program validation (no-op for stub programs).
+        crate::operation::infer_graph(self)?;
         Ok(())
     }
 }

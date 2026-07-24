@@ -1,62 +1,47 @@
 # Silc project guidance for AI tools
 
 This directory is a **Silc** project. Silc (said like “silk”) is an AI-native
-language and compiler. Edit Silc source; do not hand-edit generated workers.
+language and compiler. Edit Silc source only. Do not hand-edit `.runtime/` or
+`.silc/runtimes.lock.json`.
+
+## Engines are owned by Silc
+
+Silc provisions pinned **Bun**, **CPython**, and **Go** into a global cache
+(`~/.silc/runtimes/`). Projects get a compiler-owned lock file at
+`.silc/runtimes.lock.json`. Users and AI tools never install, choose, or
+configure those engines. There is no runtime configuration surface.
+
+`.runtime/` holds only this app’s generated workers, IPC slots, SQLite data,
+and logs — not copies of Bun/CPython/Go.
 
 ## Authoritative docs
 
-When unsure, check the public Silc repository:
-
-- Language surface (Raku-inspired subset): https://github.com/thoughtpivot/silc/blob/main/docs/ADR-002-silc-surface-syntax.md
-- Architecture & workdir contract: https://github.com/thoughtpivot/silc/blob/main/docs/ARCHITECTURE.md
-- Runtime / IPC design: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-001-runtime-and-ipc.md
-- Grammar overview: https://github.com/thoughtpivot/silc/blob/main/README.md#part-ii-language-specification--design-of-silc
-- Example suite: https://github.com/thoughtpivot/silc/tree/main/examples
-
-## Files
-
-| Path | Role |
-| --- | --- |
-| `*.silc` | Primary Silc source (preferred) |
-| `*.raku` | Accepted only when it conforms to Silc’s grammar |
-| `.runtime/` | Compiler output — never edit by hand |
-| `.sil` | Not supported — rename to `.silc` |
-
-## Supported surface (not full Raku)
-
-Silc uses a **Raku-inspired** authoring surface. Rakudo is not a Silc runtime.
-Allowed constructs today:
-
-- `@version("…")`
-- `subset Name of Type [where { … }]`
-- `class Name { has Type $.field; }` → Contract
-- `class Name is service|processor|sink … { method … }` → Module
-- Pipelines with `==>` and `ns::call(:opt(val))`
-- Unit literals such as `1500ms`, `:prefer<CUDA>`
-
-Do **not** use full Raku features (junctions, hyperoperators, topicalizers,
-`EVAL`, arbitrary OO, synonym forms). Do not use `@domain`.
-
-Typical shape: one contract + three modules (`service` → `processor` → `sink`).
-
-## Routing targets
-
-The compiler routes modules deterministically:
-
-| Signal | Target |
-| --- | --- |
-| `is service`, namespaces `http` / `html` / `ws` | Bun (TypeScript stubs) |
-| `is processor`, namespaces `tensor` / `numpy` / `pandas` | Python |
-| `is sink` + low latency, namespaces `store` / `ipc` | Go |
+- Surface syntax: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-002-silc-surface-syntax.md
+- Architecture: https://github.com/thoughtpivot/silc/blob/main/docs/ARCHITECTURE.md
+- Runtime / IPC: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-001-runtime-and-ipc.md
+- IPC ABI v1: https://github.com/thoughtpivot/silc/blob/main/docs/SILC-IPC-ABI-v1.md
+- Examples: https://github.com/thoughtpivot/silc/tree/main/examples
 
 ## Workflow
 
 ```bash
-silc main.silc
-# or: chmod +x main.silc && ./main.silc
+silc init myapp   # scaffold + provision Silc-owned Bun/CPython/Go + lock file
+cd myapp
+silc main.silc    # build stubs or run if the program is runnable v1
+silc build main.silc   # compile only
 ```
 
-Output lands in `.runtime/<program>/` (stubs + `manifest.json`).
+## Runnable v1 operations
 
-**Current MVP limits:** parse → validate → route → stub emit only. Worker
-execution and IPC are not implemented yet.
+Executable today (feedback-portal shape):
+
+- `html::form`, `http::serve`
+- `text::score`
+- `ipc::publish`, `store::sqlite`, `store::commit`
+
+Other namespaces still parse/route/stub-emit but do not execute yet.
+
+## Supported surface (not full Raku)
+
+Raku-inspired subset only. See ADR-002. Do not use full Raku, `.sil`, or
+`@domain`. Typical shape: one contract + `service` → `processor` → `sink`.

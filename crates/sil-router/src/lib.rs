@@ -40,23 +40,34 @@ pub fn route_module(module: &Module) -> RouteDecision {
                 .is_ok_and(|value| value <= 10)
     });
 
-    let (target, provenance) = if module.kind == ModuleKind::Sink && low_latency {
+    let sqlite_storage = module
+        .traits
+        .iter()
+        .any(|t| t.name == "storage" && t.value.eq_ignore_ascii_case("SQLite"));
+
+    let (target, provenance) = if module.kind == ModuleKind::Sink && (low_latency || sqlite_storage)
+    {
         (
             Target::Go,
-            "tier1: sink with latency <= 10ms requires Go".to_string(),
+            if sqlite_storage {
+                "tier1: sink with storage(SQLite) requires Go".to_string()
+            } else {
+                "tier1: sink with latency <= 10ms requires Go".to_string()
+            },
         )
-    } else if module.kind == ModuleKind::Processor && (has(&["tensor", "numpy", "pandas"]) || cuda)
+    } else if module.kind == ModuleKind::Processor
+        && (has(&["tensor", "numpy", "pandas", "text"]) || cuda)
     {
         (
             Target::Python,
-            "tier1: processor with data/ML evidence requires Python".to_string(),
+            "tier1: processor with data/ML/text evidence requires Python".to_string(),
         )
     } else if module.kind == ModuleKind::Service {
         (
             Target::Bun,
             "tier1: service prefers Bun for async I/O".to_string(),
         )
-    } else if has(&["http", "html", "ws"]) {
+    } else if has(&["http", "html", "ws", "ui"]) {
         (
             Target::Bun,
             format!(
@@ -64,7 +75,7 @@ pub fn route_module(module: &Module) -> RouteDecision {
                 namespaces.join(", ")
             ),
         )
-    } else if has(&["tensor", "numpy", "pandas"]) {
+    } else if has(&["tensor", "numpy", "pandas", "text"]) {
         (
             Target::Python,
             format!(
@@ -101,6 +112,7 @@ pub fn route_module(module: &Module) -> RouteDecision {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sil_core::{Method, Module, ModuleKind, Pipeline, PipelineStep, Program, Span};
 
     #[test]
     fn routes_article_pipeline_three_ways() {
@@ -113,5 +125,62 @@ mod tests {
         assert!(decisions
             .iter()
             .all(|decision| !decision.provenance.is_empty()));
+    }
+
+    #[test]
+    fn routes_ui_namespace_to_bun() {
+        let program = Program {
+            version: Some("1.0".into()),
+            subsets: vec![],
+            contracts: vec![],
+            modules: vec![Module {
+                name: "TermOnly".into(),
+                kind: ModuleKind::Processor,
+                traits: vec![],
+                fields: vec![],
+                methods: vec![Method {
+                    name: "run".into(),
+                    params: vec![],
+                    pipeline: Pipeline {
+                        steps: vec![PipelineStep::Call {
+                            namespace: Some("ui".into()),
+                            name: "terminal".into(),
+                            args: vec![],
+                        }],
+                    },
+                }],
+                span: Span::default(),
+            }],
+        };
+        let decisions = route_program(&program);
+        assert_eq!(decisions.len(), 1);
+        assert_eq!(decisions[0].target, Target::Bun);
+        assert!(decisions[0].provenance.contains("ui"));
+    }
+
+    #[test]
+    fn routes_ui_web_service_to_bun() {
+        let source = r#"
+@version("1.0")
+class FeedbackRecord { has Str $.author; has Str $.text; }
+class WebPortal is service {
+    method listen(:$port = 18080) {
+        FeedbackRecord ==> ui::web(:port(18080), :route("/"))
+    }
+}
+class TextAnalyzer is processor {
+    method analyze(FeedbackRecord $record) { $record.text ==> text::score() }
+}
+class FeedbackDb is sink is latency(5ms) is storage(SQLite) {
+    method persist(FeedbackRecord $record) {
+        $record ==> ipc::publish() ==> store::sqlite(:table(feedback)) ==> store::commit()
+    }
+}
+"#;
+        let program = sil_parser::parse(source).expect("parse");
+        let decisions = route_program(&program);
+        assert_eq!(decisions[0].target, Target::Bun);
+        assert_eq!(decisions[1].target, Target::Python);
+        assert_eq!(decisions[2].target, Target::Go);
     }
 }

@@ -1,0 +1,37 @@
+#!/usr/bin/env silc
+# Feedback portal — Bun HTML/HTTP, Python text score, Go SQLite (runnable Silc v1)
+@version("1.0")
+
+subset NonEmpty of Str where { .chars > 0 }
+
+class FeedbackRecord {
+    has UUID $.id;
+    has NonEmpty $.author;
+    has NonEmpty $.text;
+    has Str $.summary;
+    has num64 $.score;
+}
+
+class WebPortal is service {
+    method listen(:$port = 18080) {
+        FeedbackRecord
+            ==> html::form()
+            ==> http::serve(:port(18080), :route("/"))
+    }
+}
+
+class TextAnalyzer is processor {
+    method analyze(FeedbackRecord $record) {
+        $record.text
+            ==> text::score()
+    }
+}
+
+class FeedbackDb is sink is latency(5ms) is storage(SQLite) {
+    method persist(FeedbackRecord $record) {
+        $record
+            ==> ipc::publish()
+            ==> store::sqlite(:table(feedback))
+            ==> store::commit()
+    }
+}

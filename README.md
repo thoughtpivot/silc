@@ -58,8 +58,8 @@ Socket signals. See [ADR-001](docs/ADR-001-runtime-and-ipc.md).
           └─────────────────────────┼─────────────────────────┘
                                     ▼
 +-----------------------------------------------------------------------+
-|                    ZERO-COPY SHARED-MEMORY IPC                        |
-|          (/dev/shm • POSIX mmap • Silc Shared Buffer ABI)             |
+|                    SHARED-MEMORY IPC v1                               |
+|    (portable file-backed mmap • UDS • Silc Shared Buffer ABI)         |
 +-----------------------------------------------------------------------+
 
 ```
@@ -243,7 +243,12 @@ A key innovation of the ThoughtPivot compiler is its ability to route Silc modul
 
 ## Part V: The Tri-Ecosystem Runtime Architecture
 
-Rather than creating a custom virtual machine, ThoughtPivot treats **Go, Python, and Bun** as native compute engines. The third target remains TypeScript at the source level; Bun executes that generated TypeScript directly. Exact locked versions will be managed via an internal version manager (e.g. `mise`) in a later milestone.
+Rather than creating a custom virtual machine, ThoughtPivot treats **Go,
+Python, and Bun** as native compute engines. The third target remains
+TypeScript at the source level; Bun executes that generated TypeScript
+directly. Silc provisions checksum-verified, pinned engines into its own global
+cache and launches them by absolute path. Users and AI tools cannot choose or
+configure those runtimes.
 
 ---
 
@@ -262,65 +267,50 @@ external analytical tools. See [ADR-001](docs/ADR-001-runtime-and-ipc.md) and
 
 ## Developer Experience
 
-The end-state workflow for humans and AI tools is intentionally small. Full
-worker execution and IPC are not implemented yet; today’s MVP is
-parse → validate → route → stub emit.
+Write Silc. Silc owns the engines. Users and AI tools never install or configure
+Bun, CPython, or Go.
 
 ### Initialize a project
 
 ```bash
 silc init myapp
 cd myapp
-# or: silc init   # current directory
 ```
 
-`silc init [path]` is non-destructive. It creates:
+`silc init` is non-destructive and creates project files immediately. The first
+runnable build transparently provisions pinned engines into
+`~/.silc/runtimes/` (shared globally) and writes the compiler-owned
+`.silc/runtimes.lock.json` in the workdir.
 
-| File | Purpose |
+| Path | Purpose |
 | --- | --- |
-| `AGENTS.md` | AI-facing guidance (Raku-inspired subset, links to this repo) |
-| `main.silc` | Starter program with shebang and tri-runtime modules |
-| `.gitignore` | Ensures `.runtime/` is ignored (merges if a file already exists) |
+| `AGENTS.md` | AI-facing guidance |
+| `main.silc` | Starter program |
+| `.gitignore` | Ignores `.runtime/` and compiler-owned `.silc/` state |
+| `.silc/runtimes.lock.json` | Compiler-owned engine lock (not user config) |
+| `~/.silc/runtimes/…` | Shared Bun / CPython / Go cache |
 
-It refuses to overwrite an existing `AGENTS.md` or `main.silc`.
-
-### Compile
-
-```bash
-silc main.silc
-```
-
-Or make the file executable via shebang:
-
-```silc
-#!/usr/bin/env silc
-@version("1.0")
-# ... rest of program
-```
+### Build and run
 
 ```bash
-chmod +x main.silc
-./main.silc
+silc build main.silc          # compile only
+silc main.silc                # compile; run if program is runnable v1
+silc examples/feedback_portal.silc   # HTML + SQLite feedback portal
 ```
 
-`silc` resolves the **workdir** as the directory containing the entry file. On
-the first run it builds `{workdir}/.runtime/<program>/` with generated Go,
-Python, TypeScript-for-Bun, and a manifest. That first build is slower; later
-runs will reuse valid artifacts.
+Runnable v1 programs use `html::form`, `http::serve`, `text::score`,
+`ipc::publish`, `store::sqlite`, and `store::commit`. Other examples still
+parse/route and emit inspectable stubs.
 
 ```
 myapp/
-├── AGENTS.md               # for AI tools — points at github.com/thoughtpivot/silc
-├── main.silc               # source of truth (human / AI authored)
-├── .gitignore
-└── .runtime/              # generated — do not hand-edit
-    ├── go/
-    ├── python/
-    ├── typescript/        # executed by Bun
-    └── ...
+├── AGENTS.md
+├── main.silc
+├── .silc/runtimes.lock.json   # points at ~/.silc/runtimes (not copies)
+└── .runtime/<program>/        # workers, IPC, SQLite — lean app output
 ```
 
-The compiler owns target routing. Users and agents stay in Silc; generated code under `.runtime/` is an inspectable build product, not the editing surface. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for workdir vs repo `runtime/` templates.
+See [docs/SILC-IPC-ABI-v1.md](docs/SILC-IPC-ABI-v1.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ---
 
@@ -342,22 +332,16 @@ By shifting software creation from probabilistic text generation to deterministi
 ## Development
 
 ```bash
-# Requires Rust (rustup / stable)
+# Requires Rust (rustup / stable). Bun/CPython/Go are provisioned by silc.
 cargo check --workspace
-cargo run -p silc -- init /tmp/silc-demo
-cargo run -p silc -- examples/article_pipeline.silc
-cargo install --path crates/silc   # optional: put `silc` on PATH
+cargo test --workspace
+cargo run -p silc -- build examples/feedback_portal.silc
+cargo install --path crates/silc
 ```
 
-Example suite:
-
-- `article_pipeline.silc`
-- `sensor_alert.silc`
-- `csv_summary.raku`
-- `url_health.silc`
-- `log_anomaly.raku`
-
-Generated stubs live under `examples/.runtime/<program>/`. The `typescript`
-tree is intended for Bun, not Node. Worker execution and IPC come later.
+Example suite: stub examples plus runnable `feedback_portal.silc`. Local
+throughput gate: `python3 examples/feedback_portal/benchmark.py http://127.0.0.1:18080 3000 32`
+(target ≥500 committed
+requests/sec after warmup).
 
 License: [Apache-2.0](LICENSE)

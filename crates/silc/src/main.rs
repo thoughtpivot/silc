@@ -1,5 +1,8 @@
 mod init;
+mod runtimes;
+mod supervisor;
 
+use sil_core::ExecutionMode;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process;
@@ -10,6 +13,7 @@ fn main() {
         None => {
             println!("silc {}", env!("CARGO_PKG_VERSION"));
             println!("usage: silc <program.silc|program.raku>");
+            println!("       silc build <program.silc|program.raku>");
             println!("       silc init [path]");
         }
         Some("init") => {
@@ -19,8 +23,18 @@ fn main() {
                 process::exit(1);
             }
         }
+        Some("build") => {
+            let Some(path) = args.next() else {
+                eprintln!("silc: usage: silc build <program.silc|program.raku>");
+                process::exit(1);
+            };
+            if let Err(err) = build_only(Path::new(&path)) {
+                eprintln!("silc: {err}");
+                process::exit(1);
+            }
+        }
         Some(path) => {
-            if let Err(err) = compile(Path::new(path)) {
+            if let Err(err) = compile_and_maybe_run(Path::new(path)) {
                 eprintln!("silc: {err}");
                 process::exit(1);
             }
@@ -28,7 +42,46 @@ fn main() {
     }
 }
 
-fn compile(entry: &Path) -> Result<(), String> {
+fn build_only(entry: &Path) -> Result<(), String> {
+    let (_workdir, output, lock) = compile_common(entry)?;
+    println!("silc {}", env!("CARGO_PKG_VERSION"));
+    println!("built: {}", output.root.display());
+    println!("mode:  {}", output.execution_mode);
+    if output.execution_mode == ExecutionMode::Runnable {
+        println!("bun:     {}", lock.bun_bin.display());
+        println!("cpython: {}", lock.python_bin.display());
+        println!("go:      {}", lock.go_bin.display());
+        println!("engines locked under .silc/runtimes.lock.json");
+    } else {
+        println!("stub emit only — this program is not executable in Silc v1");
+    }
+    Ok(())
+}
+
+fn compile_and_maybe_run(entry: &Path) -> Result<(), String> {
+    let (_workdir, output, lock) = compile_common(entry)?;
+    println!("silc {}", env!("CARGO_PKG_VERSION"));
+    println!("entry:    {}", entry.display());
+    println!("runtime:  {}", output.root.display());
+    println!("manifest: {}", output.manifest.display());
+    println!("mode:     {}", output.execution_mode);
+
+    match output.execution_mode {
+        ExecutionMode::Stub => {
+            println!();
+            println!("stub emit complete — worker execution requires runnable v1 operations");
+            println!(
+                "(html::form, http::serve, text::score, ipc::publish, store::sqlite, store::commit)"
+            );
+            Ok(())
+        }
+        ExecutionMode::Runnable => supervisor::run_feedback(&output, &lock),
+    }
+}
+
+fn compile_common(
+    entry: &Path,
+) -> Result<(PathBuf, sil_codegen::EmitResult, runtimes::RuntimeLock), String> {
     if !entry.exists() {
         return Err(format!("file not found: {}", entry.display()));
     }
@@ -59,6 +112,9 @@ fn compile(entry: &Path) -> Result<(), String> {
     let program = sil_parser::parse(&source).map_err(|error| error.to_string())?;
     program.validate()?;
     let decisions = sil_router::route_program(&program);
+
+    let lock = supervisor::ensure_project_runtimes(&workdir)?;
+
     let output = sil_codegen::emit(
         &program,
         &decisions,
@@ -67,14 +123,10 @@ fn compile(entry: &Path) -> Result<(), String> {
         env!("CARGO_PKG_VERSION"),
     )?;
 
-    println!("silc {}", env!("CARGO_PKG_VERSION"));
-    println!("entry:   {}", entry.display());
-    println!("workdir: {}", workdir.display());
-    println!(
-        "parsed:  {} contract(s), {} module(s)",
-        program.contracts.len(),
-        program.modules.len()
-    );
+    if output.execution_mode == ExecutionMode::Runnable {
+        supervisor::build_go_worker(&lock, &output.root)?;
+    }
+
     println!("routes:");
     for decision in &decisions {
         println!(
@@ -84,11 +136,6 @@ fn compile(entry: &Path) -> Result<(), String> {
             decision.provenance
         );
     }
-    println!("runtime: {}", output.root.display());
-    println!("manifest: {}", output.manifest.display());
-    println!("generated: {} file(s)", output.generated.len());
-    println!();
-    println!("Gate B scaffold complete: parse -> validate -> route -> stub emit");
-    println!("worker execution and IPC are not implemented yet.");
-    Ok(())
+
+    Ok((workdir, output, lock))
 }

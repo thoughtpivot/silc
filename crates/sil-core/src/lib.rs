@@ -7,6 +7,7 @@
 pub mod constraint;
 pub mod contract;
 pub mod module;
+pub mod operation;
 pub mod pipeline;
 pub mod program;
 pub mod target;
@@ -15,6 +16,9 @@ pub mod types;
 pub use constraint::TraitArg;
 pub use contract::{Contract, Field, Subset};
 pub use module::{Method, Module, ModuleKind, Param};
+pub use operation::{
+    classify_program, infer_graph, is_executable_op, ExecutableGraph, ExecutionMode, UiSurface,
+};
 pub use pipeline::{Pipeline, PipelineStep};
 pub use program::Program;
 pub use target::Target;

@@ -1,2 +1,5 @@
 # Generated Silc runtime (do not hand-edit)
 .runtime/
+
+# Compiler-owned runtime lock/state (do not hand-edit)
+.silc/

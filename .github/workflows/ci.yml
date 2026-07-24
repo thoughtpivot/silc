@@ -8,8 +8,12 @@ on:
 
 jobs:
   check:
-    name: fmt + check + test
-    runs-on: ubuntu-latest
+    name: fmt + check + test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
 
@@ -18,6 +22,10 @@ jobs:
         with:
           components: rustfmt
 
+      - name: System packages
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y unzip
+
       - name: Cargo fmt
         run: cargo fmt --all -- --check
 
@@ -25,4 +33,25 @@ jobs:
         run: cargo check --workspace
 
       - name: Cargo test
-        run: cargo test --workspace
+        run: cargo test --workspace -- --test-threads=1
+
+      - name: Build feedback portal
+        run: cargo build -p silc && ./target/debug/silc build examples/feedback_portal.silc
+
+      - name: Concurrent correctness (short)
+        run: |
+          ./target/debug/silc examples/feedback_portal.silc > /tmp/silc-run.log 2>&1 &
+          PID=$!
+          for i in $(seq 1 90); do
+            if curl -sf http://127.0.0.1:18080/health >/dev/null; then break; fi
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:18080/health
+          for i in $(seq 1 25); do
+            curl -sf -X POST http://127.0.0.1:18080/submit \
+              -H 'content-type: application/json' \
+              -d "{\"author\":\"ci$i\",\"text\":\"hello from ci $i\"}" >/tmp/resp$i.json
+          done
+          kill -INT $PID || true
+          wait $PID || true
+          test -f examples/.runtime/feedback_portal/data/feedback.db

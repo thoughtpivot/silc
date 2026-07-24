@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 const AGENTS_MD: &str = include_str!("../templates/AGENTS.md");
 const MAIN_SILC: &str = include_str!("../templates/main.silc");
 const GITIGNORE_ENTRY: &str = ".runtime/";
+const SILC_META_ENTRY: &str = ".silc/";
 
 pub fn run(path: Option<&str>) -> Result<(), String> {
     let root = match path {
@@ -46,11 +47,20 @@ pub fn run(path: Option<&str>) -> Result<(), String> {
 
     ensure_gitignore(&gitignore)?;
 
+    println!("silc: provisioning owned Bun / CPython / Go engines…");
+    let lock = crate::runtimes::ensure_runtimes()?;
+    crate::runtimes::write_lock(&root, &lock)?;
+
     println!("silc {}", env!("CARGO_PKG_VERSION"));
     println!("initialized: {}", display_root(&root));
     println!("  AGENTS.md");
     println!("  main.silc");
-    println!("  .gitignore  (+ {GITIGNORE_ENTRY})");
+    println!("  .gitignore  (+ {GITIGNORE_ENTRY} / {SILC_META_ENTRY})");
+    println!("  .silc/runtimes.lock.json");
+    println!(
+        "  engines: bun {} / cpython {} / go {}",
+        lock.bun_version, lock.python_version, lock.go_version
+    );
     println!();
     println!("next: silc main.silc");
     Ok(())
@@ -60,18 +70,30 @@ fn ensure_gitignore(path: &Path) -> Result<(), String> {
     if path.exists() {
         let existing = fs::read_to_string(path)
             .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
-        if gitignore_has_runtime(&existing) {
-            return Ok(());
-        }
         let mut updated = existing;
-        if !updated.ends_with('\n') && !updated.is_empty() {
+        let mut changed = false;
+        if !gitignore_has_line(&updated, GITIGNORE_ENTRY) {
+            if !updated.ends_with('\n') && !updated.is_empty() {
+                updated.push('\n');
+            }
+            updated.push_str("# Generated Silc runtime (do not hand-edit)\n");
+            updated.push_str(GITIGNORE_ENTRY);
             updated.push('\n');
+            changed = true;
         }
-        updated.push_str("# Generated Silc runtime (do not hand-edit)\n");
-        updated.push_str(GITIGNORE_ENTRY);
-        updated.push('\n');
-        fs::write(path, updated)
-            .map_err(|e| format!("failed to update {}: {e}", path.display()))?;
+        if !gitignore_has_line(&updated, SILC_META_ENTRY) {
+            if !updated.ends_with('\n') && !updated.is_empty() {
+                updated.push('\n');
+            }
+            updated.push_str("# Compiler-owned runtime lock/state (do not hand-edit)\n");
+            updated.push_str(SILC_META_ENTRY);
+            updated.push('\n');
+            changed = true;
+        }
+        if changed {
+            fs::write(path, updated)
+                .map_err(|e| format!("failed to update {}: {e}", path.display()))?;
+        }
     } else {
         let contents = include_str!("../templates/gitignore");
         fs::write(path, contents)
@@ -80,10 +102,11 @@ fn ensure_gitignore(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn gitignore_has_runtime(contents: &str) -> bool {
+fn gitignore_has_line(contents: &str, entry: &str) -> bool {
+    let bare = entry.trim_end_matches('/');
     contents.lines().any(|line| {
         let trimmed = line.trim();
-        trimmed == ".runtime/" || trimmed == ".runtime" || trimmed == "**/.runtime/"
+        trimmed == entry || trimmed == bare || trimmed == format!("**/{entry}")
     })
 }
 
@@ -104,9 +127,13 @@ mod tests {
     // Serialize tests that chdir.
     static CWD_LOCK: Mutex<()> = Mutex::new(());
 
+    fn cwd_guard() -> std::sync::MutexGuard<'static, ()> {
+        CWD_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
     #[test]
     fn init_current_dir_creates_scaffold() {
-        let _guard = CWD_LOCK.lock().unwrap();
+        let _guard = cwd_guard();
         let tmp = tempfile();
         let prev = env::current_dir().unwrap();
         env::set_current_dir(&tmp).unwrap();
@@ -115,14 +142,15 @@ mod tests {
         assert!(tmp.join("main.silc").is_file());
         assert!(tmp.join(".gitignore").is_file());
         let gi = fs::read_to_string(tmp.join(".gitignore")).unwrap();
-        assert!(gitignore_has_runtime(&gi));
+        assert!(gitignore_has_line(&gi, GITIGNORE_ENTRY));
+        assert!(gitignore_has_line(&gi, SILC_META_ENTRY));
         env::set_current_dir(prev).unwrap();
         let _ = fs::remove_dir_all(&tmp);
     }
 
     #[test]
     fn init_path_creates_directory() {
-        let _guard = CWD_LOCK.lock().unwrap();
+        let _guard = cwd_guard();
         let tmp = tempfile();
         let project = tmp.join("myapp");
         run(Some(project.to_str().unwrap())).expect("init path");
@@ -132,7 +160,7 @@ mod tests {
 
     #[test]
     fn init_refuses_overwrite() {
-        let _guard = CWD_LOCK.lock().unwrap();
+        let _guard = cwd_guard();
         let tmp = tempfile();
         let project = tmp.join("exist");
         fs::create_dir_all(&project).unwrap();
@@ -144,7 +172,7 @@ mod tests {
 
     #[test]
     fn init_merges_gitignore() {
-        let _guard = CWD_LOCK.lock().unwrap();
+        let _guard = cwd_guard();
         let tmp = tempfile();
         let project = tmp.join("merge");
         fs::create_dir_all(&project).unwrap();
@@ -152,7 +180,8 @@ mod tests {
         run(Some(project.to_str().unwrap())).expect("init");
         let gi = fs::read_to_string(project.join(".gitignore")).unwrap();
         assert!(gi.contains("node_modules/"));
-        assert!(gitignore_has_runtime(&gi));
+        assert!(gitignore_has_line(&gi, GITIGNORE_ENTRY));
+        assert!(gitignore_has_line(&gi, SILC_META_ENTRY));
         let _ = fs::remove_dir_all(&tmp);
     }
 
