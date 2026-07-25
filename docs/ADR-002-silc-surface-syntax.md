@@ -25,8 +25,10 @@ Silc is its own language with a **Raku-inspired authoring surface**.
 | --- | --- |
 | `subset` / `where`, `class` / `has` | Contract |
 | `class … is service|processor|sink` | Module |
+| `class … is view` + `method render()` | UiView (semantic component tree) |
 | traits, units, colon-pair adverbials | Constraint |
 | `==>` feeds | Pipeline |
+| `ui::component(...)` trees inside views | UiNode catalog |
 | inferred Go / Python / Bun assignment | Target |
 
 `@domain` is not part of the grammar. Routing derives from module kinds, hard

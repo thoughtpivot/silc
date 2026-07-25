@@ -42,7 +42,8 @@ codegen substrates, and supervisor roles all follow the catalogs below.
 5. Replica-friendly CPU-bound work (Silc spawns many Python scorers)
 
 **Typical assignment:** `processor` modules; namespaces `tensor`, `numpy`,
-`pandas`, `text`; `:prefer<CUDA>`.
+`pandas`, `text`, `llm`; `:prefer<CUDA>`. `llm::complete` uses a
+compiler-pinned llama.cpp binding and local GGUF catalog (ADR-005).
 
 ### Go
 

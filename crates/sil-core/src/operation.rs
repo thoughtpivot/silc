@@ -1,14 +1,17 @@
 //! Executable operation registry for Silc v1 runnable programs.
 
+use crate::model_catalog::{validate_model_id, DEFAULT_MODEL_ID};
 use crate::module::{Module, ModuleKind};
 use crate::pipeline::PipelineStep;
 use crate::program::Program;
+use crate::ui::UiView;
 
 /// Operations that Silc can actually lower and run in v1.
 ///
 /// `ui::web` is the canonical web UI op. `html::form` and `http::serve` remain
 /// executable compatibility aliases that lower to the same web profile.
 /// `service::http` is the canonical declarative HTTP API op (Go/Gin substrate).
+/// `llm::complete` is the local Llama completion op (Python / llama.cpp).
 pub const EXECUTABLE_OPS: &[(&str, &str)] = &[
     ("ui", "web"),
     ("ui", "terminal"),
@@ -16,13 +19,14 @@ pub const EXECUTABLE_OPS: &[(&str, &str)] = &[
     ("http", "serve"),
     ("service", "http"),
     ("text", "score"),
+    ("llm", "complete"),
     ("ipc", "publish"),
     ("store", "sqlite"),
     ("store", "commit"),
 ];
 
 const SUPPORTED_OPS_HELP: &str =
-    "service::http, or ui::web (or html::form + http::serve) with optional ui::terminal, text::score, ipc::publish, store::sqlite, store::commit";
+    "service::http, or ui::web (or html::form + http::serve) with optional ui::terminal, plus either text::score or llm::complete, with ipc::publish, store::sqlite, store::commit";
 
 /// Default TCP port for `ui::terminal` (telnet-friendly; mnemonic for historic 23).
 pub const DEFAULT_TERMINAL_PORT: u16 = 18023;
@@ -66,6 +70,27 @@ impl UiSurface {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PortalKind {
+    Feedback,
+    LlmChat,
+    None,
+}
+
+impl PortalKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PortalKind::Feedback => "feedback",
+            PortalKind::LlmChat => "llm_chat",
+            PortalKind::None => "none",
+        }
+    }
+
+    pub fn needs_llm(self) -> bool {
+        self == PortalKind::LlmChat
+    }
+}
+
 /// One declarative HTTP API route bound to a Contract (`service::http`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApiRoute {
@@ -78,6 +103,7 @@ pub struct ApiRoute {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutableGraph {
     pub mode: ExecutionMode,
+    pub portal_kind: PortalKind,
     pub service: String,
     /// Empty for API-only programs (no processor module).
     pub processor: String,
@@ -92,6 +118,12 @@ pub struct ExecutableGraph {
     pub terminal_port: Option<u16>,
     /// Declarative Go/Gin HTTP API routes (`service::http`).
     pub api_routes: Vec<ApiRoute>,
+    /// Catalog model id for `PortalKind::LlmChat`.
+    pub model_ref: Option<String>,
+    /// Optional author-declared view referenced by `ui::web(:view(...))`.
+    pub ui_view: Option<UiView>,
+    /// Contract bound to the left of `ui::web` (used for `:field` validation).
+    pub ui_contract: Option<String>,
 }
 
 impl ExecutableGraph {
@@ -126,6 +158,7 @@ fn is_known_namespace(ns: &str) -> bool {
             | "html"
             | "service"
             | "text"
+            | "llm"
             | "ipc"
             | "store"
             | "tensor"
@@ -141,8 +174,40 @@ fn is_known_namespace(ns: &str) -> bool {
 fn is_v1_exec_namespace(ns: &str) -> bool {
     matches!(
         ns,
-        "ui" | "http" | "html" | "service" | "text" | "ipc" | "store"
+        "ui" | "http" | "html" | "service" | "text" | "llm" | "ipc" | "store"
     )
+}
+
+fn normalize_model_token(raw: &str) -> String {
+    raw.trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .trim_start_matches("$.")
+        .to_string()
+}
+
+fn resolve_model_ref(
+    processors: &[&Module],
+    model_from_op: Option<String>,
+) -> Result<String, String> {
+    let field_default = || {
+        processors.iter().find_map(|module| {
+            module
+                .fields
+                .iter()
+                .find(|field| field.name == "model_ref")
+                .and_then(|field| field.default.as_deref())
+                .map(normalize_model_token)
+        })
+    };
+    let id = match model_from_op {
+        Some(raw) if raw.contains("model_ref") => field_default(),
+        Some(raw) => Some(normalize_model_token(&raw)),
+        None => field_default(),
+    }
+    .unwrap_or_else(|| DEFAULT_MODEL_ID.to_string());
+    validate_model_id(&id)?;
+    Ok(id)
 }
 
 pub fn classify_program(program: &Program) -> Result<ExecutionMode, String> {
@@ -226,11 +291,15 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
             let mut saw_form = false;
             let mut saw_serve = false;
             let mut saw_score = false;
+            let mut saw_llm_complete = false;
+            let mut model_from_op: Option<String> = None;
             let mut saw_publish = false;
             let mut saw_sqlite = false;
             let mut saw_commit = false;
             let mut sqlite_table = String::from("feedback");
             let mut api_routes: Vec<ApiRoute> = Vec::new();
+            let mut view_name: Option<String> = None;
+            let mut ui_contract: Option<String> = None;
             let contract_names: Vec<&str> =
                 program.contracts.iter().map(|c| c.name.as_str()).collect();
 
@@ -240,7 +309,7 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
                     for step in &method.pipeline.steps {
                         match step {
                             PipelineStep::Name(name) => {
-                                if contract_names.iter().any(|c| *c == name.as_str()) {
+                                if contract_names.contains(&name.as_str()) {
                                     last_contract = Some(name.clone());
                                 }
                             }
@@ -248,85 +317,101 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
                                 namespace: Some(ns),
                                 name,
                                 args,
-                            } => {
-                                match (ns.as_str(), name.as_str()) {
-                                    ("ui", "web") => {
-                                        saw_ui_web = true;
-                                        if let Some(port) = args.iter().find(|a| a.name == "port") {
-                                            http_port = port.value.parse().map_err(|_| {
-                                                format!("invalid :port({})", port.value)
-                                            })?;
-                                        }
-                                        if let Some(route) = args.iter().find(|a| a.name == "route")
-                                        {
-                                            http_route = normalize_route(&route.value);
-                                        }
-                                    }
-                                    ("ui", "terminal") => {
-                                        saw_terminal = true;
-                                        let mut port = DEFAULT_TERMINAL_PORT;
-                                        if let Some(p) = args.iter().find(|a| a.name == "port") {
-                                            port = p.value.parse().map_err(|_| {
-                                                format!("invalid :port({})", p.value)
-                                            })?;
-                                        }
-                                        terminal_port = Some(port);
-                                    }
-                                    ("html", "form") => saw_form = true,
-                                    ("http", "serve") => {
-                                        saw_serve = true;
-                                        if let Some(port) = args.iter().find(|a| a.name == "port") {
-                                            http_port = port.value.parse().map_err(|_| {
-                                                format!("invalid :port({})", port.value)
-                                            })?;
-                                        }
-                                        if let Some(route) = args.iter().find(|a| a.name == "route")
-                                        {
-                                            http_route = normalize_route(&route.value);
-                                        }
-                                    }
-                                    ("service", "http") => {
-                                        let contract = last_contract.clone().ok_or_else(|| {
-                                            "service::http requires a Contract on the left of `==>`"
-                                                .to_string()
+                            } => match (ns.as_str(), name.as_str()) {
+                                ("ui", "web") => {
+                                    saw_ui_web = true;
+                                    if let Some(port) = args.iter().find(|a| a.name == "port") {
+                                        http_port = port.value.parse().map_err(|_| {
+                                            format!("invalid :port({})", port.value)
                                         })?;
-                                        let mut port = DEFAULT_API_PORT;
-                                        if let Some(p) = args.iter().find(|a| a.name == "port") {
-                                            port = p.value.parse().map_err(|_| {
-                                                format!("invalid :port({})", p.value)
-                                            })?;
-                                        }
-                                        let path = args
-                                            .iter()
-                                            .find(|a| a.name == "route")
-                                            .map(|a| normalize_route(&a.value))
-                                            .unwrap_or_else(|| "/".into());
-                                        let method = args
-                                            .iter()
-                                            .find(|a| a.name == "method")
-                                            .map(|a| normalize_http_method(&a.value))
-                                            .transpose()?
-                                            .unwrap_or_else(|| "GET".into());
-                                        api_routes.push(ApiRoute {
-                                            port,
-                                            path,
-                                            method,
-                                            contract,
-                                        });
                                     }
-                                    ("text", "score") => saw_score = true,
-                                    ("ipc", "publish") => saw_publish = true,
-                                    ("store", "sqlite") => {
-                                        saw_sqlite = true;
-                                        if let Some(table) = args.iter().find(|a| a.name == "table")
-                                        {
-                                            sqlite_table = table.value.clone();
-                                        }
+                                    if let Some(route) = args.iter().find(|a| a.name == "route") {
+                                        http_route = normalize_route(&route.value);
                                     }
-                                    ("store", "commit") => saw_commit = true,
-                                    _ => {}
+                                    if let Some(view) = args.iter().find(|a| a.name == "view") {
+                                        let name = normalize_ident(&view.value);
+                                        if name.is_empty() {
+                                            return Err(
+                                                "ui::web :view() must name a view class".into()
+                                            );
+                                        }
+                                        view_name = Some(name);
+                                    }
+                                    if ui_contract.is_none() {
+                                        ui_contract = last_contract.clone();
+                                    }
                                 }
-                            }
+                                ("ui", "terminal") => {
+                                    saw_terminal = true;
+                                    let mut port = DEFAULT_TERMINAL_PORT;
+                                    if let Some(p) = args.iter().find(|a| a.name == "port") {
+                                        port = p
+                                            .value
+                                            .parse()
+                                            .map_err(|_| format!("invalid :port({})", p.value))?;
+                                    }
+                                    terminal_port = Some(port);
+                                }
+                                ("html", "form") => saw_form = true,
+                                ("http", "serve") => {
+                                    saw_serve = true;
+                                    if let Some(port) = args.iter().find(|a| a.name == "port") {
+                                        http_port = port.value.parse().map_err(|_| {
+                                            format!("invalid :port({})", port.value)
+                                        })?;
+                                    }
+                                    if let Some(route) = args.iter().find(|a| a.name == "route") {
+                                        http_route = normalize_route(&route.value);
+                                    }
+                                }
+                                ("service", "http") => {
+                                    let contract = last_contract.clone().ok_or_else(|| {
+                                        "service::http requires a Contract on the left of `==>`"
+                                            .to_string()
+                                    })?;
+                                    let mut port = DEFAULT_API_PORT;
+                                    if let Some(p) = args.iter().find(|a| a.name == "port") {
+                                        port = p
+                                            .value
+                                            .parse()
+                                            .map_err(|_| format!("invalid :port({})", p.value))?;
+                                    }
+                                    let path = args
+                                        .iter()
+                                        .find(|a| a.name == "route")
+                                        .map(|a| normalize_route(&a.value))
+                                        .unwrap_or_else(|| "/".into());
+                                    let method = args
+                                        .iter()
+                                        .find(|a| a.name == "method")
+                                        .map(|a| normalize_http_method(&a.value))
+                                        .transpose()?
+                                        .unwrap_or_else(|| "GET".into());
+                                    api_routes.push(ApiRoute {
+                                        port,
+                                        path,
+                                        method,
+                                        contract,
+                                    });
+                                }
+                                ("text", "score") => saw_score = true,
+                                ("llm", "complete") => {
+                                    saw_llm_complete = true;
+                                    if let Some(model) = args.iter().find(|arg| arg.name == "model")
+                                    {
+                                        model_from_op = Some(model.value.clone());
+                                    }
+                                }
+                                ("ipc", "publish") => saw_publish = true,
+                                ("store", "sqlite") => {
+                                    saw_sqlite = true;
+                                    if let Some(table) = args.iter().find(|a| a.name == "table") {
+                                        sqlite_table = table.value.clone();
+                                    }
+                                }
+                                ("store", "commit") => saw_commit = true,
+                                _ => {}
+                            },
                             _ => {}
                         }
                     }
@@ -362,10 +447,7 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
                             route.method
                         ));
                     }
-                    if !contract_names
-                        .iter()
-                        .any(|c| *c == route.contract.as_str())
-                    {
+                    if !contract_names.contains(&route.contract.as_str()) {
                         return Err(format!(
                             "service::http references unknown Contract `{}`",
                             route.contract
@@ -374,6 +456,8 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
                 }
             }
 
+            let mut portal_kind = PortalKind::None;
+            let mut model_ref = None;
             let ui_surface = if has_ui {
                 if processors.len() != 1 || sinks.len() != 1 {
                     return Err(
@@ -392,9 +476,33 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
                 } else {
                     UiSurface::LegacyHtmlHttp
                 };
-                if !(saw_score && saw_publish && saw_sqlite && saw_commit) {
+                if saw_score && saw_llm_complete {
+                    return Err(
+                        "cannot mix `text::score` and `llm::complete` in one runnable program"
+                            .into(),
+                    );
+                }
+                if saw_llm_complete {
+                    if !(saw_publish && saw_sqlite && saw_commit) {
+                        return Err(format!(
+                            "runnable LLM chat portal requires {SUPPORTED_OPS_HELP}"
+                        ));
+                    }
+                    portal_kind = PortalKind::LlmChat;
+                    model_ref = Some(resolve_model_ref(&processors, model_from_op)?);
+                    if sqlite_table == "feedback" {
+                        sqlite_table = "chat_turns".into();
+                    }
+                } else if saw_score {
+                    if !(saw_publish && saw_sqlite && saw_commit) {
+                        return Err(format!(
+                            "runnable feedback portal requires {SUPPORTED_OPS_HELP}"
+                        ));
+                    }
+                    portal_kind = PortalKind::Feedback;
+                } else {
                     return Err(format!(
-                        "runnable feedback portal requires {SUPPORTED_OPS_HELP}"
+                        "runnable UI portal requires text::score or llm::complete ({SUPPORTED_OPS_HELP})"
                     ));
                 }
                 if let Some(tp) = terminal_port {
@@ -434,13 +542,40 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
                             .into(),
                     );
                 }
+                if view_name.is_some() {
+                    return Err(
+                        "ui::web(:view(...)) requires a runnable UI portal (service + processor + sink)"
+                            .into(),
+                    );
+                }
                 None
             };
 
-            let api_http_port = api_routes.first().map(|r| r.port).unwrap_or(DEFAULT_API_PORT);
+            let ui_view = if let Some(name) = &view_name {
+                let view = program
+                    .views
+                    .iter()
+                    .find(|view| view.name == *name)
+                    .cloned()
+                    .ok_or_else(|| format!("ui::web references unknown view `{name}`"))?;
+                if ui_contract.is_none() {
+                    return Err(
+                        "ui::web(:view(...)) requires a Contract on the left of `==>`".into(),
+                    );
+                }
+                Some(view)
+            } else {
+                None
+            };
+
+            let api_http_port = api_routes
+                .first()
+                .map(|r| r.port)
+                .unwrap_or(DEFAULT_API_PORT);
 
             Ok(Some(ExecutableGraph {
                 mode: ExecutionMode::Runnable,
+                portal_kind,
                 service: services[0].name.clone(),
                 processor: processors
                     .first()
@@ -453,6 +588,9 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
                 ui_surface,
                 terminal_port,
                 api_routes,
+                model_ref,
+                ui_view,
+                ui_contract,
             }))
         }
     }
@@ -469,8 +607,20 @@ fn normalize_route(raw: &str) -> String {
     }
 }
 
+fn normalize_ident(raw: &str) -> String {
+    raw.trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .trim_start_matches("$.")
+        .to_string()
+}
+
 fn normalize_http_method(raw: &str) -> Result<String, String> {
-    let trimmed = raw.trim().trim_matches('"').trim_matches('\'').to_ascii_uppercase();
+    let trimmed = raw
+        .trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .to_ascii_uppercase();
     if trimmed.is_empty() {
         return Err("service::http :method() must not be empty".into());
     }
@@ -626,6 +776,7 @@ mod tests {
             subsets: vec![],
             contracts,
             modules,
+            views: vec![],
         }
     }
 
@@ -649,6 +800,7 @@ mod tests {
             subsets: vec![],
             contracts,
             modules,
+            views: vec![],
         }
     }
 
@@ -660,6 +812,7 @@ mod tests {
         assert_eq!(graph.http_port, 18080);
         assert_eq!(graph.sqlite_table, "feedback");
         assert_eq!(graph.ui_surface, Some(UiSurface::LegacyHtmlHttp));
+        assert_eq!(graph.portal_kind, PortalKind::Feedback);
         assert!(graph.api_routes.is_empty());
     }
 
@@ -672,7 +825,43 @@ mod tests {
         assert_eq!(graph.http_route, "/");
         assert_eq!(graph.ui_surface, Some(UiSurface::Web));
         assert_eq!(graph.ui_surface.unwrap().substrate(), "react");
+        assert_eq!(graph.portal_kind, PortalKind::Feedback);
         assert!(!graph.has_api());
+    }
+
+    #[test]
+    fn classifies_runnable_llm_chat_and_validates_model() {
+        let mut program = feedback_like_ui_web();
+        program.modules[1].fields.push(Field {
+            name: "model_ref".into(),
+            ty: TypeExpr::Named("Str".into()),
+            default: Some("\"llama3.2-1b\"".into()),
+        });
+        program.modules[1].methods[0].pipeline.steps = vec![PipelineStep::Call {
+            namespace: Some("llm".into()),
+            name: "complete".into(),
+            args: vec![TraitArg {
+                name: "model".into(),
+                value: "$.model_ref".into(),
+            }],
+        }];
+        let graph = infer_graph(&program).unwrap().unwrap();
+        assert_eq!(graph.portal_kind, PortalKind::LlmChat);
+        assert_eq!(graph.model_ref.as_deref(), Some("llama3.2-1b"));
+    }
+
+    #[test]
+    fn rejects_unknown_llm_model() {
+        let mut program = feedback_like_ui_web();
+        program.modules[1].methods[0].pipeline.steps = vec![PipelineStep::Call {
+            namespace: Some("llm".into()),
+            name: "complete".into(),
+            args: vec![TraitArg {
+                name: "model".into(),
+                value: "not-a-model".into(),
+            }],
+        }];
+        assert!(infer_graph(&program).unwrap_err().contains("unknown model"));
     }
 
     #[test]
@@ -699,11 +888,10 @@ mod tests {
                 }],
                 span: Span::default(),
             }],
+            views: vec![],
         };
         assert_eq!(classify_program(&program).unwrap(), ExecutionMode::Runnable);
-        assert!(infer_graph(&program)
-            .unwrap_err()
-            .contains("ui::web"));
+        assert!(infer_graph(&program).unwrap_err().contains("ui::web"));
     }
 
     #[test]
@@ -731,6 +919,7 @@ mod tests {
             subsets: vec![],
             contracts,
             modules,
+            views: vec![],
         };
         assert_eq!(classify_program(&program).unwrap(), ExecutionMode::Runnable);
         let graph = infer_graph(&program).unwrap().unwrap();
@@ -815,6 +1004,7 @@ mod tests {
                 ],
                 span: Span::default(),
             }],
+            views: vec![],
         };
         assert_eq!(classify_program(&program).unwrap(), ExecutionMode::Runnable);
         let graph = infer_graph(&program).unwrap().unwrap();

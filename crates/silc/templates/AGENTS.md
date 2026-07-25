@@ -22,6 +22,7 @@ UI bundles, and logs — not copies of Bun/CPython/Go.
 - Architecture: https://github.com/thoughtpivot/silc/blob/main/docs/ARCHITECTURE.md
 - Runtime / IPC: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-001-runtime-and-ipc.md
 - IPC ABI v1: https://github.com/thoughtpivot/silc/blob/main/docs/SILC-IPC-ABI-v1.md
+- Local LLM completions: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-005-local-llm-complete.md
 - Examples: https://github.com/thoughtpivot/silc/tree/main/examples
 
 ## Workflow
@@ -37,10 +38,33 @@ silc build main.silc   # compile only
 
 Express UI intent in Silc only:
 
-- `ui::web(:port, :route)` — runnable browser UI (compiler lowers to React +
-  Tailwind + ShadCN primitives on Bun)
-- `ui::terminal(:port)` — runnable loopback TCP/telnet UI on Bun; OpenTUI remains
-  the future rich local-terminal substrate
+- `ui::web(:port, :route)` — browser UI using a compiler profile template
+- `ui::web(:view(Name), :port, :route)` — browser UI lowered from a named view
+- `class Name is view { method render() { … } }` — semantic component tree
+- `ui::terminal(:port)` — loopback TCP/telnet UI on Bun
+
+### View catalog (use only these)
+
+`ui::page`, `ui::app_bar`, `ui::side_panel`, `ui::nav_item`, `ui::toolbar`,
+`ui::stack`, `ui::row`, `ui::grid`, `ui::card`, `ui::heading`, `ui::text`,
+`ui::form`, `ui::text_input`, `ui::textarea`, `ui::radio_group`, `ui::button`,
+`ui::chat`, `ui::chat_history`
+
+`ui::chat(:field(prompt), :label, :placeholder)` renders a conversation thread
+plus its send button. `ui::chat_history(:title, :collapsible)` renders persisted
+SQLite turns and can collapse to a narrow rail. Both require an `llm::complete`
+portal.
+
+Props are semantic (`:title`, `:label`, `:field`, `:options([...])`,
+`:variant(primary|secondary|destructive)`, `:size(sm|md|lg)`, `:submit`,
+`:active`, `:collapsible`). Slots use nested components
+(`:app_bar(ui::app_bar(...))`).
+
+`:field(name)` must match a Contract field feeding `ui::web`. Every form view
+needs a `ui::button` with `:submit`.
+
+If a requested widget is not in the catalog (charts, dialogs, data tables, …),
+**stop and report a Silc compiler limitation** — do not invent React/ShadCN/HTML.
 
 Never emit HTML, CSS, React components, Tailwind configs, ShadCN CLI trees,
 OpenTUI trees, Vite config, or `package.json`. React, Tailwind, ShadCN
@@ -65,21 +89,27 @@ FeedbackRecord
 Never emit Go, Gin routers, or `go.mod`. Those are compiler-owned under
 `.runtime/`. UI stays on Bun; backend APIs use Go/Gin.
 
-One `.silc` file can declare a full app (Contract + service + processor + sink).
-Polyglot workers under `.runtime/` are compiler output, not an authoring model.
+One `.silc` file can declare a full app (Contract + optional view + service +
+processor + sink). Polyglot workers under `.runtime/` are compiler output, not
+an authoring model.
 
 ## Runnable v1 operations
 
 Executable today:
 
 - `service::http` — API-only (Go/Gin; no processor/sink required)
-- Feedback-portal shape: `ui::web` (or `html::form` + `http::serve`), optional
-  `ui::terminal(:port)`, `text::score`, `ipc::publish`, `store::sqlite`,
-  `store::commit`
+- UI portal: `ui::web` (optional `:view(Name)` or `html::form` + `http::serve`),
+  optional `ui::terminal(:port)`, either `text::score` or `llm::complete`, then
+  `ipc::publish`, `store::sqlite`, `store::commit`
+
+For `llm::complete`, name only a Silc catalog id such as `llama3.2-1b`.
+Never add Ollama, model paths, pip packages, or Python inference code to Silc
+source; the compiler owns those under `~/.silc/models/` and `.runtime/`.
 
 Other namespaces still parse/route/stub-emit but do not execute yet.
 
 ## Supported surface (not full Raku)
 
 Raku-inspired subset only. See ADR-002. Do not use full Raku, `.sil`, or
-`@domain`. Typical shape: one contract + `service` → `processor` → `sink`.
+`@domain`. Typical shape: one contract + optional view + `service` →
+`processor` → `sink`.

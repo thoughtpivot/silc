@@ -148,6 +148,10 @@ pub enum ControlFrame {
         #[serde(default)]
         summary: Option<String>,
         #[serde(default)]
+        reply: Option<String>,
+        #[serde(default)]
+        model: Option<String>,
+        #[serde(default)]
         error: Option<String>,
     },
 }

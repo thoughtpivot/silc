@@ -1,4 +1,5 @@
 mod init;
+mod models;
 mod runtimes;
 mod supervisor;
 
@@ -71,7 +72,7 @@ fn compile_and_maybe_run(entry: &Path) -> Result<(), String> {
             println!();
             println!("stub emit complete — worker execution requires runnable v1 operations");
             println!(
-                "(service::http, or ui::web / html::form+http::serve with optional ui::terminal, text::score, ipc::publish, store::sqlite, store::commit)"
+                "(service::http, or ui::web / html::form+http::serve with text::score or llm::complete, ipc::publish, store::sqlite, store::commit)"
             );
             Ok(())
         }
@@ -141,6 +142,14 @@ fn compile_common(
         if graph.has_ui() {
             supervisor::build_ui_web(&lock, &output.root)?;
             supervisor::build_go_worker(&lock, &output.root)?;
+            if graph.portal_kind.needs_llm() {
+                let model_id = graph
+                    .model_ref
+                    .as_deref()
+                    .ok_or_else(|| "llm chat graph missing model_ref".to_string())?;
+                models::ensure_model(model_id)?;
+                supervisor::build_llm_python(&lock, &output.root)?;
+            }
         }
         if graph.has_api() {
             supervisor::build_go_api_worker(&lock, &output.root)?;

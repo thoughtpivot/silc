@@ -1,0 +1,37 @@
+#!/usr/bin/env silc
+# Runnable Silc v1: React/Bun → mmap/UDS → local Llama → Go SQLite.
+@version("1.0")
+
+subset NonEmpty of Str where { .chars > 0 }
+
+class ChatTurn {
+    has UUID $.id;
+    has NonEmpty $.prompt;
+    has Str $.reply;
+    has Str $.model;
+}
+
+class ChatPortal is service {
+    method listen(:$port = 18090) {
+        ChatTurn
+            ==> ui::web(:port(18090), :route("/"))
+    }
+}
+
+class LocalLlm is processor {
+    has Str $.model_ref = "llama3.2-1b";
+
+    method complete(ChatTurn $turn) {
+        $turn.prompt
+            ==> llm::complete(:model($.model_ref))
+    }
+}
+
+class ChatLog is sink is storage(SQLite) {
+    method persist(ChatTurn $turn) {
+        $turn
+            ==> ipc::publish()
+            ==> store::sqlite(:table(chat_turns))
+            ==> store::commit()
+    }
+}

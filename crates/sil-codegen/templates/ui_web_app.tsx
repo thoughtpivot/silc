@@ -44,6 +44,7 @@ export function App() {
   }
 
   return (
+    <div className="silc-centered-shell">
     <div className="w-full max-w-xl rounded-xl border border-border bg-card/95 p-7 text-card-foreground shadow-2xl shadow-black/35">
       <ThoughtPivotLogo className="mb-7 h-6 w-auto text-foreground" />
       <p className="mb-1 text-xs font-bold uppercase tracking-widest text-[var(--silc-accent)]">
@@ -99,6 +100,7 @@ export function App() {
           {result}
         </pre>
       ) : null}
+    </div>
     </div>
   );
 }

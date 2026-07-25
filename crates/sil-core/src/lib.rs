@@ -6,24 +6,34 @@
 
 pub mod constraint;
 pub mod contract;
+pub mod model_catalog;
 pub mod module;
 pub mod operation;
 pub mod pipeline;
 pub mod program;
 pub mod target;
 pub mod types;
+pub mod ui;
 
 pub use constraint::TraitArg;
 pub use contract::{Contract, Field, Subset};
+pub use model_catalog::{
+    is_known_model_id, lookup_model, validate_model_id, ModelCatalogEntry, DEFAULT_MODEL_ID,
+    MODEL_CATALOG,
+};
 pub use module::{Method, Module, ModuleKind, Param};
 pub use operation::{
     classify_program, infer_graph, is_executable_op, ApiRoute, ExecutableGraph, ExecutionMode,
-    UiSurface,
+    PortalKind, UiSurface,
 };
 pub use pipeline::{Pipeline, PipelineStep};
 pub use program::Program;
 pub use target::Target;
 pub use types::{Span, TypeExpr};
+pub use ui::{
+    catalog_component_names, lookup_component, validate_view, ComponentSpec, PropKind, PropSpec,
+    UiNode, UiValue, UiView, UI_COMPONENT_CATALOG,
+};
 
 #[cfg(test)]
 mod tests {
@@ -187,6 +197,7 @@ mod tests {
                     span: Span::default(),
                 },
             ],
+            views: vec![],
         }
     }
 }

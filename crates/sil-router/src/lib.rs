@@ -57,11 +57,16 @@ pub fn route_module(module: &Module) -> RouteDecision {
             },
         )
     } else if module.kind == ModuleKind::Processor
-        && (has(&["tensor", "numpy", "pandas", "text"]) || cuda)
+        && (has(&["tensor", "numpy", "pandas", "text", "llm"]) || cuda)
     {
         (
             Target::Python,
-            "tier1: processor+data/ML/text → Python (scientific/ML and text scoring)".to_string(),
+            if has(&["llm"]) {
+                "tier1: processor+llm → Python (local LLM / llama.cpp)".to_string()
+            } else {
+                "tier1: processor+data/ML/text → Python (scientific/ML and text scoring)"
+                    .to_string()
+            },
         )
     } else if module.kind == ModuleKind::Service && has(&["service"]) && !has(&["ui", "html"]) {
         (
@@ -89,11 +94,11 @@ pub fn route_module(module: &Module) -> RouteDecision {
                 namespaces.join(", ")
             ),
         )
-    } else if has(&["tensor", "numpy", "pandas", "text"]) {
+    } else if has(&["tensor", "numpy", "pandas", "text", "llm"]) {
         (
             Target::Python,
             format!(
-                "tier2: namespaces [{}] → Python (scientific/ML and text)",
+                "tier2: namespaces [{}] → Python (scientific/ML/text/llm)",
                 namespaces.join(", ")
             ),
         )
@@ -171,6 +176,7 @@ mod tests {
                 }],
                 span: Span::default(),
             }],
+            views: vec![],
         };
         let decisions = route_program(&program);
         assert_eq!(decisions.len(), 1);
@@ -201,6 +207,17 @@ class FeedbackDb is sink is latency(5ms) is storage(SQLite) {
         let decisions = route_program(&program);
         assert_eq!(decisions[0].target, Target::Bun);
         assert_eq!(decisions[1].target, Target::Python);
+        assert_eq!(decisions[2].target, Target::Go);
+    }
+
+    #[test]
+    fn routes_llm_processor_to_python() {
+        let source = include_str!("../../../examples/llm_portal.silc");
+        let program = sil_parser::parse(source).expect("parse llm portal");
+        let decisions = route_program(&program);
+        assert_eq!(decisions[0].target, Target::Bun);
+        assert_eq!(decisions[1].target, Target::Python);
+        assert!(decisions[1].provenance.contains("llm"));
         assert_eq!(decisions[2].target, Target::Go);
     }
 

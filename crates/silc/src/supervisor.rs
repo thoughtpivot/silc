@@ -1,7 +1,8 @@
-//! Compile-and-run supervisor for runnable Silc feedback programs.
+//! Compile-and-run supervisor for runnable Silc UI portal programs.
 
 use crate::runtimes::RuntimeLock;
 use sil_codegen::EmitResult;
+use sil_core::PortalKind;
 use sil_ipc::{
     read_frame, write_frame, ControlFrame, SlotPool, DEFAULT_PAYLOAD_CAPACITY, DEFAULT_SLOT_COUNT,
     HEADER_SIZE,
@@ -218,6 +219,38 @@ pub fn build_ui_web(lock: &RuntimeLock, runtime_root: &Path) -> Result<(), Strin
     Ok(())
 }
 
+pub fn build_llm_python(lock: &RuntimeLock, runtime_root: &Path) -> Result<PathBuf, String> {
+    let python_dir = runtime_root.join("python");
+    let requirements = python_dir.join("requirements.txt");
+    if !requirements.is_file() {
+        return Err("missing compiler-generated python/requirements.txt for llm::complete".into());
+    }
+    let python = python_dir.join(".venv/bin/python");
+    if !python.is_file() {
+        let output = Command::new(&lock.python_bin)
+            .args(["-m", "venv"])
+            .arg(python_dir.join(".venv"))
+            .output()
+            .map_err(|e| format!("failed to create llm::complete Python environment: {e}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "Silc Python environment creation failed:\n{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+    }
+    let status = Command::new(&python)
+        .args(["-m", "pip", "install", "--disable-pip-version-check", "-r"])
+        .arg(&requirements)
+        .status()
+        .map_err(|e| format!("failed to install llm::complete Python dependency: {e}"))?;
+    if !status.success() {
+        return Err("Silc install of compiler-pinned llama-cpp-python failed".into());
+    }
+    Ok(python)
+}
+
 /// Run an API-only `service::http` program (Go/Gin, no Bun UI).
 pub fn run_api(output: &EmitResult, _lock: &RuntimeLock) -> Result<(), String> {
     let graph = output
@@ -311,7 +344,9 @@ pub fn run_feedback(output: &EmitResult, lock: &RuntimeLock) -> Result<(), Strin
             "http_port": graph.http_port,
             "terminal_port": graph.terminal_port,
             "ipc_dir": ipc_dir,
-            "db": data_dir.join("feedback.db"),
+            "db": data_dir.join(if graph.portal_kind.needs_llm() { "chat.db" } else { "feedback.db" }),
+            "portal_kind": graph.portal_kind.as_str(),
+            "model_ref": graph.model_ref,
         }))
         .unwrap(),
     )
@@ -332,13 +367,35 @@ pub fn run_feedback(output: &EmitResult, lock: &RuntimeLock) -> Result<(), Strin
         let pending = Arc::clone(&pending);
         let pool = Arc::clone(&pool);
         let stop = Arc::clone(&stop);
+        let portal_kind = graph.portal_kind;
+        let model_id = graph.model_ref.clone();
         let listener = listener.try_clone().map_err(|e| e.to_string())?;
-        thread::spawn(move || accept_loop(listener, workers, pending, pool, stop))
+        thread::spawn(move || {
+            accept_loop(
+                listener,
+                workers,
+                pending,
+                pool,
+                stop,
+                portal_kind,
+                model_id,
+            )
+        })
     };
 
-    // Python scales with CPU; one Go writer avoids SQLITE_BUSY storms.
-    const PYTHON_REPLICAS: usize = 16;
+    // LLM weights load once; deterministic feedback scoring can scale with CPU.
+    let python_replicas = if graph.portal_kind.needs_llm() { 1 } else { 16 };
     const GO_REPLICAS: usize = 1;
+    let model_path = if graph.portal_kind.needs_llm() {
+        Some(crate::models::ensure_model(
+            graph
+                .model_ref
+                .as_deref()
+                .ok_or_else(|| "llm chat graph missing model_ref".to_string())?,
+        )?)
+    } else {
+        None
+    };
     let mut children = spawn_workers(
         output,
         lock,
@@ -346,10 +403,20 @@ pub fn run_feedback(output: &EmitResult, lock: &RuntimeLock) -> Result<(), Strin
         &ipc_dir,
         &data_dir,
         graph,
-        PYTHON_REPLICAS,
+        python_replicas,
         GO_REPLICAS,
+        model_path.as_deref(),
     )?;
-    wait_for_pool(&workers, "python", PYTHON_REPLICAS, Duration::from_secs(90))?;
+    wait_for_pool(
+        &workers,
+        "python",
+        python_replicas,
+        if graph.portal_kind.needs_llm() {
+            Duration::from_secs(300)
+        } else {
+            Duration::from_secs(90)
+        },
+    )?;
     wait_for_pool(&workers, "go", GO_REPLICAS, Duration::from_secs(90))?;
 
     if graph.has_api() {
@@ -371,6 +438,15 @@ pub fn run_feedback(output: &EmitResult, lock: &RuntimeLock) -> Result<(), Strin
     let bun_child = Command::new(&lock.bun_bin)
         .arg(output.root.join("typescript/worker.ts"))
         .env("SILC_SOCKET", &socket_path)
+        .env(
+            "SILC_DB_PATH",
+            data_dir.join(if graph.portal_kind.needs_llm() {
+                "chat.db"
+            } else {
+                "feedback.db"
+            }),
+        )
+        .env("SILC_SQLITE_TABLE", &graph.sqlite_table)
         .env("SILC_HTTP_PORT", graph.http_port.to_string())
         .env("SILC_HTTP_ROUTE", &graph.http_route)
         .env(
@@ -480,6 +556,8 @@ fn accept_loop(
     pending: Arc<Mutex<HashMap<String, Pending>>>,
     pool: Arc<Mutex<SlotPool>>,
     stop: Arc<AtomicBool>,
+    portal_kind: PortalKind,
+    model_id: Option<String>,
 ) {
     for stream in listener.incoming() {
         if stop.load(Ordering::SeqCst) {
@@ -489,8 +567,9 @@ fn accept_loop(
         let workers = Arc::clone(&workers);
         let pending = Arc::clone(&pending);
         let pool = Arc::clone(&pool);
+        let model_id = model_id.clone();
         thread::spawn(move || {
-            if let Err(err) = handle_client(stream, workers, pending, pool) {
+            if let Err(err) = handle_client(stream, workers, pending, pool, portal_kind, model_id) {
                 eprintln!("silc supervisor: {err}");
             }
         });
@@ -502,6 +581,8 @@ fn handle_client(
     workers: Arc<Mutex<HashMap<String, WorkerPool>>>,
     pending: Arc<Mutex<HashMap<String, Pending>>>,
     pool: Arc<Mutex<SlotPool>>,
+    portal_kind: PortalKind,
+    model_id: Option<String>,
 ) -> Result<(), String> {
     let reader_stream = stream.try_clone().map_err(|e| e.to_string())?;
     let writer_stream = stream.try_clone().map_err(|e| e.to_string())?;
@@ -544,6 +625,7 @@ fn handle_client(
                 let pending = Arc::clone(&pending);
                 let pool = Arc::clone(&pool);
                 let response_writer = Arc::clone(&writer);
+                let model_id = model_id.clone();
                 thread::spawn(move || {
                     if let Err(err) = start_ingest(
                         workers.as_ref(),
@@ -552,6 +634,8 @@ fn handle_client(
                         request_id.clone(),
                         author,
                         text,
+                        portal_kind,
+                        model_id,
                         Some(response_writer),
                     ) {
                         let _ = fail_pending(pending.as_ref(), &request_id, err);
@@ -565,7 +649,14 @@ fn handle_client(
                 result,
                 ..
             }) => on_ack(
-                &workers, &pending, &pool, request_id, segment_id, seq, result,
+                &workers,
+                &pending,
+                &pool,
+                request_id,
+                segment_id,
+                seq,
+                result,
+                portal_kind,
             )?,
             Ok(ControlFrame::Error {
                 request_id,
@@ -590,16 +681,26 @@ fn start_ingest(
     request_id: String,
     author: String,
     text: String,
+    portal_kind: PortalKind,
+    model_id: Option<String>,
     response_writer: Option<Arc<Mutex<BufWriter<UnixStream>>>>,
 ) -> Result<(), String> {
     let id = Uuid::new_v4().to_string();
-    let record = serde_json::json!({
-        "id": id,
-        "author": author,
-        "text": text,
-        "summary": "",
-        "score": 0.0,
-    });
+    let record = match portal_kind {
+        PortalKind::LlmChat => serde_json::json!({
+            "id": id,
+            "prompt": text,
+            "reply": "",
+            "model": model_id.unwrap_or_else(|| sil_core::DEFAULT_MODEL_ID.to_string()),
+        }),
+        _ => serde_json::json!({
+            "id": id,
+            "author": author,
+            "text": text,
+            "summary": "",
+            "score": 0.0,
+        }),
+    };
     let bytes = serde_json::to_vec(&record).map_err(|e| e.to_string())?;
     let (segment_id, header) = acquire_slot(pool, &bytes)?;
     {
@@ -637,6 +738,7 @@ fn on_ack(
     segment_id: u64,
     seq: u64,
     result: Option<serde_json::Value>,
+    portal_kind: PortalKind,
 ) -> Result<(), String> {
     let mut pending_map = pending.lock().map_err(|_| "pending lock".to_string())?;
     let Some(entry) = pending_map.get_mut(&request_id) else {
@@ -678,6 +780,20 @@ fn on_ack(
                     .and_then(|v| v.get("summary"))
                     .and_then(|v| v.as_str())
                     .map(str::to_string),
+                reply: result
+                    .as_ref()
+                    .and_then(|v| v.get("reply"))
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string),
+                model: if portal_kind.needs_llm() {
+                    result
+                        .as_ref()
+                        .and_then(|v| v.get("model"))
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string)
+                } else {
+                    None
+                },
                 error: None,
             };
             if let Some(writer) = entry.response_writer.clone() {
@@ -711,6 +827,8 @@ fn fail_pending(
                         id: None,
                         score: None,
                         summary: None,
+                        reply: None,
+                        model: None,
                         error: Some(message),
                     },
                 );
@@ -764,16 +882,41 @@ fn spawn_workers(
     graph: &sil_core::ExecutableGraph,
     python_replicas: usize,
     go_replicas: usize,
+    model_path: Option<&Path>,
 ) -> Result<Vec<Child>, String> {
     let mut children = Vec::new();
+    let python_bin = if graph.portal_kind.needs_llm() {
+        let path = output.root.join("python/.venv/bin/python");
+        if !path.is_file() {
+            return Err(format!(
+                "llm::complete Python environment missing at {} (run `silc build`)",
+                path.display()
+            ));
+        }
+        path
+    } else {
+        lock.python_bin.clone()
+    };
     for _ in 0..python_replicas {
+        let mut command = Command::new(&python_bin);
+        command
+            .arg(output.root.join("python/worker.py"))
+            .env("SILC_SOCKET", socket)
+            .env("SILC_IPC_DIR", ipc_dir)
+            .stdout(if graph.portal_kind.needs_llm() {
+                Stdio::inherit()
+            } else {
+                Stdio::null()
+            })
+            .stderr(Stdio::inherit());
+        if let Some(path) = model_path {
+            command.env("SILC_MODEL_PATH", path);
+        }
+        if let Some(id) = graph.model_ref.as_deref() {
+            command.env("SILC_MODEL_ID", id);
+        }
         children.push(
-            Command::new(&lock.python_bin)
-                .arg(output.root.join("python/worker.py"))
-                .env("SILC_SOCKET", socket)
-                .env("SILC_IPC_DIR", ipc_dir)
-                .stdout(Stdio::null())
-                .stderr(Stdio::inherit())
+            command
                 .spawn()
                 .map_err(|e| format!("failed to spawn Silc CPython worker: {e}"))?,
         );
@@ -787,7 +930,14 @@ fn spawn_workers(
             Command::new(&go_bin)
                 .env("SILC_SOCKET", socket)
                 .env("SILC_IPC_DIR", ipc_dir)
-                .env("SILC_DB_PATH", data_dir.join("feedback.db"))
+                .env(
+                    "SILC_DB_PATH",
+                    data_dir.join(if graph.portal_kind.needs_llm() {
+                        "chat.db"
+                    } else {
+                        "feedback.db"
+                    }),
+                )
                 .env("SILC_SQLITE_TABLE", &graph.sqlite_table)
                 .stdout(Stdio::null())
                 .stderr(Stdio::inherit())

@@ -44,6 +44,10 @@
   }
 
   #app {
-    @apply min-h-screen grid place-items-start justify-items-center px-4 py-10;
+    @apply min-h-screen w-full;
+  }
+
+  #app > .silc-centered-shell {
+    @apply grid min-h-screen place-items-start justify-items-center px-4 py-10;
   }
 }

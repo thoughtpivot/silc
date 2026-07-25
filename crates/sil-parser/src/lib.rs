@@ -2,7 +2,7 @@
 
 use sil_core::{
     Contract, Field, Method, Module, ModuleKind, Param, Pipeline, PipelineStep, Program, Span,
-    Subset, TraitArg, TypeExpr,
+    Subset, TraitArg, TypeExpr, UiNode, UiValue, UiView,
 };
 use sil_lexer::{lex, SpannedToken, Token};
 
@@ -28,6 +28,12 @@ pub fn parse(source: &str) -> Result<Program, ParseError> {
         col: 1,
     })?;
     Parser::new(tokens).parse_program()
+}
+
+struct ClassAst {
+    contract: Option<Contract>,
+    module: Option<Module>,
+    view: Option<UiView>,
 }
 
 struct Parser {
@@ -58,12 +64,15 @@ impl Parser {
             match self.peek() {
                 Some(Token::Subset) => program.subsets.push(self.parse_subset()?),
                 Some(Token::Class) => {
-                    let (contract, module) = self.parse_class()?;
-                    if let Some(contract) = contract {
+                    let class = self.parse_class()?;
+                    if let Some(contract) = class.contract {
                         program.contracts.push(contract);
                     }
-                    if let Some(module) = module {
+                    if let Some(module) = class.module {
                         program.modules.push(module);
+                    }
+                    if let Some(view) = class.view {
+                        program.views.push(view);
                     }
                 }
                 _ => {
@@ -100,12 +109,13 @@ impl Parser {
         })
     }
 
-    fn parse_class(&mut self) -> Result<(Option<Contract>, Option<Module>), ParseError> {
+    fn parse_class(&mut self) -> Result<ClassAst, ParseError> {
         let start = self.current_span();
         self.expect_simple(Token::Class, "`class`")?;
         let name = self.expect_ident("class name")?;
         let mut traits = Vec::new();
         let mut kind = ModuleKind::Unknown;
+        let mut is_view = false;
 
         while matches!(self.peek(), Some(Token::Is)) {
             self.advance();
@@ -116,6 +126,13 @@ impl Parser {
             } else {
                 String::new()
             };
+            if trait_name == "view" {
+                if !value.is_empty() {
+                    return Err(self.error_here("`is view` does not take arguments"));
+                }
+                is_view = true;
+                continue;
+            }
             let parsed_kind = ModuleKind::parse(&trait_name);
             if parsed_kind != ModuleKind::Unknown {
                 kind = parsed_kind;
@@ -128,6 +145,35 @@ impl Parser {
         }
 
         self.expect_simple(Token::LBrace, "`{` after class declaration")?;
+
+        if is_view {
+            if kind != ModuleKind::Unknown {
+                return Err(ParseError {
+                    message: format!("view `{name}` cannot also be a service/processor/sink"),
+                    line: start.line,
+                    col: start.col,
+                });
+            }
+            if !traits.is_empty() {
+                return Err(ParseError {
+                    message: format!("view `{name}` does not accept constraint traits"),
+                    line: start.line,
+                    col: start.col,
+                });
+            }
+            let root = self.parse_view_body(&name)?;
+            self.expect_simple(Token::RBrace, "`}` after view class")?;
+            return Ok(ClassAst {
+                contract: None,
+                module: None,
+                view: Some(UiView {
+                    name,
+                    root,
+                    span: start,
+                }),
+            });
+        }
+
         let mut fields = Vec::new();
         let mut methods = Vec::new();
         while !matches!(self.peek(), Some(Token::RBrace)) {
@@ -141,18 +187,19 @@ impl Parser {
         self.advance();
 
         if kind == ModuleKind::Unknown {
-            Ok((
-                Some(Contract {
+            Ok(ClassAst {
+                contract: Some(Contract {
                     name,
                     fields,
                     span: start,
                 }),
-                None,
-            ))
+                module: None,
+                view: None,
+            })
         } else {
-            Ok((
-                None,
-                Some(Module {
+            Ok(ClassAst {
+                contract: None,
+                module: Some(Module {
                     name,
                     kind,
                     traits,
@@ -160,7 +207,8 @@ impl Parser {
                     methods,
                     span: start,
                 }),
-            ))
+                view: None,
+            })
         }
     }
 
@@ -220,6 +268,147 @@ impl Parser {
             params,
             pipeline: Pipeline { steps },
         })
+    }
+
+    /// View classes contain exactly one `method render() { ui::... }` body.
+    fn parse_view_body(&mut self, view_name: &str) -> Result<UiNode, ParseError> {
+        if matches!(self.peek(), Some(Token::Has)) {
+            return Err(self.error_here(&format!("view `{view_name}` cannot declare `has` fields")));
+        }
+        self.expect_simple(Token::Method, "`method`")?;
+        let method_name = self.expect_ident("method name")?;
+        if method_name != "render" {
+            return Err(self.error_here(&format!(
+                "view `{view_name}` must declare `method render()` (found `{method_name}`)"
+            )));
+        }
+        self.expect_simple(Token::LParen, "`(` after method name")?;
+        let param_tokens = self.take_balanced_paren_tokens()?;
+        if !param_tokens.is_empty() {
+            return Err(self.error_here("view `render()` takes no parameters"));
+        }
+        self.expect_simple(Token::LBrace, "`{` before method body")?;
+        let root = self.parse_ui_node()?;
+        if matches!(self.peek(), Some(Token::Semi)) {
+            self.advance();
+        }
+        self.expect_simple(Token::RBrace, "`}` after view render body")?;
+        if !matches!(self.peek(), Some(Token::RBrace)) {
+            return Err(self.error_here(&format!(
+                "view `{view_name}` must declare exactly one `method render()`"
+            )));
+        }
+        Ok(root)
+    }
+
+    fn parse_ui_node(&mut self) -> Result<UiNode, ParseError> {
+        let start = self.current_span();
+        let ns = self.expect_ident("ui namespace")?;
+        if ns != "ui" {
+            return Err(self.error_here("UI components must use the `ui::` namespace"));
+        }
+        self.expect_simple(Token::DoubleColon, "`::` in ui component")?;
+        let component = self.expect_ident("ui component name")?;
+        self.expect_simple(Token::LParen, "`(` after ui component")?;
+
+        let mut props = Vec::new();
+        let mut slots = Vec::new();
+        let mut children = Vec::new();
+
+        while !matches!(self.peek(), Some(Token::RParen)) {
+            if matches!(self.peek(), Some(Token::Colon)) {
+                self.advance();
+                let key = self.expect_ident("prop or slot name")?;
+                if matches!(self.peek(), Some(Token::LParen)) {
+                    self.advance();
+                    if matches!(self.peek(), Some(Token::Ident(name)) if name == "ui")
+                        && matches!(
+                            self.tokens.get(self.pos + 1).map(|t| &t.token),
+                            Some(Token::DoubleColon)
+                        )
+                    {
+                        let node = self.parse_ui_node()?;
+                        self.expect_simple(Token::RParen, "`)` after slot")?;
+                        slots.push((key, node));
+                    } else if matches!(self.peek(), Some(Token::RParen)) {
+                        self.advance();
+                        props.push((key, UiValue::Flag));
+                    } else {
+                        let value = self.parse_ui_value()?;
+                        self.expect_simple(Token::RParen, "`)` after prop value")?;
+                        props.push((key, value));
+                    }
+                } else if matches!(self.peek(), Some(Token::Comma) | Some(Token::RParen) | None) {
+                    props.push((key, UiValue::Flag));
+                } else {
+                    return Err(
+                        self.error_here(&format!("expected `:`{key}`(...)` or bare `:{key}` flag"))
+                    );
+                }
+            } else if matches!(self.peek(), Some(Token::Ident(name)) if name == "ui") {
+                children.push(self.parse_ui_node()?);
+            } else {
+                return Err(self.error_here(
+                    "expected named prop/slot (`:name(...)`) or child `ui::component(...)`",
+                ));
+            }
+            if matches!(self.peek(), Some(Token::Comma)) {
+                self.advance();
+            }
+        }
+        self.expect_simple(Token::RParen, "`)` after ui component args")?;
+        Ok(UiNode {
+            component,
+            props,
+            slots,
+            children,
+            span: start,
+        })
+    }
+
+    fn parse_ui_value(&mut self) -> Result<UiValue, ParseError> {
+        match self.peek() {
+            Some(Token::StringLit(_)) => {
+                let Token::StringLit(raw) = self.advance_token()? else {
+                    unreachable!()
+                };
+                Ok(UiValue::String(raw.trim_matches('"').to_string()))
+            }
+            Some(Token::Ident(_)) => {
+                let name = self.expect_ident("identifier value")?;
+                match name.as_str() {
+                    "True" | "true" => Ok(UiValue::Bool(true)),
+                    "False" | "false" => Ok(UiValue::Bool(false)),
+                    _ => Ok(UiValue::Ident(name)),
+                }
+            }
+            Some(Token::LBracket) => {
+                self.advance();
+                let mut items = Vec::new();
+                while !matches!(self.peek(), Some(Token::RBracket)) {
+                    match self.advance_token()? {
+                        Token::StringLit(raw) => {
+                            items.push(raw.trim_matches('"').to_string());
+                        }
+                        _ => {
+                            return Err(
+                                self.error_here("UI string lists may only contain string literals")
+                            )
+                        }
+                    }
+                    if matches!(self.peek(), Some(Token::Comma)) {
+                        self.advance();
+                    }
+                }
+                self.expect_simple(Token::RBracket, "`]` after options list")?;
+                Ok(UiValue::StringList(items))
+            }
+            Some(Token::Number(_)) => match self.advance_token()? {
+                Token::Number(n) => Ok(UiValue::Ident(n)),
+                _ => unreachable!(),
+            },
+            _ => Err(self.error_here("unsupported UI prop value")),
+        }
     }
 
     fn parse_type(&mut self) -> Result<TypeExpr, ParseError> {
@@ -491,5 +680,74 @@ mod tests {
             assert_eq!(program.contracts.len(), 1, "{name}");
             program.validate().unwrap();
         }
+    }
+
+    #[test]
+    fn parses_declarative_ui_view() {
+        let src = r#"
+@version("1.0")
+class FeedbackRecord {
+    has Str $.author;
+    has Str $.text;
+    has Str $.rating;
+}
+class FeedbackView is view {
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("Feedback"))),
+            :side_panel(ui::side_panel(
+                ui::nav_item(:label("Inbox"), :active)
+            )),
+            ui::form(
+                ui::stack(
+                    ui::text_input(:field(author), :label("Author")),
+                    ui::textarea(:field(text), :label("Feedback")),
+                    ui::radio_group(:field(rating), :options(["Good", "Okay", "Bad"])),
+                    ui::toolbar(
+                        ui::button(:label("Submit"), :variant(primary), :submit)
+                    )
+                )
+            )
+        )
+    }
+}
+class WebPortal is service {
+    method listen(:$port = 18088) {
+        FeedbackRecord ==> ui::web(:view(FeedbackView), :port(18088), :route("/"))
+    }
+}
+class TextAnalyzer is processor {
+    method analyze(FeedbackRecord $record) { $record.text ==> text::score() }
+}
+class FeedbackDb is sink is latency(5ms) is storage(SQLite) {
+    method persist(FeedbackRecord $record) {
+        $record ==> ipc::publish() ==> store::sqlite(:table(feedback)) ==> store::commit()
+    }
+}
+"#;
+        let program = parse(src).expect("parse view program");
+        assert_eq!(program.views.len(), 1);
+        assert_eq!(program.views[0].name, "FeedbackView");
+        assert_eq!(program.views[0].root.component, "page");
+        assert_eq!(program.views[0].root.slots.len(), 2);
+        assert!(program.views[0].root.has_submit_button());
+        program.validate().expect("validate view program");
+        let graph = sil_core::infer_graph(&program).unwrap().unwrap();
+        assert_eq!(graph.ui_view.as_ref().unwrap().name, "FeedbackView");
+        assert_eq!(graph.ui_contract.as_deref(), Some("FeedbackRecord"));
+    }
+
+    #[test]
+    fn rejects_unknown_ui_component() {
+        let src = r#"
+class BadView is view {
+    method render() {
+        ui::page(ui::form(ui::magic_widget(:label("Nope"))))
+    }
+}
+"#;
+        let program = parse(src).expect("parse");
+        let err = program.validate().unwrap_err();
+        assert!(err.contains("unknown UI component"), "{err}");
     }
 }

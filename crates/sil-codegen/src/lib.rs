@@ -1,7 +1,10 @@
 //! Silc code generation for inspectable stubs and runnable v1 programs.
 
+mod ui_lower;
+
 use sil_core::{
-    infer_graph, ApiRoute, Contract, ExecutableGraph, ExecutionMode, Module, Program, Target,
+    infer_graph, ApiRoute, Contract, ExecutableGraph, ExecutionMode, Module, PortalKind, Program,
+    Target,
 };
 use sil_ipc::{ABI_VERSION, PROTOCOL_VERSION};
 use sil_router::RouteDecision;
@@ -15,6 +18,10 @@ const SUPERVISOR_SOCKET: &str = "ipc/supervisor.sock";
 const FEEDBACK_TS: &str = include_str!("../templates/feedback_worker.ts");
 const FEEDBACK_PY: &str = include_str!("../templates/feedback_worker.py");
 const FEEDBACK_GO: &str = include_str!("../templates/feedback_worker.go");
+const LLM_TS: &str = include_str!("../templates/llm_worker.ts");
+const LLM_PY: &str = include_str!("../templates/llm_worker.py");
+const LLM_GO: &str = include_str!("../templates/llm_worker.go");
+const LLM_REQUIREMENTS: &str = include_str!("../templates/llm_requirements.txt");
 const FEEDBACK_GOMOD: &str = include_str!("../templates/go.mod");
 const SERVICE_HTTP_GO: &str = include_str!("../templates/service_http_worker.go");
 const SERVICE_HTTP_GOMOD: &str = include_str!("../templates/service_http_go.mod");
@@ -24,13 +31,23 @@ const UI_WEB_INDEX_HTML: &str = include_str!("../templates/ui_web_index.html");
 const UI_WEB_TAILWIND_CONFIG: &str = include_str!("../templates/ui_web_tailwind.config.js");
 const UI_WEB_MAIN_TSX: &str = include_str!("../templates/ui_web_main.tsx");
 const UI_WEB_APP_TSX: &str = include_str!("../templates/ui_web_app.tsx");
+const LLM_UI_WEB_APP_TSX: &str = include_str!("../templates/llm_ui_web_app.tsx");
 const UI_WEB_THEME_CSS: &str = include_str!("../templates/ui_web_theme.css");
 const UI_WEB_UTILS_TS: &str = include_str!("../templates/ui_web_utils.ts");
 const UI_WEB_BUTTON_TSX: &str = include_str!("../templates/ui_web_button.tsx");
 const UI_WEB_INPUT_TSX: &str = include_str!("../templates/ui_web_input.tsx");
 const UI_WEB_LABEL_TSX: &str = include_str!("../templates/ui_web_label.tsx");
 const UI_WEB_TEXTAREA_TSX: &str = include_str!("../templates/ui_web_textarea.tsx");
+const UI_WEB_CARD_TSX: &str = include_str!("../templates/ui_web_card.tsx");
+const UI_WEB_RADIO_GROUP_TSX: &str = include_str!("../templates/ui_web_radio_group.tsx");
+const UI_WEB_APP_BAR_TSX: &str = include_str!("../templates/ui_web_app_bar.tsx");
 const UI_WEB_LOGO_TSX: &str = include_str!("../templates/ui_web_logo.tsx");
+const UI_WEB_SIDE_PANEL_TSX: &str = include_str!("../templates/ui_web_side_panel.tsx");
+const UI_WEB_NAV_ITEM_TSX: &str = include_str!("../templates/ui_web_nav_item.tsx");
+const UI_WEB_TOOLBAR_TSX: &str = include_str!("../templates/ui_web_toolbar.tsx");
+const UI_WEB_CHAT_THREAD_TSX: &str = include_str!("../templates/ui_web_chat_thread.tsx");
+const UI_WEB_CHAT_COMPOSER_TSX: &str = include_str!("../templates/ui_web_chat_composer.tsx");
+const UI_WEB_HISTORY_PANEL_TSX: &str = include_str!("../templates/ui_web_history_panel.tsx");
 
 /// Compiler-pinned React version for ui::web (must match ui_web_package.json).
 pub const UI_WEB_REACT_VERSION: &str = "18.3.1";
@@ -139,6 +156,10 @@ pub fn emit(
             "processor": g.processor,
             "sink": g.sink,
             "api_only": g.is_api_only(),
+            "portal_kind": g.portal_kind.as_str(),
+            "model_ref": g.model_ref,
+            "ui_view": g.ui_view.as_ref().map(|view| &view.name),
+            "ui_contract": g.ui_contract,
         });
         manifest["http_port"] = serde_json::json!(g.http_port);
         manifest["http_route"] = serde_json::json!(g.http_route);
@@ -146,7 +167,7 @@ pub fn emit(
         manifest["sqlite_table"] = serde_json::json!(g.sqlite_table);
         if g.has_ui() {
             let surface = g.ui_surface.unwrap();
-            manifest["ui"] = serde_json::json!({
+            let mut ui = serde_json::json!({
                 "profile": "web",
                 "surface": surface.as_str(),
                 "substrate": UI_WEB_SUBSTRATE,
@@ -162,7 +183,16 @@ pub fn emit(
                     "typescript/src/components/ui/input.tsx",
                     "typescript/src/components/ui/label.tsx",
                     "typescript/src/components/ui/textarea.tsx",
+                    "typescript/src/components/ui/card.tsx",
+                    "typescript/src/components/ui/radio-group.tsx",
+                    "typescript/src/components/ui/app-bar.tsx",
                     "typescript/src/components/ui/logo.tsx",
+                    "typescript/src/components/ui/side-panel.tsx",
+                    "typescript/src/components/ui/nav-item.tsx",
+                    "typescript/src/components/ui/toolbar.tsx",
+                    "typescript/src/components/ui/chat-thread.tsx",
+                    "typescript/src/components/ui/chat-composer.tsx",
+                    "typescript/src/components/ui/history-panel.tsx",
                     "typescript/tailwind.config.js",
                     "typescript/index.html",
                     "typescript/package.json",
@@ -179,7 +209,15 @@ pub fn emit(
                     "tailwind-merge": "2.6.0",
                 },
                 "provenance": "compiler-owned ui::web → React/Tailwind/ShadCN/Bun",
+                "catalog": sil_core::catalog_component_names(),
             });
+            if let Some(view) = &g.ui_view {
+                ui["view"] = serde_json::json!(view.name);
+                ui["contract"] = serde_json::json!(g.ui_contract);
+                ui["provenance"] =
+                    serde_json::json!("compiler-owned ui::web(:view) → React/Tailwind/ShadCN/Bun");
+            }
+            manifest["ui"] = ui;
         }
         if g.has_api() {
             manifest["services"] = serde_json::json!({
@@ -248,7 +286,7 @@ fn emit_runnable(
     generated: &mut Vec<PathBuf>,
 ) -> Result<(), String> {
     if graph.has_ui() {
-        emit_ui_feedback(root, graph, schema_id, generated)?;
+        emit_ui_portal(root, graph, schema_id, generated)?;
     }
     if graph.has_api() {
         emit_service_http(root, program, graph, schema_id, generated)?;
@@ -256,7 +294,7 @@ fn emit_runnable(
     Ok(())
 }
 
-fn emit_ui_feedback(
+fn emit_ui_portal(
     root: &Path,
     graph: &ExecutableGraph,
     schema_id: u32,
@@ -281,10 +319,20 @@ fn emit_ui_feedback(
         .map_err(|error| format!("create {}: {error}", ts_dist.display()))?;
     clear_dir_sources(&ts_dist, &["js", "css", "html", "map"])?;
 
-    let files = [
+    let (worker_ts, worker_py, worker_go, fallback_app) = match graph.portal_kind {
+        PortalKind::Feedback => (FEEDBACK_TS, FEEDBACK_PY, FEEDBACK_GO, UI_WEB_APP_TSX),
+        PortalKind::LlmChat => (LLM_TS, LLM_PY, LLM_GO, LLM_UI_WEB_APP_TSX),
+        PortalKind::None => return Err("UI graph is missing a portal profile".into()),
+    };
+    let app_tsx = if let Some(view) = &graph.ui_view {
+        ui_lower::render_view_app(view, graph)
+    } else {
+        fallback_app.to_string()
+    };
+    let mut files = vec![
         (
             root.join("typescript/worker.ts"),
-            render_template(FEEDBACK_TS, graph, schema_id),
+            render_template(worker_ts, graph, schema_id),
         ),
         (
             root.join("typescript/package.json"),
@@ -306,10 +354,7 @@ fn emit_ui_feedback(
             root.join("typescript/src/main.tsx"),
             UI_WEB_MAIN_TSX.to_string(),
         ),
-        (
-            root.join("typescript/src/App.tsx"),
-            UI_WEB_APP_TSX.to_string(),
-        ),
+        (root.join("typescript/src/App.tsx"), app_tsx),
         (
             root.join("typescript/src/theme.css"),
             UI_WEB_THEME_CSS.to_string(),
@@ -335,19 +380,61 @@ fn emit_ui_feedback(
             UI_WEB_TEXTAREA_TSX.to_string(),
         ),
         (
+            root.join("typescript/src/components/ui/card.tsx"),
+            UI_WEB_CARD_TSX.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/ui/radio-group.tsx"),
+            UI_WEB_RADIO_GROUP_TSX.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/ui/app-bar.tsx"),
+            UI_WEB_APP_BAR_TSX.to_string(),
+        ),
+        (
             root.join("typescript/src/components/ui/logo.tsx"),
             UI_WEB_LOGO_TSX.to_string(),
         ),
         (
+            root.join("typescript/src/components/ui/side-panel.tsx"),
+            UI_WEB_SIDE_PANEL_TSX.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/ui/nav-item.tsx"),
+            UI_WEB_NAV_ITEM_TSX.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/ui/toolbar.tsx"),
+            UI_WEB_TOOLBAR_TSX.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/ui/chat-thread.tsx"),
+            UI_WEB_CHAT_THREAD_TSX.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/ui/chat-composer.tsx"),
+            UI_WEB_CHAT_COMPOSER_TSX.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/ui/history-panel.tsx"),
+            UI_WEB_HISTORY_PANEL_TSX.to_string(),
+        ),
+        (
             root.join("python/worker.py"),
-            render_template(FEEDBACK_PY, graph, schema_id),
+            render_template(worker_py, graph, schema_id),
         ),
         (
             root.join("go/worker.go"),
-            render_template(FEEDBACK_GO, graph, schema_id),
+            render_template(worker_go, graph, schema_id),
         ),
         (root.join("go/go.mod"), FEEDBACK_GOMOD.to_string()),
     ];
+    if graph.portal_kind.needs_llm() {
+        files.push((
+            root.join("python/requirements.txt"),
+            LLM_REQUIREMENTS.to_string(),
+        ));
+    }
     for (path, contents) in files {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)
@@ -738,6 +825,144 @@ mod tests {
         assert!(manifest.contains("\"terminal_substrate\": \"bun-tcp-telnet\""));
         assert!(manifest.contains("ui::web"));
         assert!(!manifest.contains("\"adapter\": \"gin-v1\""));
+        fs::remove_dir_all(output).ok();
+    }
+
+    #[test]
+    fn emits_custom_view_app_from_ui_view() {
+        let source_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/custom_feedback_ui.silc");
+        let source = fs::read_to_string(&source_path).expect("read custom_feedback_ui");
+        let program = sil_parser::parse(&source).expect("parse custom view");
+        program.validate().expect("validate custom view");
+        let decisions = sil_router::route_program(&program);
+        let output = output_dir("custom-view");
+        let result = emit(&program, &decisions, &source_path, &output, "test").unwrap();
+        let graph = result.graph.as_ref().unwrap();
+        assert_eq!(
+            graph.ui_view.as_ref().map(|v| v.name.as_str()),
+            Some("FeedbackView")
+        );
+        assert_eq!(graph.ui_contract.as_deref(), Some("FeedbackRecord"));
+
+        let app = fs::read_to_string(output.join("typescript/src/App.tsx")).unwrap();
+        assert!(app.contains("AppBar"));
+        assert!(app.contains("SidePanel"));
+        assert!(app.contains("RadioGroup"));
+        assert!(app.contains("variant=\"primary\""));
+        assert!(app.contains("variant=\"secondary\""));
+        assert!(app.contains("/submit"));
+        assert!(app.contains("setAuthor"));
+        assert!(app.contains("setRating"));
+        let app_bar =
+            fs::read_to_string(output.join("typescript/src/components/ui/app-bar.tsx")).unwrap();
+        assert!(app_bar.contains("AppBar"));
+        assert!(app_bar.contains("ThoughtPivotLogo"));
+        let manifest = fs::read_to_string(&result.manifest).unwrap();
+        assert!(manifest.contains("FeedbackView"));
+        assert!(manifest.contains("\"catalog\""));
+        fs::remove_dir_all(output).ok();
+    }
+
+    #[test]
+    fn emits_chat_view_app_for_llm_portal() {
+        let source_path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/ai_chatbot_2.silc");
+        let source = fs::read_to_string(&source_path).expect("read ai_chatbot_2");
+        let program = sil_parser::parse(&source).expect("parse ai_chatbot_2");
+        program.validate().expect("validate ai_chatbot_2");
+        let decisions = sil_router::route_program(&program);
+        let output = output_dir("ai-chatbot-2");
+        let result = emit(&program, &decisions, &source_path, &output, "test").unwrap();
+        let graph = result.graph.as_ref().unwrap();
+        assert_eq!(graph.portal_kind, PortalKind::LlmChat);
+        assert_eq!(
+            graph.ui_view.as_ref().map(|v| v.name.as_str()),
+            Some("ChatbotView")
+        );
+
+        let app = fs::read_to_string(output.join("typescript/src/App.tsx")).unwrap();
+        assert!(app.contains("ChatThread"));
+        assert!(app.contains("ChatComposer"));
+        assert!(app.contains("HistoryPanel"));
+        assert!(app.contains("/complete"));
+        assert!(app.contains("/history"));
+        assert!(app.contains("setHistory"));
+        assert!(app.contains("Chat History"));
+        assert!(app.contains("collapsible"));
+        assert!(!app.contains("/submit"));
+        assert!(output
+            .join("typescript/src/components/ui/chat-thread.tsx")
+            .is_file());
+        assert!(output.join("python/requirements.txt").is_file());
+        let ts = fs::read_to_string(output.join("typescript/worker.ts")).unwrap();
+        assert!(ts.contains("/complete"));
+        assert!(ts.contains("/history"));
+        assert!(ts.contains("bun:sqlite"));
+        assert!(ts.contains("ORDER BY created_at DESC"));
+        let history_panel =
+            fs::read_to_string(output.join("typescript/src/components/ui/history-panel.tsx"))
+                .unwrap();
+        assert!(history_panel.contains("setCollapsed"));
+        assert!(history_panel.contains("aria-expanded"));
+        fs::remove_dir_all(output).ok();
+    }
+
+    #[test]
+    fn rejects_chat_components_on_feedback_portal() {
+        let source = r#"
+@version("1.0")
+class FeedbackRecord { has Str $.author; has Str $.prompt; }
+class BadChatView is view {
+    method render() {
+        ui::page(ui::chat(:field(prompt)))
+    }
+}
+class WebPortal is service {
+    method listen(:$port = 18092) {
+        FeedbackRecord ==> ui::web(:view(BadChatView), :port(18092), :route("/"))
+    }
+}
+class TextAnalyzer is processor {
+    method analyze(FeedbackRecord $record) { $record.prompt ==> text::score() }
+}
+class FeedbackDb is sink is storage(SQLite) {
+    method persist(FeedbackRecord $record) {
+        $record ==> ipc::publish() ==> store::sqlite(:table(feedback)) ==> store::commit()
+    }
+}
+"#;
+        let program = sil_parser::parse(source).expect("parse");
+        let err = program.validate().unwrap_err();
+        assert!(err.contains("llm::complete"), "{err}");
+    }
+
+    #[test]
+    fn emits_runnable_llm_chat_workers() {
+        let source_path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/llm_portal.silc");
+        let source = fs::read_to_string(&source_path).expect("read llm_portal");
+        let program = sil_parser::parse(&source).expect("parse llm_portal");
+        program.validate().expect("validate llm_portal");
+        let decisions = sil_router::route_program(&program);
+        let output = output_dir("llm-portal");
+        let result = emit(&program, &decisions, &source_path, &output, "test").unwrap();
+        let graph = result.graph.as_ref().unwrap();
+        assert_eq!(graph.portal_kind, PortalKind::LlmChat);
+        assert_eq!(graph.model_ref.as_deref(), Some("llama3.2-1b"));
+        assert!(fs::read_to_string(output.join("python/worker.py"))
+            .unwrap()
+            .contains("SILC_MODEL_PATH"));
+        assert!(fs::read_to_string(output.join("go/worker.go"))
+            .unwrap()
+            .contains("prompt TEXT NOT NULL"));
+        let worker = fs::read_to_string(output.join("typescript/worker.ts")).unwrap();
+        assert!(worker.contains("/complete"));
+        assert!(worker.contains("/history"));
+        assert!(output.join("python/requirements.txt").is_file());
+        let manifest = fs::read_to_string(&result.manifest).unwrap();
+        assert!(manifest.contains("\"portal_kind\": \"llm_chat\""));
+        assert!(manifest.contains("\"model_ref\": \"llama3.2-1b\""));
         fs::remove_dir_all(output).ok();
     }
 

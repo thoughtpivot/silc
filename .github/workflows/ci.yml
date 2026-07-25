@@ -35,6 +35,9 @@ jobs:
       - name: Cargo test
         run: cargo test --workspace -- --test-threads=1
 
+      - name: Generate LLM portal workers (offline smoke)
+        run: cargo test -p sil-codegen emits_runnable_llm_chat_workers
+
       - name: Build feedback portal
         run: cargo build -p silc && ./target/debug/silc build examples/feedback_portal.silc
 

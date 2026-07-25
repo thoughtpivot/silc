@@ -1,7 +1,8 @@
-//! A Silc program: subsets, contracts, and modules.
+//! A Silc program: subsets, contracts, modules, and declarative UI views.
 
 use crate::contract::{Contract, Subset};
 use crate::module::Module;
+use crate::ui::{validate_view, UiView};
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Program {
@@ -9,6 +10,7 @@ pub struct Program {
     pub subsets: Vec<Subset>,
     pub contracts: Vec<Contract>,
     pub modules: Vec<Module>,
+    pub views: Vec<UiView>,
 }
 
 impl Program {
@@ -33,6 +35,11 @@ impl Program {
                     "module `{}` missing kind trait (is service|processor|sink)",
                     m.name
                 ));
+            }
+        }
+        for view in &self.views {
+            if !names.insert(view.name.clone()) {
+                return Err(format!("duplicate view name `{}`", view.name));
             }
         }
 
@@ -71,7 +78,35 @@ impl Program {
             }
         }
         // Runnable-program validation (no-op for stub programs).
-        crate::operation::infer_graph(self)?;
+        let graph = crate::operation::infer_graph(self)?;
+        if let Some(graph) = &graph {
+            if let Some(view) = &graph.ui_view {
+                let contract = self
+                    .contracts
+                    .iter()
+                    .find(|c| Some(c.name.as_str()) == graph.ui_contract.as_deref());
+                validate_view(view, contract)?;
+                let uses_chat = view.root.contains_component("chat")
+                    || view.root.contains_component("chat_history");
+                if uses_chat && graph.portal_kind != crate::operation::PortalKind::LlmChat {
+                    return Err(format!(
+                        "view `{}` uses `ui::chat`/`ui::chat_history`, which require an `llm::complete` portal",
+                        view.name
+                    ));
+                }
+            }
+        }
+        // Orphan views (not referenced by ui::web) are still catalog-checked.
+        for view in &self.views {
+            let referenced = graph
+                .as_ref()
+                .and_then(|g| g.ui_view.as_ref())
+                .map(|v| v.name == view.name)
+                .unwrap_or(false);
+            if !referenced {
+                validate_view(view, None)?;
+            }
+        }
         Ok(())
     }
 }

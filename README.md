@@ -239,11 +239,13 @@ A key innovation of the ThoughtPivot compiler is its ability to route Silc modul
 * **Tier 2:** namespaces (`ui`/`http`/`ws` → Bun; `tensor`/`numpy`/`pandas` → Python; `store`/`ipc`/`sys` → Go).
 * **Tier 3:** a future local classifier, deferred until deterministic routing is proven.
 
-Declarative UI ops (`ui::web`, `ui::terminal`) keep HTML/CSS/frameworks out of
-Silc source. The compiler owns React + Tailwind + ShadCN primitives (web), a
-telnet adapter (remote terminal), and reserves OpenTUI for rich local
-terminals. See [ADR-003](docs/ADR-003-declarative-ui.md). Engine routing
-rationale is in [ADR-004](docs/ADR-004-runtime-strengths.md).
+Declarative UI ops (`ui::web`, `ui::terminal`) and optional `class … is view`
+trees keep HTML/CSS/frameworks out of Silc source. Authors compose semantic
+components (`ui::page`, `ui::app_bar`, `ui::side_panel`, form controls, …);
+the compiler owns React + Tailwind + ShadCN primitives (web), a telnet adapter
+(remote terminal), and reserves OpenTUI for rich local terminals. See
+[ADR-003](docs/ADR-003-declarative-ui.md). Engine routing rationale is in
+[ADR-004](docs/ADR-004-runtime-strengths.md).
 
 ---
 
@@ -301,16 +303,24 @@ runnable build transparently provisions pinned engines into
 ```bash
 silc build main.silc          # compile only
 silc main.silc                # compile; run if program is runnable v1
-silc examples/feedback_portal.silc   # ui::web (React/Bun) + SQLite feedback portal
-silc examples/feedback_api.silc      # service::http (Go/Gin) JSON API
+silc examples/feedback_portal.silc     # ui::web (React/Bun) + SQLite feedback portal
+silc examples/custom_feedback_ui.silc  # ui::web(:view) with app bar / side panel / radio
+silc examples/llm_portal.silc          # real local Llama completion + SQLite history
+silc examples/ai_chatbot_2.silc        # chat view: thread + composer left, history right
+silc examples/feedback_api.silc        # service::http (Go/Gin) JSON API
 ```
 
 Runnable v1 programs use either:
 
 - **Declarative HTTP API:** `service::http(:port, :route, :method)` bound to a
   Contract — compiler emits a Go/Gin worker (no Bun UI).
-- **Declarative UI portal:** `ui::web` (or legacy `html::form` + `http::serve`),
-  `text::score`, `ipc::publish`, `store::sqlite`, and `store::commit`.
+- **Declarative UI portal:** `ui::web` (optional `:view(Name)` or legacy
+  `html::form` + `http::serve`), either `text::score` or `llm::complete`,
+  `ipc::publish`, `store::sqlite`, and `store::commit`.
+- **Local LLM:** `llm::complete(:model("llama3.2-1b"))` routes to a
+  compiler-owned Python/llama.cpp worker. Silc downloads and verifies the
+  pinned GGUF under `~/.silc/models/`; authors do not install or configure an
+  inference runtime.
   `ui::terminal(:port)` adds a loopback TCP interface reachable with telnet.
 
 Other examples still parse/route and emit inspectable stubs. Authors never write

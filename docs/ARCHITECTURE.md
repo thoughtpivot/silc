@@ -146,10 +146,14 @@ subject; target-specific rendering belongs to `sil-codegen`.
 
 ### Declarative UI
 
-UI intent lives in the `ui` namespace (`ui::web`, `ui::terminal`). Authors never
-emit HTML, CSS, React, Tailwind, ShadCN, OpenTUI, or package manifests. The
-compiler lowers `ui::web` to a Bun-owned React + Tailwind + ShadCN-primitives
-app plus HTTP/API worker under `.runtime/`; `ui::terminal` adds a Bun-owned
+UI intent lives in the `ui` namespace (`ui::web`, `ui::terminal`) and optional
+`class … is view` subjects. Authors never emit HTML, CSS, React, Tailwind,
+ShadCN, OpenTUI, or package manifests. Named views describe a typed semantic
+component tree (`ui::page`, `ui::app_bar`, `ui::side_panel`, form controls,
+toolbars, …); `ui::web(:view(Name), …)` binds that tree to a Contract. When
+`:view` is omitted, the compiler keeps profile templates (feedback / LLM chat).
+Codegen lowers either path to a Bun-owned React + Tailwind + ShadCN-primitives
+app plus HTTP/API worker under `.runtime/`. `ui::terminal` adds a Bun-owned
 loopback TCP/telnet interface; a future rich local-terminal adapter uses
 OpenTUI. See [ADR-003-declarative-ui.md](ADR-003-declarative-ui.md). Legacy
 `html::form` + `http::serve` remain compatibility aliases for the same web

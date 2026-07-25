@@ -2,14 +2,34 @@
 import * as React from "react";
 import { cn } from "../../lib/utils";
 
-export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {}
+export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: "primary" | "secondary" | "destructive";
+  size?: "sm" | "md" | "lg";
+}
+
+const variantClass: Record<NonNullable<ButtonProps["variant"]>, string> = {
+  primary:
+    "bg-primary text-primary-foreground hover:opacity-90",
+  secondary:
+    "border border-border bg-card text-card-foreground hover:bg-background/80",
+  destructive:
+    "bg-destructive text-destructive-foreground hover:opacity-90",
+};
+
+const sizeClass: Record<NonNullable<ButtonProps["size"]>, string> = {
+  sm: "px-3 py-1.5 text-xs",
+  md: "px-5 py-2.5 text-sm",
+  lg: "px-6 py-3 text-base",
+};
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, type = "button", ...props }, ref) => (
+  ({ className, type = "button", variant = "primary", size = "md", ...props }, ref) => (
     <button
       type={type}
       className={cn(
-        "inline-flex items-center justify-center rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-primary-foreground transition-opacity hover:opacity-90 disabled:cursor-wait disabled:opacity-55",
+        "inline-flex items-center justify-center rounded-full font-bold transition-opacity disabled:cursor-wait disabled:opacity-55",
+        variantClass[variant],
+        sizeClass[size],
         className
       )}
       ref={ref}
