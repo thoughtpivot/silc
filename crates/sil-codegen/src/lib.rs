@@ -907,6 +907,7 @@ class ChatPage is component {
             ui::chat(
                 :value($.prompt),
                 :session($.active_session),
+                :context($.prompt),
                 :on(send(on_send))
             )
         )
@@ -923,9 +924,8 @@ class ChatApp is app {
     }
 }
 class Assistant is processor {
-    has Str $.model_ref = "silclm";
     method complete(ChatRecord $record) {
-        $record.prompt ==> llm::complete(:model("silclm"))
+        $record.prompt ==> llm::complete()
     }
 }
 class ChatDb is sink is storage(SQLite) {
@@ -1159,6 +1159,14 @@ class FeedbackApi is service {
                 && !py.contains("n_ctx=2048"),
             "silclm worker must read SILC_LLM_N_CTX with an 8K default"
         );
+        assert!(
+            py.contains("compose_llm_prompt") && py.contains("record.pop(\"context\""),
+            "silclm worker must ground prompts on context and strip it before persist"
+        );
+        assert!(
+            app.contains("context: prompt") || app.contains("context:"),
+            "chat :context must be included in /complete body"
+        );
         let ts = fs::read_to_string(output.join("typescript/worker.ts")).unwrap();
         assert!(ts.contains("/complete"));
         assert!(ts.contains("/history"));
@@ -1166,6 +1174,10 @@ class FeedbackApi is service {
         assert!(
             ts.contains("text: prompt") || ts.contains("text:"),
             "complete ingest must send ControlFrame::Ingest.text"
+        );
+        assert!(
+            ts.contains("normalizeContext") && ts.contains("MAX_CONTEXT_CHARS"),
+            "worker must bound chat context before INGEST"
         );
         assert!(ts.contains("INGEST_TIMEOUT_MS") || ts.contains("180_000"));
         assert!(

@@ -41,21 +41,22 @@ jobs:
           cargo test -p sil-codegen emits_chat_app_with_llm_processor
           cargo test -p sil-codegen emits_resource_app_with_actions
 
-      - name: Build scored_form + shopping examples
+      - name: Build standalone example apps
         run: |
           cargo build -p silc
-          ./target/debug/silc build examples/scored_form.silc
-          ./target/debug/silc build examples/shopping_app.silc
-          ./target/debug/silc build examples/components.silc
+          ./target/debug/silc build examples/chatApp/main.silc
+          ./target/debug/silc build examples/inventoryApp/main.silc
 
       - name: Dual-surface end-to-end
         run: |
           cargo test -p silc --test scored_form_e2e -- --test-threads=1
           cargo test -p silc --test shopping_e2e -- --test-threads=1
+          cargo test -p silc --test chat_e2e chat_assistant_builds_dual_surface -- --test-threads=1
+          cargo test -p silc --test inventory_e2e -- --test-threads=1
 
       - name: Concurrent scored_form correctness
         run: |
-          ./target/debug/silc examples/scored_form.silc > /tmp/silc-run.log 2>&1 &
+          ./target/debug/silc crates/silc/tests/fixtures/scored_form.silc > /tmp/silc-run.log 2>&1 &
           PID=$!
           for i in $(seq 1 90); do
             if curl -sf http://127.0.0.1:18080/health >/dev/null; then break; fi
@@ -69,7 +70,7 @@ jobs:
           done
           kill -KILL $PID || true
           wait $PID || true
-          test -f examples/.runtime/scored_form/data/app.db
+          test -f crates/silc/tests/fixtures/.runtime/scored_form/data/app.db
 
   release-plz:
     name: release-plz

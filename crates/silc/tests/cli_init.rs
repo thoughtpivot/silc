@@ -104,7 +104,7 @@ fn init_scaffolds_runnable_dual_surface_app() {
 
 #[test]
 fn direct_compile_examples_still_works() {
-    let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/data_pipeline.silc");
+    let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/data_pipeline.silc");
     let root = tempdir();
     let entry = root.join("data_pipeline.silc");
     fs::copy(&example, &entry).expect("copy");

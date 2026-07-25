@@ -621,6 +621,7 @@ fn handle_client(
                 author,
                 text,
                 session_id,
+                context,
             }) if role == "bun" => {
                 // Keep the Bun reader hot: slot acquire / notify must not block
                 // reading the next INGEST frames off the UDS.
@@ -638,6 +639,7 @@ fn handle_client(
                         author,
                         text,
                         session_id,
+                        context,
                         processor_op,
                         model_id,
                         Some(response_writer),
@@ -691,6 +693,7 @@ fn start_ingest(
     author: String,
     text: String,
     session_id: String,
+    context: String,
     processor_op: ProcessorOp,
     model_id: Option<String>,
     response_writer: Option<Arc<Mutex<BufWriter<UnixStream>>>>,
@@ -719,6 +722,11 @@ fn start_ingest(
     if !session_id.is_empty() {
         if let Some(obj) = record.as_object_mut() {
             obj.insert("session_id".into(), serde_json::Value::String(session_id));
+        }
+    }
+    if !context.is_empty() {
+        if let Some(obj) = record.as_object_mut() {
+            obj.insert("context".into(), serde_json::Value::String(context));
         }
     }
     let bytes = serde_json::to_vec(&record).map_err(|e| e.to_string())?;

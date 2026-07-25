@@ -58,7 +58,7 @@ fn shopping_app_resources_web_and_terminal_e2e() {
     std::fs::create_dir_all(&temp).unwrap();
 
     let example =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/shopping_app.silc");
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/shopping_app.silc");
 
     let build = Command::new(silc_bin())
         .args(["build", example.to_str().unwrap()])
@@ -73,7 +73,7 @@ fn shopping_app_resources_web_and_terminal_e2e() {
 
     let manifest = std::fs::read_to_string(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../examples/.runtime/shopping_app/manifest.json"),
+            .join("tests/fixtures/.runtime/shopping_app/manifest.json"),
     )
     .unwrap();
     assert!(!manifest.contains("portal_kind"));
@@ -82,7 +82,7 @@ fn shopping_app_resources_web_and_terminal_e2e() {
     assert!(manifest.contains("terminal"));
 
     let data_dir =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/.runtime/shopping_app/data");
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/.runtime/shopping_app/data");
     for name in ["app.db", "app.db-shm", "app.db-wal"] {
         let _ = std::fs::remove_file(data_dir.join(name));
     }

@@ -85,6 +85,8 @@ fn render_web_component(component: &Component, program: &Program) -> String {
             })
             .map(|f| f.name.clone())
     });
+    let chat_context_js =
+        find_chat_context_js(&component.render).unwrap_or_else(|| "undefined".into());
 
     let mut state_decls = String::new();
     for field in &component.state {
@@ -196,7 +198,7 @@ fn render_web_component(component: &Component, program: &Program) -> String {
       const resp = await fetch("/complete", {{
         method: "POST",
         headers: {{ "content-type": "application/json" }},
-        body: JSON.stringify({{ prompt, session_id: capturedSession }}),
+        body: JSON.stringify({{ prompt, session_id: capturedSession, context: {context} }}),
       }});
       const data = await resp.json();
       if (!resp.ok || data.ok === false) {{
@@ -230,7 +232,8 @@ fn render_web_component(component: &Component, program: &Program) -> String {
 "#,
                 field = prompt_field,
                 pascal = pascal(prompt_field),
-                session = session
+                session = session,
+                context = chat_context_js
             ));
         } else {
             state_decls.push_str(
@@ -273,7 +276,7 @@ fn render_web_component(component: &Component, program: &Program) -> String {
       const resp = await fetch("/complete", {{
         method: "POST",
         headers: {{ "content-type": "application/json" }},
-        body: JSON.stringify({{ prompt }}),
+        body: JSON.stringify({{ prompt, context: {context} }}),
       }});
       const data = await resp.json();
       if (!resp.ok || data.ok === false) {{
@@ -298,7 +301,8 @@ fn render_web_component(component: &Component, program: &Program) -> String {
   }}
 "#,
                 field = prompt_field,
-                pascal = pascal(prompt_field)
+                pascal = pascal(prompt_field),
+                context = chat_context_js
             ));
         }
     }
@@ -412,6 +416,25 @@ fn find_chat_session_field(template: &UiTemplate) -> Option<String> {
             .or_else(|| else_body.as_ref().and_then(|b| find_chat_session_field(b))),
         UiTemplate::For { body, .. } => find_chat_session_field(body),
         UiTemplate::Block(items) => items.iter().find_map(find_chat_session_field),
+    }
+}
+
+fn find_chat_context_js(template: &UiTemplate) -> Option<String> {
+    match template {
+        UiTemplate::Node(node) => {
+            if node.component == "chat" {
+                if let Some(ctx) = node.prop("context") {
+                    return Some(expr_to_js(ctx));
+                }
+            }
+            node.children.iter().find_map(find_chat_context_js)
+        }
+        UiTemplate::When {
+            body, else_body, ..
+        } => find_chat_context_js(body)
+            .or_else(|| else_body.as_ref().and_then(|b| find_chat_context_js(b))),
+        UiTemplate::For { body, .. } => find_chat_context_js(body),
+        UiTemplate::Block(items) => items.iter().find_map(find_chat_context_js),
     }
 }
 

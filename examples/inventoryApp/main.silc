@@ -1,0 +1,244 @@
+#!/usr/bin/env silc
+# Standalone inventory app: browse, admin CRUD, and silclm grounded on live stock.
+@version("0.2.0")
+
+class InventoryItem {
+    has Str $.id;
+    has Str $.name;
+    has Str $.category;
+    has Str $.location;
+    has Str $.quantity;
+    has Str $.reorder_level;
+    has Str $.notes;
+}
+
+class ChatRecord {
+    has Str $.prompt;
+    has Str $.reply;
+}
+
+class Inventory is resource {
+    has Str $.table = "inventory_items";
+
+    query list() -> [InventoryItem] {
+        InventoryItem ==> resource::list(:table(inventory_items))
+    }
+
+    mutation create(InventoryItem $item) {
+        $item ==> resource::create(:table(inventory_items))
+    }
+
+    mutation update(InventoryItem $item) {
+        $item ==> resource::update(:table(inventory_items))
+    }
+
+    mutation delete(InventoryItem $item) {
+        $item ==> resource::delete(:table(inventory_items))
+    }
+}
+
+class ItemCard is component {
+    has InventoryItem $.item;
+    emit remove(InventoryItem);
+
+    method render() {
+        ui::card(
+            ui::heading(:text($.item.name), :level(3)),
+            ui::text(:text($.item.category)),
+            ui::text(:text($.item.location)),
+            ui::text(:text($.item.quantity)),
+            ui::text(:text($.item.reorder_level)),
+            ui::text(:text($.item.notes)),
+            ui::button(
+                :label("Delete"),
+                :variant("destructive"),
+                :on(click(on_remove))
+            )
+        )
+    }
+
+    method on_remove() {
+        emit remove($.item);
+    }
+}
+
+class BrowsePage is component {
+    has state Str $.category_filter = "All";
+    query $.items = Inventory.list();
+
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("Inventory"))),
+            :side_panel(ui::side_panel(
+                ui::nav_item(:label("Browse"), :to("/"), :active),
+                ui::nav_item(:label("Admin"), :to("/admin")),
+                ui::nav_item(:label("Assistant"), :to("/assistant"))
+            )),
+            ui::stack(
+                ui::heading(:text("Stock browser"), :level(1)),
+                ui::text(:text("Filter by category, or ask the Assistant about live inventory.")),
+                ui::filter_bar(
+                    ui::radio_group(
+                        :field(category_filter),
+                        :options(["All", "Electronics", "Hardware", "Supplies", "Other"]),
+                        :label("Category")
+                    )
+                ),
+                when $.items {
+                    ui::empty(:text("No inventory items yet. Add some in Admin."))
+                },
+                for $.items -> $item {
+                    when $.category_filter == "All" {
+                        ui::card(
+                            ui::heading(:text($item.name), :level(3)),
+                            ui::text(:text($item.category)),
+                            ui::text(:text($item.location)),
+                            ui::row(
+                                ui::text(:text($item.quantity)),
+                                ui::text(:text($item.reorder_level))
+                            ),
+                            ui::text(:text($item.notes))
+                        )
+                    },
+                    when $.category_filter == $item.category {
+                        ui::card(
+                            ui::heading(:text($item.name), :level(3)),
+                            ui::text(:text($item.category)),
+                            ui::text(:text($item.location)),
+                            ui::row(
+                                ui::text(:text($item.quantity)),
+                                ui::text(:text($item.reorder_level))
+                            ),
+                            ui::text(:text($item.notes))
+                        )
+                    }
+                }
+            )
+        )
+    }
+}
+
+class AdminPage is component {
+    has state Str $.name = "";
+    has state Str $.category = "Electronics";
+    has state Str $.location = "";
+    has state Str $.quantity = "0";
+    has state Str $.reorder_level = "0";
+    has state Str $.notes = "";
+    query $.items = Inventory.list();
+
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("Inventory Admin"))),
+            :side_panel(ui::side_panel(
+                ui::nav_item(:label("Browse"), :to("/")),
+                ui::nav_item(:label("Admin"), :to("/admin"), :active),
+                ui::nav_item(:label("Assistant"), :to("/assistant"))
+            )),
+            ui::stack(
+                ui::heading(:text("Add item"), :level(1)),
+                ui::form(:on(submit(on_create)),
+                    ui::text_input(:field(name), :label("Name")),
+                    ui::radio_group(
+                        :field(category),
+                        :options(["Electronics", "Hardware", "Supplies", "Other"]),
+                        :label("Category")
+                    ),
+                    ui::text_input(:field(location), :label("Location / aisle")),
+                    ui::text_input(:field(quantity), :label("Quantity")),
+                    ui::text_input(:field(reorder_level), :label("Reorder level")),
+                    ui::textarea(:field(notes), :label("Notes")),
+                    ui::toolbar(
+                        ui::button(:label("Create"), :variant("primary"), :submit)
+                    )
+                ),
+                ui::heading(:text("Catalog"), :level(2)),
+                when $.items {
+                    ui::empty(:text("Catalog is empty."))
+                },
+                for $.items -> $item {
+                    ItemCard(:item($item), :on(remove => on_delete))
+                }
+            )
+        )
+    }
+
+    method on_create() {
+        Inventory.create(InventoryItem.new(
+            :name($.name),
+            :category($.category),
+            :location($.location),
+            :quantity($.quantity),
+            :reorder_level($.reorder_level),
+            :notes($.notes)
+        ));
+        Inventory.list();
+        $.name = "";
+        $.category = "Electronics";
+        $.location = "";
+        $.quantity = "0";
+        $.reorder_level = "0";
+        $.notes = "";
+    }
+
+    method on_delete(InventoryItem $item) {
+        Inventory.delete($item);
+        Inventory.list();
+    }
+}
+
+class AssistantPage is component {
+    has state Str $.prompt = "";
+    query $.items = Inventory.list();
+
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("Inventory Assistant"))),
+            :side_panel(ui::side_panel(
+                ui::nav_item(:label("Browse"), :to("/")),
+                ui::nav_item(:label("Admin"), :to("/admin")),
+                ui::nav_item(:label("Assistant"), :to("/assistant"), :active)
+            )),
+            ui::stack(
+                ui::heading(:text("Ask about inventory"), :level(1)),
+                ui::text(:text("silclm answers using a live snapshot of inventory_items.")),
+                ui::chat(
+                    :value($.prompt),
+                    :context($.items),
+                    :placeholder("Which items are below reorder level?"),
+                    :on(send(on_send))
+                )
+            )
+        )
+    }
+
+    method on_send() {
+        Assistant.complete();
+    }
+}
+
+class InventoryApp is app {
+    route "/" => BrowsePage;
+    route "/admin" => AdminPage;
+    route "/assistant" => AssistantPage;
+
+    method serve() {
+        ui::web(:root(InventoryApp), :port(18096), :route("/"))
+            ==> ui::terminal(:port(18097))
+    }
+}
+
+class Assistant is processor {
+    method complete(ChatRecord $record) {
+        $record.prompt ==> llm::complete()
+    }
+}
+
+class ChatDb is sink is storage(SQLite) {
+    method persist(ChatRecord $record) {
+        $record
+            ==> ipc::publish()
+            ==> store::sqlite(:table(chats))
+            ==> store::commit()
+    }
+}

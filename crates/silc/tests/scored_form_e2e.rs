@@ -57,7 +57,7 @@ fn scored_form_web_and_terminal_e2e() {
     ));
     std::fs::create_dir_all(&temp).unwrap();
 
-    let example = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/scored_form.silc");
+    let example = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/scored_form.silc");
 
     let build = Command::new(silc_bin())
         .args(["build", example.to_str().unwrap()])
@@ -71,7 +71,7 @@ fn scored_form_web_and_terminal_e2e() {
     );
 
     let runtime = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../examples/.runtime/scored_form/typescript");
+        .join("tests/fixtures/.runtime/scored_form/typescript");
     assert!(
         runtime.join("dist/index.html").is_file(),
         "web index missing"
@@ -90,7 +90,7 @@ fn scored_form_web_and_terminal_e2e() {
     );
     let manifest = std::fs::read_to_string(
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../examples/.runtime/scored_form/manifest.json"),
+            .join("tests/fixtures/.runtime/scored_form/manifest.json"),
     )
     .unwrap();
     assert!(!manifest.contains("portal_kind"));
@@ -202,7 +202,7 @@ fn scored_form_web_and_terminal_e2e() {
     let _ = child.wait();
 
     let db = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../examples/.runtime/scored_form/data/app.db");
+        .join("tests/fixtures/.runtime/scored_form/data/app.db");
     assert!(db.is_file(), "sqlite db missing at {}", db.display());
     let _ = std::fs::remove_dir_all(temp);
 }

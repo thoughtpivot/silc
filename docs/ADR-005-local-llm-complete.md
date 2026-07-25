@@ -58,6 +58,9 @@ to `silclm` (including a one-time cache migration from
 - Worker count: one Python process per app, so weights load once
 - Context: 8,192 tokens by default (`SILC_LLM_N_CTX` overrides); response cap: 256 tokens
 - UI: compiler-owned React/Bun prompt form
+- Optional grounding: `ui::chat(:context($.items))` sends a bounded JSON/text
+  snapshot with `/complete`; silclm is instructed to treat it as untrusted
+  reference data. Context is stripped before chat-history persistence.
 - Persistence: compiler-owned Go/SQLite `chat_turns` sink
 
 `silc build` creates an isolated Python environment under the generated

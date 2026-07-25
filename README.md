@@ -158,14 +158,13 @@ when $.products {
 
 ## Examples
 
-| Program | Purpose |
+Examples are **standalone Silc projects** (same shape as `silc init`). See
+[`examples/README.md`](examples/README.md).
+
+| App | Purpose |
 | --- | --- |
-| [`examples/components.silc`](examples/components.silc) | Props, state, events, dual surfaces |
-| [`examples/scored_form.silc`](examples/scored_form.silc) | Form + `text::score` + SQLite (CI path) |
-| [`examples/chat_assistant.silc`](examples/chat_assistant.silc) | Local `llm::complete` chat via **silclm** |
-| [`examples/shopping_app.silc`](examples/shopping_app.silc) | Resources, routes, cart — no Shopping profile |
-| [`examples/http_api.silc`](examples/http_api.silc) | `service::http` → Go/Gin |
-| [`examples/data_pipeline.silc`](examples/data_pipeline.silc) | Stub routing across Bun / Python / Go |
+| [`examples/chatApp/`](examples/chatApp/) | Multi-session local chat via **silclm** |
+| [`examples/inventoryApp/`](examples/inventoryApp/) | Inventory CRUD + browse/admin + grounded silclm assistant |
 
 Runnable operations are gated by an explicit registry in
 [`crates/sil-core/src/operation.rs`](crates/sil-core/src/operation.rs):

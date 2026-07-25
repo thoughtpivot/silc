@@ -144,6 +144,9 @@ pub enum ControlFrame {
         /// Optional multi-chat session key persisted onto the chat record.
         #[serde(default)]
         session_id: String,
+        /// Optional JSON / text application context for grounded llm::complete.
+        #[serde(default)]
+        context: String,
     },
     Response {
         request_id: String,
@@ -486,13 +489,30 @@ mod tests {
                 author,
                 text,
                 session_id,
+                context,
             } => {
                 assert_eq!(request_id, "r1");
                 assert_eq!(author, "");
                 assert_eq!(text, "");
                 assert_eq!(session_id, "");
+                assert_eq!(context, "");
             }
             other => panic!("expected Ingest, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn ingest_round_trips_context() {
+        let frame = ControlFrame::Ingest {
+            request_id: "r2".into(),
+            author: "".into(),
+            text: "how many widgets?".into(),
+            session_id: "s1".into(),
+            context: r#"[{"name":"widget","quantity":3}]"#.into(),
+        };
+        let mut buf = Vec::new();
+        write_frame(&mut buf, &frame).unwrap();
+        let decoded = read_frame(&mut buf.as_slice()).unwrap();
+        assert_eq!(decoded, frame);
     }
 }

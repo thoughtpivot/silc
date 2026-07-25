@@ -1,0 +1,42 @@
+# Silc example apps
+
+Each directory under `examples/` is a **standalone Silc 0.2.0 project** —
+the same shape `silc init` creates for end users.
+
+## Layout
+
+```text
+examples/<appName>/
+  main.silc      # authored program (only .silc source that matters)
+  AGENTS.md      # agent guidance (snapshot of the compiler template + optional notes)
+  README.md      # how to build/run this app
+  .gitignore     # ignores .runtime/ and .silc/
+  .runtime/      # compiler-owned (never commit, never hand-edit)
+  .silc/         # runtime lock (never commit, never hand-edit)
+```
+
+## Current apps
+
+| App | Purpose | Web | Terminal |
+| --- | --- | --- | --- |
+| [`chatApp/`](chatApp/) | Multi-session local chat via **silclm** | 18090 | 18091 |
+| [`inventoryApp/`](inventoryApp/) | Inventory CRUD + browse/admin + grounded silclm assistant | 18096 | 18097 |
+
+## Conventions
+
+1. Author only `.silc` (and project docs). Never patch `.runtime/`.
+2. Every UI app declares **both** `ui::web` and `ui::terminal`.
+3. Prefer the default model: call `llm::complete()` with no `:model` (resolves to **silclm**).
+4. Chat that must reason over live data uses `ui::chat(:context($.items), …)`.
+5. Rebuild with the current `silc` after compiler upgrades — generated workers refresh automatically.
+6. Future training corpora will come from these apps; they are not a dataset yet.
+
+## Build / run
+
+```bash
+cargo install --path crates/silc --force   # once, from the compiler repo
+
+cd examples/chatApp
+silc build main.silc
+silc main.silc
+```

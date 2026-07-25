@@ -1,0 +1,173 @@
+#!/usr/bin/env silc
+# Native Silc 0.2.0 AI chat assistant with multiple chats.
+@version("0.2.0")
+
+class ChatSession {
+    has Str $.id;
+    has Str $.title;
+}
+
+class ChatRecord {
+    has Str $.prompt;
+    has Str $.reply;
+    has Str $.session_id;
+}
+
+class ChatSessions is resource {
+    has Str $.table = "chat_sessions";
+
+    query list() -> [ChatSession] {
+        ChatSession ==> resource::list(:table(chat_sessions))
+    }
+
+    mutation create(ChatSession $item) {
+        $item ==> resource::create(:table(chat_sessions))
+    }
+
+    mutation update(ChatSession $item) {
+        $item ==> resource::update(:table(chat_sessions))
+    }
+
+    mutation delete(ChatSession $item) {
+        $item ==> resource::delete(:table(chat_sessions))
+    }
+}
+
+class SessionItem is component {
+    has ChatSession $.session;
+    has Bool $.selected = false;
+    has Str $.draft_title = "";
+    emit select(ChatSession);
+
+    method render() {
+        ui::stack(
+            when $.selected {
+                ui::button(
+                    :label($.draft_title),
+                    :variant("primary"),
+                    :on(click(on_click))
+                )
+            } else {
+                ui::button(
+                    :label($.session.title),
+                    :variant("secondary"),
+                    :on(click(on_click))
+                )
+            }
+        )
+    }
+
+    method on_click() {
+        emit select($.session);
+    }
+}
+
+class ChatPage is component {
+    has state Str $.prompt = "";
+    has state Str $.active_session = "";
+    has state Str $.title_edit = "New conversation";
+    query $.sessions = ChatSessions.list();
+
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("AI Chat Assistant"))),
+            :side_panel(ui::side_panel(
+                ui::stack(
+                    ui::button(
+                        :label("+ New chat"),
+                        :on(click(on_new))
+                    ),
+                    ui::heading(:text("Chats"), :level(3)),
+                    for $.sessions -> $session {
+                        SessionItem(
+                            :session($session),
+                            :selected($.active_session == $session.id),
+                            :draft_title($.title_edit),
+                            :on(select => on_select)
+                        )
+                    }
+                )
+            )),
+            ui::stack(
+                when $.active_session {
+                    ui::stack(
+                        ui::heading(:text($.title_edit), :level(2)),
+                        ui::form(:on(submit(on_rename)),
+                            ui::text_input(:field(title_edit), :label("Rename chat")),
+                            ui::toolbar(
+                                ui::button(:label("Save name"), :submit),
+                                ui::button(
+                                    :label("Delete chat"),
+                                    :variant("destructive"),
+                                    :on(click(on_delete))
+                                )
+                            )
+                        ),
+                        ui::chat(
+                            :value($.prompt),
+                            :session($.active_session),
+                            :placeholder("Ask me anything…"),
+                            :on(send(on_send))
+                        )
+                    )
+                } else {
+                    ui::text(:text("Select a chat or create a new one."))
+                }
+            )
+        )
+    }
+
+    method on_new() {
+        ChatSessions.create(ChatSession.new(:title("Untitled")));
+        ChatSessions.list();
+        $.prompt = "";
+        $.title_edit = "Untitled";
+    }
+
+    method on_select(ChatSession $session) {
+        $.active_session = $session.id;
+        $.title_edit = $session.title;
+        $.prompt = "";
+    }
+
+    method on_rename() {
+        ChatSessions.update(ChatSession.new(:id($.active_session), :title($.title_edit)));
+        ChatSessions.list();
+    }
+
+    method on_delete() {
+        ChatSessions.delete(ChatSession.new(:id($.active_session), :title($.title_edit)));
+        ChatSessions.list();
+        $.active_session = "";
+        $.title_edit = "New conversation";
+        $.prompt = "";
+    }
+
+    method on_send() {
+        Assistant.complete();
+    }
+}
+
+class ChatApp is app {
+    route "/" => ChatPage;
+
+    method serve() {
+        ui::web(:root(ChatApp), :port(18090), :route("/"))
+            ==> ui::terminal(:port(18091))
+    }
+}
+
+class Assistant is processor {
+    method complete(ChatRecord $record) {
+        $record.prompt ==> llm::complete()
+    }
+}
+
+class ChatDb is sink is storage(SQLite) {
+    method persist(ChatRecord $record) {
+        $record
+            ==> ipc::publish()
+            ==> store::sqlite(:table(chats))
+            ==> store::commit()
+    }
+}

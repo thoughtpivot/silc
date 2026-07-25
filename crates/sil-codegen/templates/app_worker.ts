@@ -80,6 +80,17 @@ function connectSupervisor(): Promise<void> {
 }
 
 const INGEST_TIMEOUT_MS = 180_000;
+// Keep application context well under DEFAULT_PAYLOAD_CAPACITY (16 KiB).
+const MAX_CONTEXT_CHARS = 8_192;
+
+function normalizeContext(raw: unknown): string {
+  if (raw === undefined || raw === null || raw === "") return "";
+  let text = typeof raw === "string" ? raw : JSON.stringify(raw);
+  if (text.length > MAX_CONTEXT_CHARS) {
+    text = text.slice(0, MAX_CONTEXT_CHARS) + "…[truncated]";
+  }
+  return text;
+}
 
 function ingest(payload: Record<string, unknown>, requestId: string): Promise<any> {
   if (!supervisor) return Promise.reject(new Error("supervisor socket not connected"));
@@ -203,6 +214,7 @@ async function handleAction(req: Request, pathname: string): Promise<Response | 
     const body = await req.json();
     const requestId = crypto.randomUUID();
     const prompt = body.prompt || body.text || "";
+    const context = normalizeContext(body.context);
     const response = await ingest(
       {
         author: "",
@@ -211,6 +223,7 @@ async function handleAction(req: Request, pathname: string): Promise<Response | 
         reply: "",
         model: body.model || "",
         session_id: body.session_id || "",
+        context,
       },
       requestId
     );

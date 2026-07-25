@@ -141,7 +141,7 @@ mod tests {
 
     #[test]
     fn routes_article_pipeline_three_ways() {
-        let source = include_str!("../../../examples/data_pipeline.silc");
+        let source = include_str!("../tests/fixtures/data_pipeline.silc");
         let program = sil_parser::parse(source).expect("parse example");
         let decisions = route_program(&program);
         assert_eq!(decisions[0].target, Target::Bun);

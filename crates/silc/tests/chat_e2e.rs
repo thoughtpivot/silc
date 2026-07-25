@@ -50,7 +50,7 @@ fn read_until(stream: &mut TcpStream, needle: &str, timeout: Duration) -> String
 #[test]
 fn chat_assistant_builds_dual_surface() {
     let example =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/chat_assistant.silc");
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/chatApp/main.silc");
     let build = Command::new(silc_bin())
         .args(["build", example.to_str().unwrap()])
         .output()
@@ -62,7 +62,7 @@ fn chat_assistant_builds_dual_surface() {
         String::from_utf8_lossy(&build.stderr)
     );
     let root =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/.runtime/chat_assistant");
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/chatApp/.runtime/main");
     assert!(root.join("typescript/worker.ts").is_file());
     assert!(root.join("typescript/terminal.ts").is_file());
     assert!(root.join("typescript/src/App.tsx").is_file());
@@ -84,7 +84,17 @@ fn chat_assistant_builds_dual_surface() {
     let manifest = std::fs::read_to_string(root.join("manifest.json")).unwrap();
     assert!(!manifest.contains("portal_kind"));
     assert!(manifest.contains("llm") || manifest.contains("llm.complete"));
+    assert!(
+        manifest.contains("silclm"),
+        "default model must resolve to silclm even when source omits :model"
+    );
+    assert!(!manifest.contains("llama3.2-1b"));
     assert!(manifest.contains("terminal"));
+    let source = std::fs::read_to_string(example).unwrap();
+    assert!(
+        source.contains("llm::complete()") && !source.contains(":model("),
+        "chatApp should rely on the implicit silclm default"
+    );
 }
 
 #[test]
@@ -169,7 +179,7 @@ fn chat_assistant_real_completion_e2e() {
     free_port(18091);
 
     let example =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/chat_assistant.silc");
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/chatApp/main.silc");
     let temp = std::env::temp_dir().join(format!(
         "silc-chat-e2e-{}-{}",
         std::process::id(),
@@ -184,7 +194,7 @@ fn chat_assistant_real_completion_e2e() {
         .stdout(Stdio::from(log.try_clone().unwrap()))
         .stderr(Stdio::from(log))
         .spawn()
-        .expect("run chat_assistant");
+        .expect("run chatApp");
 
     let ready = Instant::now();
     let mut healthy = false;

@@ -266,5 +266,6 @@ splitting does not.
 - Add typed field views atop the implemented mmap/UDS ABI
 - Add program-level crash recovery and deployment bundles
 
-See [`examples/data_pipeline.silc`](../examples/data_pipeline.silc) for the
-NetworkIngress → EmbeddingEngine → RealtimeCache example.
+See [`examples/README.md`](../examples/README.md) for standalone example apps
+(`chatApp`, `inventoryApp`). Stub routing fixtures used by compiler tests live
+under `crates/*/tests/fixtures/`.
