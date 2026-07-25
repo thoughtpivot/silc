@@ -30,6 +30,7 @@ const UI_WEB_BUTTON_TSX: &str = include_str!("../templates/ui_web_button.tsx");
 const UI_WEB_INPUT_TSX: &str = include_str!("../templates/ui_web_input.tsx");
 const UI_WEB_LABEL_TSX: &str = include_str!("../templates/ui_web_label.tsx");
 const UI_WEB_TEXTAREA_TSX: &str = include_str!("../templates/ui_web_textarea.tsx");
+const UI_WEB_LOGO_TSX: &str = include_str!("../templates/ui_web_logo.tsx");
 
 /// Compiler-pinned React version for ui::web (must match ui_web_package.json).
 pub const UI_WEB_REACT_VERSION: &str = "18.3.1";
@@ -161,6 +162,7 @@ pub fn emit(
                     "typescript/src/components/ui/input.tsx",
                     "typescript/src/components/ui/label.tsx",
                     "typescript/src/components/ui/textarea.tsx",
+                    "typescript/src/components/ui/logo.tsx",
                     "typescript/tailwind.config.js",
                     "typescript/index.html",
                     "typescript/package.json",
@@ -331,6 +333,10 @@ fn emit_ui_feedback(
         (
             root.join("typescript/src/components/ui/textarea.tsx"),
             UI_WEB_TEXTAREA_TSX.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/ui/logo.tsx"),
+            UI_WEB_LOGO_TSX.to_string(),
         ),
         (
             root.join("python/worker.py"),
@@ -691,12 +697,19 @@ mod tests {
         assert!(ts.contains("dist"));
         assert!(ts.contains("Bun.listen"));
         assert!(ts.contains("SILC_TERMINAL_READY"));
+        assert!(ts.contains("thoughtPivotAscii"));
+        assert!(ts.contains("THOUGHTPIVOT"));
         assert!(app.contains("function App"));
         assert!(app.contains("/submit"));
         assert!(app.contains("components/ui/button"));
+        assert!(app.contains("ThoughtPivotLogo"));
         assert!(button.contains("ShadCN-style Button"));
         assert!(theme.contains("@tailwind"));
-        assert!(theme.contains("--silc-accent"));
+        assert!(theme.contains("--silc-accent: #6b9dd5"));
+        let logo =
+            fs::read_to_string(output.join("typescript/src/components/ui/logo.tsx")).unwrap();
+        assert!(logo.contains("ThoughtPivot brand wordmark"));
+        assert!(logo.contains("fill=\"currentColor\""));
         assert!(pkg.contains(UI_WEB_REACT_VERSION));
         assert!(pkg.contains(UI_WEB_TAILWIND_VERSION));
         assert!(lock.contains(&format!("react@{UI_WEB_REACT_VERSION}")));

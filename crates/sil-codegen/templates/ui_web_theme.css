@@ -4,22 +4,26 @@
 @tailwind utilities;
 
 @layer base {
+  /* ThoughtPivot brand palette (https://www.thoughtpivot.com) — abyss dark,
+     warm ink, copper accent. */
   :root {
-    --background: 222 47% 8%;
-    --foreground: 214 60% 95%;
-    --card: 222 40% 12%;
-    --card-foreground: 214 60% 95%;
-    --primary: 217 91% 62%;
+    --background: 216 24% 4%;
+    --foreground: 37 27% 94%;
+    --card: 218 17% 9%;
+    --card-foreground: 37 27% 94%;
+    --primary: 212 42% 50%;
     --primary-foreground: 0 0% 100%;
-    --muted: 222 30% 18%;
-    --muted-foreground: 218 28% 70%;
+    --muted: 222 24% 11%;
+    --muted-foreground: 217 9% 62%;
     --destructive: 350 90% 70%;
     --destructive-foreground: 0 0% 100%;
-    --border: 222 32% 24%;
-    --input: 222 32% 24%;
-    --ring: 217 91% 62%;
+    --border: 222 16% 12%;
+    --input: 222 16% 12%;
+    --ring: 212 42% 50%;
     --radius: 0.75rem;
-    --silc-accent: #6ea8ff;
+    --silc-accent: #6b9dd5;
+    --tp-grid-color: #ffffff06;
+    --tp-grid-size: 40px;
   }
 
   * {
@@ -30,8 +34,13 @@
   body {
     @apply min-h-full bg-background text-foreground antialiased;
     background-image:
-      radial-gradient(1200px 600px at 10% -10%, rgba(61, 125, 255, 0.28), transparent 55%),
-      radial-gradient(900px 500px at 100% 0%, rgba(61, 222, 168, 0.16), transparent 50%);
+      radial-gradient(1100px 560px at 50% -12%, rgba(75, 124, 181, 0.18), transparent 55%),
+      linear-gradient(var(--tp-grid-color) 1px, transparent 1px),
+      linear-gradient(90deg, var(--tp-grid-color) 1px, transparent 1px);
+    background-size:
+      100% 100%,
+      var(--tp-grid-size) var(--tp-grid-size),
+      var(--tp-grid-size) var(--tp-grid-size);
   }
 
   #app {

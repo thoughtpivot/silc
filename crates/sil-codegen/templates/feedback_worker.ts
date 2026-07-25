@@ -143,6 +143,14 @@ type TerminalSession = {
   buffer: string;
 };
 
+const thoughtPivotAscii = [
+  "  _______ ____",
+  " /_  __// __ \\",
+  "  / /  / /_/ /",
+  " /_/  / ____/",
+  "     /_/",
+].join("\r\n");
+
 function stripTelnetNegotiation(bytes: Uint8Array): Uint8Array {
   const plain: number[] = [];
   for (let i = 0; i < bytes.length; i++) {
@@ -159,7 +167,11 @@ function stripTelnetNegotiation(bytes: Uint8Array): Uint8Array {
 
 function terminalBanner(socket: any) {
   socket.write(
-    "\x1b[2J\x1b[HSilc Feedback Portal\r\n" +
+    "\x1b[2J\x1b[H" +
+      `\x1b[38;2;107;157;213m${thoughtPivotAscii}\x1b[0m\r\n` +
+      "\x1b[1mTHOUGHTPIVOT\x1b[0m / SILC\r\n" +
+      "----------------------------------------\r\n" +
+      "Feedback Portal\r\n" +
       "Bun terminal → Silc mmap/UDS → Python → Go/SQLite\r\n" +
       "Type /quit at any prompt to disconnect.\r\n\r\n" +
       "Author: ",
