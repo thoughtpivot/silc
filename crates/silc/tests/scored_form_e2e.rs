@@ -76,7 +76,14 @@ fn scored_form_web_and_terminal_e2e() {
         runtime.join("dist/index.html").is_file(),
         "web index missing"
     );
-    assert!(runtime.join("dist/app.js").is_file(), "web app.js missing");
+    assert!(
+        runtime.join("dist/assets/app.js").is_file(),
+        "web app.js missing under dist/assets/"
+    );
+    assert!(
+        runtime.join("dist/assets/theme.css").is_file(),
+        "web theme.css missing under dist/assets/"
+    );
     assert!(
         runtime.join("terminal.ts").is_file(),
         "terminal surface module missing"
@@ -125,6 +132,38 @@ fn scored_form_web_and_terminal_e2e() {
     assert!(
         page.contains("id=\"app\"") || page.contains("silc") || page.contains("app.js"),
         "expected React shell HTML, got: {page}"
+    );
+    assert!(
+        page.contains("/assets/app.js") && page.contains("/assets/theme.css"),
+        "index.html must reference /assets/ paths, got: {page}"
+    );
+
+    let js = ureq::get("http://127.0.0.1:18080/assets/app.js")
+        .call()
+        .expect("get app.js");
+    let js_ct = js.header("content-type").unwrap_or("").to_string();
+    let js_body = js.into_string().unwrap();
+    assert!(
+        js_body.len() > 1_000 && !js_body.contains("<!DOCTYPE html>"),
+        "expected real JS at /assets/app.js, got {} bytes content-type={js_ct}: {}",
+        js_body.len(),
+        &js_body[..js_body.len().min(120)]
+    );
+    assert!(
+        js_ct.contains("javascript") || js_ct.contains("ecmascript") || js_ct.is_empty(),
+        "unexpected content-type for /assets/app.js: {js_ct}"
+    );
+
+    let css = ureq::get("http://127.0.0.1:18080/assets/theme.css")
+        .call()
+        .expect("get theme.css")
+        .into_string()
+        .unwrap();
+    assert!(
+        css.len() > 20 && !css.contains("<!DOCTYPE html>"),
+        "expected real CSS at /assets/theme.css, got {} bytes: {}",
+        css.len(),
+        &css[..css.len().min(120)]
     );
 
     let mut terminal = TcpStream::connect("127.0.0.1:18023").expect("connect terminal");

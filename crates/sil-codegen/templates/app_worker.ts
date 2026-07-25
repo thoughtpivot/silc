@@ -201,12 +201,15 @@ const server = Bun.serve({
     if (pathname === route || pathname === "/" || pathname === route + "/") {
       return new Response(Bun.file(join(distDir, "index.html")));
     }
+    // Static assets must never fall back to index.html — that makes the
+    // browser execute HTML as JS and produces a blank white page.
     if (pathname.startsWith("/assets/") || pathname.endsWith(".js") || pathname.endsWith(".css")) {
       const filePath = join(distDir, pathname.replace(/^\//, ""));
       const file = Bun.file(filePath);
       if (await file.exists()) {
         return new Response(file, { headers: { "content-type": contentType(pathname) } });
       }
+      return new Response("Not found", { status: 404 });
     }
     const asset = Bun.file(join(distDir, pathname.replace(/^\//, "")));
     if (await asset.exists()) {

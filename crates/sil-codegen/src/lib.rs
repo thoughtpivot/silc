@@ -220,8 +220,8 @@ pub fn emit(
                     "typescript/package.json",
                     "typescript/bun.lock",
                     "typescript/dist/index.html",
-                    "typescript/dist/app.js",
-                    "typescript/dist/theme.css",
+                    "typescript/dist/assets/app.js",
+                    "typescript/dist/assets/theme.css",
                 ],
                 "dependencies": {
                     "react": UI_WEB_REACT_VERSION,
@@ -1071,6 +1071,14 @@ class FeedbackApi is service {
 
         let app = fs::read_to_string(output.join("typescript/src/App.tsx")).unwrap();
         assert!(app.contains("ChatComposer") || app.contains("chat"));
+        assert!(
+            app.contains("<ChatComposer") && app.contains("onSubmit=") && app.contains("id="),
+            "ChatComposer must receive id and onSubmit, got:\n{app}"
+        );
+        assert!(
+            !app.contains("onSend="),
+            "ChatComposer must not use onSend prop"
+        );
         assert!(app.contains("HistoryPanel") || app.contains("Chat History"));
         assert!(app.contains("/complete") || app.contains("on_send"));
         assert!(app.contains("AppBar"));

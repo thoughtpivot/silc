@@ -435,22 +435,40 @@ fn render_node(node: &UiNode, indent: usize) -> String {
             children = render_children(&node.children, indent + 2)
         ),
         "chat" => {
+            let field = node
+                .prop("field")
+                .and_then(|e| e.as_ident())
+                .map(|s| s.to_string())
+                .or_else(|| {
+                    node.prop("value")
+                        .and_then(|e| e.as_ident())
+                        .map(|s| s.to_string())
+                })
+                .unwrap_or_else(|| "prompt".into());
             let value = node
                 .prop("value")
                 .or_else(|| node.prop("field"))
                 .map(expr_to_js)
-                .unwrap_or_else(|| "prompt".into());
+                .unwrap_or_else(|| field.clone());
+            let setter = format!("set{}", pascal(&field));
             let send = node
                 .events
                 .iter()
                 .find(|e| e.event == "send")
-                .map(|e| e.handler.as_str())
-                .unwrap_or("undefined");
+                .map(|e| e.handler.as_str());
+            let on_submit = match send {
+                Some(handler) => format!(
+                    "async (e) => {{ e.preventDefault(); await {handler}(); }}"
+                ),
+                None => "async (e) => { e.preventDefault(); }".into(),
+            };
             format!(
-                "{pad}<ChatComposer value={{{value}}} onChange={{setPrompt}} onSend={{{send}}} />",
+                "{pad}<ChatComposer id={{\"{id}\"}} value={{{value}}} onChange={{{setter}}} onSubmit={{{on_submit}}} />",
                 pad = pad,
+                id = field,
                 value = value,
-                send = send
+                setter = setter,
+                on_submit = on_submit
             )
         }
         "chat_history" => format!(

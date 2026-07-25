@@ -157,9 +157,11 @@ pub fn build_ui_web(lock: &RuntimeLock, runtime_root: &Path) -> Result<(), Strin
     }
 
     let dist = ts_dir.join("dist");
-    fs::create_dir_all(&dist).map_err(|e| format!("create dist: {e}"))?;
+    let assets = dist.join("assets");
+    fs::create_dir_all(&assets).map_err(|e| format!("create dist/assets: {e}"))?;
 
     // Compile Tailwind utilities into the published theme asset.
+    // Paths must match ui_web_index.html (/assets/theme.css, /assets/app.js).
     let css = Command::new(&lock.bun_bin)
         .current_dir(&ts_dir)
         .args([
@@ -169,7 +171,7 @@ pub fn build_ui_web(lock: &RuntimeLock, runtime_root: &Path) -> Result<(), Strin
             "-i",
             "./src/theme.css",
             "-o",
-            "./dist/theme.css",
+            "./dist/assets/theme.css",
             "--minify",
         ])
         .stdout(Stdio::piped())
@@ -190,7 +192,7 @@ pub fn build_ui_web(lock: &RuntimeLock, runtime_root: &Path) -> Result<(), Strin
         .args([
             "build",
             "./src/main.tsx",
-            "--outfile=dist/app.js",
+            "--outfile=dist/assets/app.js",
             "--target=browser",
             "--minify",
         ])
@@ -210,11 +212,11 @@ pub fn build_ui_web(lock: &RuntimeLock, runtime_root: &Path) -> Result<(), Strin
     fs::copy(ts_dir.join("index.html"), dist.join("index.html"))
         .map_err(|e| format!("copy ui::web index.html: {e}"))?;
 
-    if !dist.join("app.js").is_file() {
-        return Err("Silc ui::web bundle did not produce dist/app.js".into());
+    if !assets.join("app.js").is_file() {
+        return Err("Silc ui::web bundle did not produce dist/assets/app.js".into());
     }
-    if !dist.join("theme.css").is_file() {
-        return Err("Silc ui::web Tailwind compile did not produce dist/theme.css".into());
+    if !assets.join("theme.css").is_file() {
+        return Err("Silc ui::web Tailwind compile did not produce dist/assets/theme.css".into());
     }
     Ok(())
 }
