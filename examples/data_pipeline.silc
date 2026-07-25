@@ -1,0 +1,36 @@
+@version("0.2.0")
+
+# Stub-only data pipeline (non-UI operation routing).
+
+subset Uri of Str where { .contains("://") }
+subset Emb768 of Vec[num32; 768];
+
+class ArticlePayload {
+    has UUID $.id;
+    has Uri $.url;
+    has Str $.raw_content;
+    has Emb768 $.vector_embedding;
+}
+
+class NetworkIngress is service {
+    method fetch_article() {
+        target_url
+            ==> http::get()
+            ==> html::extract_body()
+            ==> ArticlePayload
+    }
+}
+
+class EmbeddingEngine is processor {
+    method generate_vectors() {
+        ==> tensor::tokenize()
+            ==> tensor::infer(:prefer(CUDA))
+    }
+}
+
+class RealtimeCache is sink is latency(2ms) is storage(MemoryMapped) {
+    method persist() {
+        ==> ipc::share_buffer()
+            ==> store::upsert_primary()
+    }
+}

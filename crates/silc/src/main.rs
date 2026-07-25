@@ -54,7 +54,7 @@ fn build_only(entry: &Path) -> Result<(), String> {
         println!("go:      {}", lock.go_bin.display());
         println!("engines locked under .silc/runtimes.lock.json");
     } else {
-        println!("stub emit only — this program is not executable in Silc v1");
+        println!("stub emit only — this program is not executable in Silc 0.2.0");
     }
     Ok(())
 }
@@ -70,9 +70,9 @@ fn compile_and_maybe_run(entry: &Path) -> Result<(), String> {
     match output.execution_mode {
         ExecutionMode::Stub => {
             println!();
-            println!("stub emit complete — worker execution requires runnable v1 operations");
+            println!("stub emit complete — worker execution requires runnable 0.2.0 operations");
             println!(
-                "(service::http, or ui::web / html::form+http::serve with text::score or llm::complete, ipc::publish, store::sqlite, store::commit)"
+                "(is app with ui::web + ui::terminal, resources/actions, optional text::score or llm::complete, or service::http)"
             );
             Ok(())
         }
@@ -84,7 +84,7 @@ fn compile_and_maybe_run(entry: &Path) -> Result<(), String> {
             if graph.is_api_only() {
                 supervisor::run_api(&output, &lock)
             } else {
-                supervisor::run_feedback(&output, &lock)
+                supervisor::run_app(&output, &lock)
             }
         }
     }
@@ -142,7 +142,7 @@ fn compile_common(
         if graph.has_ui() {
             supervisor::build_ui_web(&lock, &output.root)?;
             supervisor::build_go_worker(&lock, &output.root)?;
-            if graph.portal_kind.needs_llm() {
+            if graph.needs_llm() {
                 let model_id = graph
                     .model_ref
                     .as_deref()

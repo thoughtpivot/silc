@@ -17,13 +17,16 @@ export function ChatThread({
   thinking?: boolean;
   className?: string;
 }) {
-  const endRef = React.useRef<HTMLDivElement | null>(null);
+  // Scroll only this container; scrollIntoView would also scroll the page.
+  const scrollRef = React.useRef<HTMLDivElement | null>(null);
   React.useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    const node = scrollRef.current;
+    if (node) node.scrollTo({ top: node.scrollHeight, behavior: "smooth" });
   }, [messages.length, thinking]);
 
   return (
     <div
+      ref={scrollRef}
       className={cn(
         "flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto rounded-xl border border-border bg-card/60 p-4",
         className
@@ -63,7 +66,6 @@ export function ChatThread({
           </div>
         </div>
       ) : null}
-      <div ref={endRef} />
     </div>
   );
 }

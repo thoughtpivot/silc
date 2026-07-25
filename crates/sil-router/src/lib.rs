@@ -141,7 +141,7 @@ mod tests {
 
     #[test]
     fn routes_article_pipeline_three_ways() {
-        let source = include_str!("../../../examples/article_pipeline.silc");
+        let source = include_str!("../../../examples/data_pipeline.silc");
         let program = sil_parser::parse(source).expect("parse example");
         let decisions = route_program(&program);
         assert_eq!(decisions[0].target, Target::Bun);
@@ -176,7 +176,9 @@ mod tests {
                 }],
                 span: Span::default(),
             }],
-            views: vec![],
+            components: vec![],
+            resources: vec![],
+            apps: vec![],
         };
         let decisions = route_program(&program);
         assert_eq!(decisions.len(), 1);
@@ -212,13 +214,40 @@ class FeedbackDb is sink is latency(5ms) is storage(SQLite) {
 
     #[test]
     fn routes_llm_processor_to_python() {
-        let source = include_str!("../../../examples/llm_portal.silc");
-        let program = sil_parser::parse(source).expect("parse llm portal");
+        let source = r#"
+@version("0.2.0")
+class ChatRecord { has Str $.prompt; has Str $.reply; }
+class ChatPage is component {
+    has state Str $.prompt = "";
+    method render() {
+        ui::page(ui::chat(:value($.prompt), :on(send(on_send))))
+    }
+    method on_send() { Assistant.complete(); }
+}
+class ChatApp is app {
+    route "/" => ChatPage;
+    method serve() {
+        ui::web(:root(ChatApp), :port(18090)) ==> ui::terminal(:port(18091))
+    }
+}
+class Assistant is processor {
+    method complete(ChatRecord $record) {
+        $record.prompt ==> llm::complete(:model("llama3.2-1b"))
+    }
+}
+class ChatDb is sink is storage(SQLite) {
+    method persist(ChatRecord $record) {
+        $record ==> ipc::publish() ==> store::sqlite(:table(chats)) ==> store::commit()
+    }
+}
+"#;
+        let program = sil_parser::parse(source).expect("parse chat app");
         let decisions = route_program(&program);
-        assert_eq!(decisions[0].target, Target::Bun);
-        assert_eq!(decisions[1].target, Target::Python);
-        assert!(decisions[1].provenance.contains("llm"));
-        assert_eq!(decisions[2].target, Target::Go);
+        let python = decisions.iter().find(|d| d.target == Target::Python);
+        assert!(python.is_some(), "expected python processor route");
+        assert!(python.unwrap().provenance.contains("llm"));
+        let go = decisions.iter().find(|d| d.target == Target::Go);
+        assert!(go.is_some(), "expected go sink route");
     }
 
     #[test]

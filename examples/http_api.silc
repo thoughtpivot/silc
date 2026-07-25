@@ -1,0 +1,19 @@
+@version("0.2.0")
+
+# Generic service::http API (no UI portal profile).
+
+class Item {
+    has UUID $.id;
+    has Str $.name;
+    has Str $.body;
+}
+
+class ItemApi is service {
+    method list(:$port = 18081) {
+        Item ==> service::http(:port(18081), :route("/api/items"), :method(GET))
+    }
+
+    method create(:$port = 18081) {
+        Item ==> service::http(:port(18081), :route("/api/items"), :method(POST))
+    }
+}

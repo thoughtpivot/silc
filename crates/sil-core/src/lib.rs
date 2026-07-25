@@ -1,22 +1,33 @@
-//! Subject-oriented semantic core of ThoughtPivot Silc.
+//! Subject-oriented semantic core of ThoughtPivot Silc 0.2.0.
 //!
 //! Surface mapping (Raku-inspired Silc, ADR-002):
 //! `class`/`has`/`subset` → Contract, `is service` → Module,
+//! `is component` → Component, `is resource` → Resource, `is app` → App,
 //! traits/units/adverbials → Constraint, `==>` → Pipeline.
 
+pub mod app;
+pub mod component;
 pub mod constraint;
 pub mod contract;
+pub mod expr;
 pub mod model_catalog;
 pub mod module;
 pub mod operation;
 pub mod pipeline;
 pub mod program;
+pub mod resource;
 pub mod target;
 pub mod types;
 pub mod ui;
 
+pub use app::{App, Route};
+pub use component::{
+    CompField, Component, EmitDecl, EventBinding, Handler, QueryBinding, SlotDecl, UiNode,
+    UiTemplate,
+};
 pub use constraint::TraitArg;
 pub use contract::{Contract, Field, Subset};
+pub use expr::{BinOp, Expr, InterpPart, UnaryOp};
 pub use model_catalog::{
     is_known_model_id, lookup_model, validate_model_id, ModelCatalogEntry, DEFAULT_MODEL_ID,
     MODEL_CATALOG,
@@ -24,15 +35,16 @@ pub use model_catalog::{
 pub use module::{Method, Module, ModuleKind, Param};
 pub use operation::{
     classify_program, infer_graph, is_executable_op, ApiRoute, ExecutableGraph, ExecutionMode,
-    PortalKind, UiSurface,
+    ProcessorOp, UiCapabilities, DEFAULT_API_PORT, DEFAULT_TERMINAL_PORT, DEFAULT_WEB_PORT,
 };
 pub use pipeline::{Pipeline, PipelineStep};
 pub use program::Program;
+pub use resource::{ActionDef, Resource, ResourceKind, ResourceMethod};
 pub use target::Target;
 pub use types::{Span, TypeExpr};
 pub use ui::{
-    catalog_component_names, lookup_component, validate_view, ComponentSpec, PropKind, PropSpec,
-    UiNode, UiValue, UiView, UI_COMPONENT_CATALOG,
+    catalog_component_names, lookup_component, validate_builtin_node, validate_template,
+    ComponentSpec, PropKind, PropSpec, Surface, UI_COMPONENT_CATALOG,
 };
 
 #[cfg(test)]
@@ -62,7 +74,7 @@ mod tests {
 
     pub fn sample_article_pipeline() -> Program {
         Program {
-            version: Some("1.0".into()),
+            version: Some("0.2.0".into()),
             subsets: vec![
                 Subset {
                     name: "Uri".into(),
@@ -83,26 +95,10 @@ mod tests {
             contracts: vec![Contract {
                 name: "ArticlePayload".into(),
                 fields: vec![
-                    Field {
-                        name: "id".into(),
-                        ty: TypeExpr::Named("UUID".into()),
-                        default: None,
-                    },
-                    Field {
-                        name: "url".into(),
-                        ty: TypeExpr::Named("Uri".into()),
-                        default: None,
-                    },
-                    Field {
-                        name: "raw_content".into(),
-                        ty: TypeExpr::Named("Str".into()),
-                        default: None,
-                    },
-                    Field {
-                        name: "vector_embedding".into(),
-                        ty: TypeExpr::Named("Emb768".into()),
-                        default: None,
-                    },
+                    Field::new("id", TypeExpr::Named("UUID".into())),
+                    Field::new("url", TypeExpr::Named("Uri".into())),
+                    Field::new("raw_content", TypeExpr::Named("Str".into())),
+                    Field::new("vector_embedding", TypeExpr::Named("Emb768".into())),
                 ],
                 span: Span::default(),
             }],
@@ -197,7 +193,9 @@ mod tests {
                     span: Span::default(),
                 },
             ],
-            views: vec![],
+            components: vec![],
+            resources: vec![],
+            apps: vec![],
         }
     }
 }

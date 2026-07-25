@@ -1,0 +1,181 @@
+@version("0.2.0")
+
+# Shopping application without a Shopping/Inventory portal profile.
+# Empty product DB; admin CRUD; storefront; persistent cart; dual surfaces.
+
+class Product {
+    has Str $.id;
+    has Str $.name;
+    has num64 $.price;
+}
+
+class CartItem {
+    has Str $.id;
+    has Str $.product_id;
+    has Str $.name;
+    has num64 $.price;
+    has Int $.quantity;
+}
+
+class Products is resource {
+    has Str $.table = "products";
+
+    query list() -> [Product] {
+        Product ==> resource::list(:table(products))
+    }
+
+    mutation create(Product $item) {
+        $item ==> resource::create(:table(products))
+    }
+
+    mutation delete(Product $item) {
+        $item ==> resource::delete(:table(products))
+    }
+}
+
+class Cart is resource {
+    has Str $.table = "cart_items";
+
+    query list() -> [CartItem] {
+        CartItem ==> resource::list(:table(cart_items))
+    }
+
+    mutation add(CartItem $item) {
+        $item ==> resource::create(:table(cart_items))
+    }
+
+    mutation remove(CartItem $item) {
+        $item ==> resource::delete(:table(cart_items))
+    }
+}
+
+class ProductCard is component {
+    has Product $.product;
+    emit add(Product);
+
+    method render() {
+        ui::card(
+            ui::heading(:text($.product.name), :level(3)),
+            ui::text(:text($.product.price)),
+            ui::button(:label("Add to cart"), :variant(primary), :on(click(on_add)))
+        )
+    }
+
+    method on_add() {
+        emit add($.product);
+    }
+}
+
+class StorefrontPage is component {
+    query $.products = Products.list();
+
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("Store"))),
+            :side_panel(ui::side_panel(
+                ui::nav_item(:label("Shop"), :to("/"), :active),
+                ui::nav_item(:label("Cart"), :to("/cart")),
+                ui::nav_item(:label("Admin"), :to("/admin"))
+            )),
+            ui::stack(
+                ui::heading(:text("Products"), :level(1)),
+                when $.products {
+                    ui::empty(:text("No products yet. Add some in Admin."))
+                },
+                for $.products -> $product {
+                    ProductCard(:product($product), :on(add => on_add))
+                }
+            )
+        )
+    }
+
+    method on_add(Product $product) {
+        Cart.add($product);
+    }
+}
+
+class CartPage is component {
+    query $.lines = Cart.list();
+    has state num64 $.total = 0;
+
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("Cart"))),
+            :side_panel(ui::side_panel(
+                ui::nav_item(:label("Shop"), :to("/")),
+                ui::nav_item(:label("Cart"), :to("/cart"), :active),
+                ui::nav_item(:label("Admin"), :to("/admin"))
+            )),
+            ui::stack(
+                ui::heading(:text("Your cart"), :level(1)),
+                for $.lines -> $line {
+                    ui::row(
+                        ui::text(:text($line.name)),
+                        ui::text(:text($line.quantity)),
+                        ui::button(:label("Remove"), :variant(destructive), :on(click(on_remove)))
+                    )
+                },
+                ui::text(:text($.total))
+            )
+        )
+    }
+
+    method on_remove(CartItem $line) {
+        Cart.remove($line);
+    }
+}
+
+class AdminPage is component {
+    has state Str $.name = "";
+    has state Str $.price = "0";
+    query $.products = Products.list();
+
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("Admin"))),
+            :side_panel(ui::side_panel(
+                ui::nav_item(:label("Shop"), :to("/")),
+                ui::nav_item(:label("Cart"), :to("/cart")),
+                ui::nav_item(:label("Admin"), :to("/admin"), :active)
+            )),
+            ui::stack(
+                ui::heading(:text("Add product"), :level(1)),
+                ui::form(:on(submit(on_create)),
+                    ui::text_input(:field(name), :label("Name")),
+                    ui::text_input(:field(price), :label("Price")),
+                    ui::toolbar(
+                        ui::button(:label("Create"), :variant(primary), :submit)
+                    )
+                ),
+                ui::heading(:text("Catalog"), :level(2)),
+                for $.products -> $product {
+                    ui::row(
+                        ui::text(:text($product.name)),
+                        ui::button(:label("Delete"), :variant(destructive), :on(click(on_delete)))
+                    )
+                }
+            )
+        )
+    }
+
+    method on_create() {
+        Products.create(Product.new(:name($.name), :price($.price)));
+        $.name = "";
+        $.price = "0";
+    }
+
+    method on_delete(Product $product) {
+        Products.delete($product);
+    }
+}
+
+class ShoppingApp is app {
+    route "/" => StorefrontPage;
+    route "/cart" => CartPage;
+    route "/admin" => AdminPage;
+
+    method serve() {
+        ui::web(:root(ShoppingApp), :port(18094), :route("/"))
+            ==> ui::terminal(:port(18095))
+    }
+}

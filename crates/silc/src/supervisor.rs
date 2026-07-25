@@ -2,7 +2,7 @@
 
 use crate::runtimes::RuntimeLock;
 use sil_codegen::EmitResult;
-use sil_core::PortalKind;
+use sil_core::ProcessorOp;
 use sil_ipc::{
     read_frame, write_frame, ControlFrame, SlotPool, DEFAULT_PAYLOAD_CAPACITY, DEFAULT_SLOT_COUNT,
     HEADER_SIZE,
@@ -256,7 +256,7 @@ pub fn run_api(output: &EmitResult, _lock: &RuntimeLock) -> Result<(), String> {
     let graph = output
         .graph
         .as_ref()
-        .ok_or_else(|| "program is not executable in Silc v1".to_string())?;
+        .ok_or_else(|| "program is not executable in Silc 0.2.0".to_string())?;
     if !graph.is_api_only() {
         return Err("run_api requires an API-only service::http program".into());
     }
@@ -307,11 +307,11 @@ pub fn run_api(output: &EmitResult, _lock: &RuntimeLock) -> Result<(), String> {
     Ok(())
 }
 
-pub fn run_feedback(output: &EmitResult, lock: &RuntimeLock) -> Result<(), String> {
+pub fn run_app(output: &EmitResult, lock: &RuntimeLock) -> Result<(), String> {
     let graph = output
         .graph
         .as_ref()
-        .ok_or_else(|| "program is not executable in Silc v1".to_string())?;
+        .ok_or_else(|| "program is not executable in Silc 0.2.0".to_string())?;
     if graph.is_api_only() {
         return run_api(output, lock);
     }
@@ -337,6 +337,7 @@ pub fn run_feedback(output: &EmitResult, lock: &RuntimeLock) -> Result<(), Strin
     let listener =
         UnixListener::bind(&socket_path).map_err(|e| format!("bind supervisor socket: {e}"))?;
 
+    let db_path = data_dir.join("app.db");
     fs::write(
         output.root.join("run.json"),
         serde_json::to_string_pretty(&serde_json::json!({
@@ -344,8 +345,16 @@ pub fn run_feedback(output: &EmitResult, lock: &RuntimeLock) -> Result<(), Strin
             "http_port": graph.http_port,
             "terminal_port": graph.terminal_port,
             "ipc_dir": ipc_dir,
-            "db": data_dir.join(if graph.portal_kind.needs_llm() { "chat.db" } else { "feedback.db" }),
-            "portal_kind": graph.portal_kind.as_str(),
+            "db": &db_path,
+            "processor_op": graph.processor_op.as_str(),
+            "capabilities": {
+                "web": graph.capabilities.web,
+                "terminal": graph.capabilities.terminal,
+                "score": graph.capabilities.score,
+                "llm": graph.capabilities.llm,
+                "history": graph.capabilities.history,
+                "resources": graph.capabilities.resources,
+            },
             "model_ref": graph.model_ref,
         }))
         .unwrap(),
@@ -367,7 +376,7 @@ pub fn run_feedback(output: &EmitResult, lock: &RuntimeLock) -> Result<(), Strin
         let pending = Arc::clone(&pending);
         let pool = Arc::clone(&pool);
         let stop = Arc::clone(&stop);
-        let portal_kind = graph.portal_kind;
+        let processor_op = graph.processor_op;
         let model_id = graph.model_ref.clone();
         let listener = listener.try_clone().map_err(|e| e.to_string())?;
         thread::spawn(move || {
@@ -377,16 +386,16 @@ pub fn run_feedback(output: &EmitResult, lock: &RuntimeLock) -> Result<(), Strin
                 pending,
                 pool,
                 stop,
-                portal_kind,
+                processor_op,
                 model_id,
             )
         })
     };
 
-    // LLM weights load once; deterministic feedback scoring can scale with CPU.
-    let python_replicas = if graph.portal_kind.needs_llm() { 1 } else { 16 };
+    // LLM weights load once; deterministic scoring can scale with CPU.
+    let python_replicas = if graph.needs_llm() { 1 } else { 16 };
     const GO_REPLICAS: usize = 1;
-    let model_path = if graph.portal_kind.needs_llm() {
+    let model_path = if graph.needs_llm() {
         Some(crate::models::ensure_model(
             graph
                 .model_ref
@@ -411,7 +420,7 @@ pub fn run_feedback(output: &EmitResult, lock: &RuntimeLock) -> Result<(), Strin
         &workers,
         "python",
         python_replicas,
-        if graph.portal_kind.needs_llm() {
+        if graph.needs_llm() {
             Duration::from_secs(300)
         } else {
             Duration::from_secs(90)
@@ -438,14 +447,7 @@ pub fn run_feedback(output: &EmitResult, lock: &RuntimeLock) -> Result<(), Strin
     let bun_child = Command::new(&lock.bun_bin)
         .arg(output.root.join("typescript/worker.ts"))
         .env("SILC_SOCKET", &socket_path)
-        .env(
-            "SILC_DB_PATH",
-            data_dir.join(if graph.portal_kind.needs_llm() {
-                "chat.db"
-            } else {
-                "feedback.db"
-            }),
-        )
+        .env("SILC_DB_PATH", &db_path)
         .env("SILC_SQLITE_TABLE", &graph.sqlite_table)
         .env("SILC_HTTP_PORT", graph.http_port.to_string())
         .env("SILC_HTTP_ROUTE", &graph.http_route)
@@ -460,15 +462,12 @@ pub fn run_feedback(output: &EmitResult, lock: &RuntimeLock) -> Result<(), Strin
     children.push(bun_child);
     wait_for_pool(&workers, "bun", 1, Duration::from_secs(30))?;
 
-    let surface = graph
-        .ui_surface
-        .expect("run_feedback UI path requires ui_surface");
-    println!(
-        "silc: ui::web ({}) listening on http://127.0.0.1:{}{}",
-        surface.substrate(),
-        graph.http_port,
-        graph.http_route
-    );
+    if graph.capabilities.web {
+        println!(
+            "silc: ui::web listening on http://127.0.0.1:{}{}",
+            graph.http_port, graph.http_route
+        );
+    }
     if let Some(port) = graph.terminal_port {
         println!("silc: ui::terminal listening at telnet://127.0.0.1:{port}");
         println!("silc: connect with `telnet 127.0.0.1 {port}`");
@@ -556,7 +555,7 @@ fn accept_loop(
     pending: Arc<Mutex<HashMap<String, Pending>>>,
     pool: Arc<Mutex<SlotPool>>,
     stop: Arc<AtomicBool>,
-    portal_kind: PortalKind,
+    processor_op: ProcessorOp,
     model_id: Option<String>,
 ) {
     for stream in listener.incoming() {
@@ -569,7 +568,8 @@ fn accept_loop(
         let pool = Arc::clone(&pool);
         let model_id = model_id.clone();
         thread::spawn(move || {
-            if let Err(err) = handle_client(stream, workers, pending, pool, portal_kind, model_id) {
+            if let Err(err) = handle_client(stream, workers, pending, pool, processor_op, model_id)
+            {
                 eprintln!("silc supervisor: {err}");
             }
         });
@@ -581,7 +581,7 @@ fn handle_client(
     workers: Arc<Mutex<HashMap<String, WorkerPool>>>,
     pending: Arc<Mutex<HashMap<String, Pending>>>,
     pool: Arc<Mutex<SlotPool>>,
-    portal_kind: PortalKind,
+    processor_op: ProcessorOp,
     model_id: Option<String>,
 ) -> Result<(), String> {
     let reader_stream = stream.try_clone().map_err(|e| e.to_string())?;
@@ -634,7 +634,7 @@ fn handle_client(
                         request_id.clone(),
                         author,
                         text,
-                        portal_kind,
+                        processor_op,
                         model_id,
                         Some(response_writer),
                     ) {
@@ -656,7 +656,7 @@ fn handle_client(
                 segment_id,
                 seq,
                 result,
-                portal_kind,
+                processor_op,
             )?,
             Ok(ControlFrame::Error {
                 request_id,
@@ -682,24 +682,29 @@ fn start_ingest(
     request_id: String,
     author: String,
     text: String,
-    portal_kind: PortalKind,
+    processor_op: ProcessorOp,
     model_id: Option<String>,
     response_writer: Option<Arc<Mutex<BufWriter<UnixStream>>>>,
 ) -> Result<(), String> {
     let id = Uuid::new_v4().to_string();
-    let record = match portal_kind {
-        PortalKind::LlmChat | PortalKind::Inventory => serde_json::json!({
+    let record = match processor_op {
+        ProcessorOp::LlmComplete => serde_json::json!({
             "id": id,
             "prompt": text,
             "reply": "",
             "model": model_id.unwrap_or_else(|| sil_core::DEFAULT_MODEL_ID.to_string()),
         }),
-        _ => serde_json::json!({
+        ProcessorOp::Score => serde_json::json!({
             "id": id,
             "author": author,
             "text": text,
             "summary": "",
             "score": 0.0,
+        }),
+        ProcessorOp::None => serde_json::json!({
+            "id": id,
+            "author": author,
+            "text": text,
         }),
     };
     let bytes = serde_json::to_vec(&record).map_err(|e| e.to_string())?;
@@ -740,7 +745,7 @@ fn on_ack(
     segment_id: u64,
     seq: u64,
     result: Option<serde_json::Value>,
-    portal_kind: PortalKind,
+    processor_op: ProcessorOp,
 ) -> Result<(), String> {
     let mut pending_map = pending.lock().map_err(|_| "pending lock".to_string())?;
     let Some(entry) = pending_map.get_mut(&request_id) else {
@@ -787,7 +792,7 @@ fn on_ack(
                     .and_then(|v| v.get("reply"))
                     .and_then(|v| v.as_str())
                     .map(str::to_string),
-                model: if portal_kind.needs_llm() {
+                model: if processor_op.needs_llm() {
                     result
                         .as_ref()
                         .and_then(|v| v.get("model"))
@@ -888,7 +893,7 @@ fn spawn_workers(
     model_path: Option<&Path>,
 ) -> Result<Vec<Child>, String> {
     let mut children = Vec::new();
-    let python_bin = if graph.portal_kind.needs_llm() {
+    let python_bin = if graph.needs_llm() {
         let path = output.root.join("python/.venv/bin/python");
         if !path.is_file() {
             return Err(format!(
@@ -906,7 +911,7 @@ fn spawn_workers(
             .arg(output.root.join("python/worker.py"))
             .env("SILC_SOCKET", socket)
             .env("SILC_IPC_DIR", ipc_dir)
-            .stdout(if graph.portal_kind.needs_llm() {
+            .stdout(if graph.needs_llm() {
                 Stdio::inherit()
             } else {
                 Stdio::null()
@@ -933,14 +938,7 @@ fn spawn_workers(
             Command::new(&go_bin)
                 .env("SILC_SOCKET", socket)
                 .env("SILC_IPC_DIR", ipc_dir)
-                .env(
-                    "SILC_DB_PATH",
-                    data_dir.join(if graph.portal_kind.needs_llm() {
-                        "chat.db"
-                    } else {
-                        "feedback.db"
-                    }),
-                )
+                .env("SILC_DB_PATH", data_dir.join("app.db"))
                 .env("SILC_SQLITE_TABLE", &graph.sqlite_table)
                 .stdout(Stdio::null())
                 .stderr(Stdio::inherit())

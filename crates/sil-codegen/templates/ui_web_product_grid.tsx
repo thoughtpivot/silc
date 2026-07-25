@@ -25,23 +25,23 @@ export function ProductGrid({
   return (
     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
       {products.map((product) => (
-        <article key={product.id} className="rounded-xl border border-border bg-card/85 p-4 shadow-sm">
+        <article key={product.id} className="rounded-xl border border-border bg-card/85 p-3 shadow-sm">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h3 className="m-0 font-semibold">{product.name}</h3>
-              <p className="mt-1 text-xs uppercase tracking-wide text-muted-foreground">
+              <h3 className="m-0 text-sm font-semibold">{product.name}</h3>
+              <p className="mt-0.5 text-xs uppercase tracking-wide text-muted-foreground">
                 {product.category} · aisle {product.aisle}
               </p>
             </div>
-            <strong className="text-[var(--silc-accent)]">${product.price.toFixed(2)}</strong>
+            <strong className="text-sm text-[var(--silc-accent)]">${product.price.toFixed(2)}</strong>
           </div>
-          <div className="mt-4 flex items-center justify-between text-sm">
+          <div className="mt-2 flex items-center justify-between text-xs">
             <span>{product.unit}</span>
             <span className={product.stock > 0 ? "text-emerald-400" : "text-destructive"}>
               {product.stock > 0 ? `${product.stock} in stock` : "Out of stock"}
             </span>
           </div>
-          <div className="mt-3 flex flex-wrap gap-1">
+          <div className="mt-2 flex flex-wrap gap-1">
             {product.tags.map((tag) => (
               <span key={tag} className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">{tag}</span>
             ))}

@@ -1,0 +1,13 @@
+[workspace]
+# Pre-1.0 SemVer: breaking changes bump the minor version (0.x → 0.(x+1)).
+semver_check = false
+# Do not publish crates until crates.io publishing is configured explicitly.
+publish = false
+release_always = false
+
+[changelog]
+header = """# Changelog
+
+All notable changes to Silc are documented here.
+Silc remains pre-1.0; this project follows SemVer 0.x with Conventional Commits.
+"""

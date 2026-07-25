@@ -4,10 +4,10 @@ This repository uses **subject-based architecture** for the compiler's semantic
 core. Code is organized around durable language concepts instead of allowing
 compiler phases to become the owners of the model.
 
-The first runnable vertical slice implements subjects, lexing, parsing,
-deterministic routing, runnable Bun/Python/Go codegen, supervisor-owned mmap +
-UDS IPC, and transactional SQLite persistence for the feedback portal. Other
-operation sets still emit inspectable stubs.
+Silc 0.2.0 implements subjects, lexing, parsing, deterministic routing,
+runnable Bun/Python/Go codegen, supervisor-owned mmap + UDS IPC, generic
+SQLite resources, and dual-surface component applications. Broader operation
+sets still emit inspectable stubs.
 
 Runtime and IPC direction is fixed by
 [ADR-001](ADR-001-runtime-and-ipc.md): Silc emits TypeScript for Bun and uses a
@@ -28,6 +28,9 @@ invariants, and participates in several workflows. The initial subjects are:
 | --- | --- |
 | `Contract` | Schemas, fields, annotations, type compatibility, and memory-layout invariants |
 | `Module` | Services, processors, sinks, tasks, properties, and functions |
+| `Component` | Typed props, reactive state, slots, events, handlers, queries, and render templates |
+| `Resource` | Typed query/mutation methods and persistent collection semantics |
+| `App` | Explicit routes and dual-surface application entrypoints |
 | `Constraint` | Typed execution limits, preferences, normalization, and validation |
 | `Pipeline` | Ordered intent steps, value flow, step compatibility, and references |
 | `Target` | Runtime capabilities and the resolved Go/Python/Bun assignment (Bun executes emitted TypeScript) |
@@ -37,6 +40,10 @@ These subjects live together in `sil-core`, with one Rust module per subject:
 ```text
 crates/sil-core/src/
 ├── contract.rs
+├── component.rs
+├── expr.rs
+├── resource.rs
+├── app.rs
 ├── module.rs
 ├── constraint.rs
 ├── pipeline.rs
@@ -75,6 +82,9 @@ sil-lexer ──► sil-parser
                   ▼
              sil-core subjects
              ├── Contract
+             ├── Component
+             ├── Resource
+             ├── App
              ├── Module
              ├── Constraint
              ├── Pipeline
@@ -146,18 +156,20 @@ subject; target-specific rendering belongs to `sil-codegen`.
 
 ### Declarative UI
 
-UI intent lives in the `ui` namespace (`ui::web`, `ui::terminal`) and optional
-`class … is view` subjects. Authors never emit HTML, CSS, React, Tailwind,
-ShadCN, OpenTUI, or package manifests. Named views describe a typed semantic
-component tree (`ui::page`, `ui::app_bar`, `ui::side_panel`, form controls,
-toolbars, …); `ui::web(:view(Name), …)` binds that tree to a Contract. When
-`:view` is omitted, the compiler keeps profile templates (feedback / LLM chat).
-Codegen lowers either path to a Bun-owned React + Tailwind + ShadCN-primitives
-app plus HTTP/API worker under `.runtime/`. `ui::terminal` adds a Bun-owned
-loopback TCP/telnet interface; a future rich local-terminal adapter uses
-OpenTUI. See [ADR-003-declarative-ui.md](ADR-003-declarative-ui.md). Legacy
-`html::form` + `http::serve` remain compatibility aliases for the same web
-profile.
+UI intent lives in `class … is component` render templates and the `ui`
+primitive catalog. Authors never emit HTML, CSS, React, Tailwind, OpenTUI, or
+package manifests. Components own typed props, local state, slots, emitted
+events, handlers, and resource query bindings. `class … is app` maps routes to
+components and its `serve()` method declares both `ui::web(:root(App), …)` and
+`ui::terminal(…)`.
+
+Codegen consumes one component graph and emits equal web and terminal adapters.
+Web currently lowers to compiler-owned React/Tailwind templates. Terminal
+exposes the same routes, actions, and resources through the compiler-owned
+terminal adapter. Every catalog primitive declares both surfaces. There is no
+separate component-source standard library or resolver; out-of-box capability
+lives in the compiler catalog and templates, while author components stay in
+application source. See [ADR-003-declarative-ui.md](ADR-003-declarative-ui.md).
 
 ### IPC
 
@@ -188,7 +200,7 @@ Silc buffers as Arrow for external analytical tools.
 ## Project layout and execution
 
 `silc` is the compile-and-run entrypoint (CLI or shebang
-`#!/usr/bin/env silc`). Runnable-v1 programs execute under the Rust supervisor;
+`#!/usr/bin/env silc`). Runnable 0.2.0 programs execute under the Rust supervisor;
 other programs emit inspectable stubs.
 
 | Concept | Meaning |
@@ -202,7 +214,7 @@ other programs emit inspectable stubs.
 - `silc init` / `silc init <path>` — scaffold project files, provision Silc-owned
   Bun/CPython/Go into `~/.silc/runtimes/`, and write `.silc/runtimes.lock.json`
 - `silc build <entry>` — compile only
-- `silc <entry>` — compile; run when the program is runnable v1
+- `silc <entry>` — compile; run when the program is runnable in 0.2.0
 - shebang `#!/usr/bin/env silc` still works
 
 The first runnable build provisions checksum-verified Bun/CPython/Go into
@@ -248,13 +260,11 @@ splitting does not.
 
 ## Future work
 
-- Expand subject validation beyond the example suite
-- Expand the parser beyond the first-pass grammar
-- Add program-level orchestration semantics
-- Generalize executable target adapters beyond the feedback operation set
-- Rich local `ui::terminal` rendering via compiler-owned OpenTUI/Bun (see ADR-003)
+- Expand expression and subject type inference beyond the 0.2.0 grammar
+- Generalize executable target adapters beyond the current operation registry
+- Enrich the compiler-owned terminal renderer while preserving surface parity
 - Add typed field views atop the implemented mmap/UDS ABI
 - Add program-level crash recovery and deployment bundles
 
-See [`examples/article_pipeline.silc`](../examples/article_pipeline.silc) for the
+See [`examples/data_pipeline.silc`](../examples/data_pipeline.silc) for the
 NetworkIngress → EmbeddingEngine → RealtimeCache example.

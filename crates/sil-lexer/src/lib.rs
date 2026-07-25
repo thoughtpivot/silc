@@ -1,5 +1,4 @@
-//! Silc lexer for the Raku-inspired surface (ADR-002).
-//! Accepts tokens from `.silc` and `.raku` entry files.
+//! Silc lexer for the Raku-inspired surface (ADR-002 / 0.2.0).
 
 use logos::Logos;
 
@@ -24,13 +23,57 @@ pub enum Token {
     Of,
     #[token("where")]
     Where,
+    #[token("query")]
+    Query,
+    #[token("mutation")]
+    Mutation,
+    #[token("slot")]
+    Slot,
+    #[token("emit")]
+    Emit,
+    #[token("state")]
+    State,
+    #[token("when")]
+    When,
+    #[token("for")]
+    For,
+    #[token("else")]
+    Else,
+    #[token("route")]
+    Route,
+    #[token("await")]
+    Await,
 
     #[token("==>")]
     Feed,
+    #[token("=>")]
+    FatArrow,
     #[token("::")]
     DoubleColon,
     #[token("->")]
     Arrow,
+    #[token("&&")]
+    AndAnd,
+    #[token("||")]
+    OrOr,
+    #[token("==")]
+    EqEq,
+    #[token("!=")]
+    NotEq,
+    #[token("<=")]
+    Le,
+    #[token(">=")]
+    Ge,
+    #[token("+")]
+    Plus,
+    #[token("-")]
+    Minus,
+    #[token("*")]
+    Star,
+    #[token("/")]
+    Slash,
+    #[token("!")]
+    Bang,
 
     #[token("{")]
     LBrace,
@@ -67,7 +110,7 @@ pub enum Token {
     #[regex(r"[0-9]+(ms|s|MB|GB|rps|ops)", |lex| lex.slice().to_string())]
     UnitLiteral(String),
 
-    #[regex(r"[0-9]+", |lex| lex.slice().to_string())]
+    #[regex(r"[0-9]+(\.[0-9]+)?", |lex| lex.slice().to_string())]
     Number(String),
 
     #[regex(r#""([^"\\]|\\.)*""#, |lex| lex.slice().to_string())]
@@ -94,7 +137,6 @@ pub fn lex(source: &str) -> Result<Vec<SpannedToken>, String> {
     while let Some(result) = lexer.next() {
         let span = lexer.span();
         let slice = lexer.slice().to_string();
-        // Update line from source prefix
         let prefix = &source[..span.start];
         let line = prefix.chars().filter(|c| *c == '\n').count() + 1;
         let last_newline = prefix.rfind('\n').map(|i| i + 1).unwrap_or(0);
@@ -119,35 +161,21 @@ pub fn lex(source: &str) -> Result<Vec<SpannedToken>, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
-    use std::path::PathBuf;
 
-    fn examples_dir() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples")
+    #[test]
+    fn lexes_component_keywords() {
+        let tokens = lex("class X is component { has state Str $.q; }").expect("lex");
+        assert!(tokens.iter().any(|t| matches!(t.token, Token::State)));
+        assert!(tokens
+            .iter()
+            .any(|t| matches!(&t.token, Token::Ident(s) if s == "component")));
     }
 
     #[test]
-    fn lexes_article_pipeline() {
-        let path = examples_dir().join("article_pipeline.silc");
-        let src = fs::read_to_string(&path).expect("read example");
-        let tokens = lex(&src).expect("lex");
-        assert!(tokens.iter().any(|t| matches!(t.token, Token::Class)));
-        assert!(tokens.iter().any(|t| matches!(t.token, Token::Feed)));
-        assert!(tokens.iter().any(|t| matches!(t.token, Token::Subset)));
-    }
-
-    #[test]
-    fn lexes_all_examples() {
-        for name in [
-            "article_pipeline.silc",
-            "sensor_alert.silc",
-            "csv_summary.raku",
-            "url_health.silc",
-            "log_anomaly.raku",
-        ] {
-            let path = examples_dir().join(name);
-            let src = fs::read_to_string(&path).unwrap_or_else(|_| panic!("read {name}"));
-            lex(&src).unwrap_or_else(|e| panic!("lex {name}: {e}"));
-        }
+    fn lexes_fat_arrow_and_ops() {
+        let tokens = lex(r#"route "/" => ShopPage; $.a == 1 && $.b != 2"#).expect("lex");
+        assert!(tokens.iter().any(|t| matches!(t.token, Token::FatArrow)));
+        assert!(tokens.iter().any(|t| matches!(t.token, Token::EqEq)));
+        assert!(tokens.iter().any(|t| matches!(t.token, Token::AndAnd)));
     }
 }

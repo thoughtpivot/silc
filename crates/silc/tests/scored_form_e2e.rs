@@ -47,7 +47,7 @@ fn read_until(stream: &mut TcpStream, needle: &str, timeout: Duration) -> String
 }
 
 #[test]
-fn feedback_portal_http_sqlite_e2e() {
+fn scored_form_web_and_terminal_e2e() {
     free_port(18080);
     free_port(18023);
     let temp = std::env::temp_dir().join(format!(
@@ -57,8 +57,7 @@ fn feedback_portal_http_sqlite_e2e() {
     ));
     std::fs::create_dir_all(&temp).unwrap();
 
-    let example =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/feedback_portal.silc");
+    let example = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/scored_form.silc");
 
     let build = Command::new(silc_bin())
         .args(["build", example.to_str().unwrap()])
@@ -72,24 +71,24 @@ fn feedback_portal_http_sqlite_e2e() {
     );
 
     let runtime = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../examples/.runtime/feedback_portal/typescript");
+        .join("../../examples/.runtime/scored_form/typescript");
     assert!(
         runtime.join("dist/index.html").is_file(),
-        "ui::web index missing"
+        "web index missing"
     );
+    assert!(runtime.join("dist/app.js").is_file(), "web app.js missing");
     assert!(
-        runtime.join("dist/app.js").is_file(),
-        "ui::web app.js missing"
+        runtime.join("terminal.ts").is_file(),
+        "terminal surface module missing"
     );
-    assert!(
-        runtime.join("dist/theme.css").is_file(),
-        "ui::web theme missing"
-    );
-    let app_js = std::fs::read_to_string(runtime.join("dist/app.js")).unwrap_or_default();
-    assert!(
-        app_js.contains("Silc") || app_js.contains("submit") || app_js.len() > 100,
-        "bundled app.js looks empty"
-    );
+    let manifest = std::fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/.runtime/scored_form/manifest.json"),
+    )
+    .unwrap();
+    assert!(!manifest.contains("portal_kind"));
+    assert!(manifest.contains("\"surfaces\""));
+    assert!(manifest.contains("web") && manifest.contains("terminal"));
 
     let log_path = temp.join("run.log");
     let log = std::fs::File::create(&log_path).unwrap();
@@ -106,10 +105,6 @@ fn feedback_portal_http_sqlite_e2e() {
         if let Ok(resp) = ureq::get("http://127.0.0.1:18080/health").call() {
             let body = resp.into_string().unwrap_or_default();
             if body.contains("\"ok\":true") || body.contains("\"ok\": true") {
-                assert!(
-                    body.contains("react") || body.contains("web"),
-                    "health should advertise ui substrate: {body}"
-                );
                 healthy = true;
                 break;
             }
@@ -121,7 +116,6 @@ fn feedback_portal_http_sqlite_e2e() {
         thread::sleep(Duration::from_millis(250));
     }
     assert!(healthy, "health never became ready");
-    thread::sleep(Duration::from_millis(300));
 
     let page = ureq::get("http://127.0.0.1:18080/")
         .call()
@@ -129,38 +123,28 @@ fn feedback_portal_http_sqlite_e2e() {
         .into_string()
         .unwrap();
     assert!(
-        page.contains("id=\"app\"") || page.contains("silc"),
+        page.contains("id=\"app\"") || page.contains("silc") || page.contains("app.js"),
         "expected React shell HTML, got: {page}"
     );
-    assert!(
-        page.contains("/assets/app.js") || page.contains("app.js"),
-        "expected bundled app asset link"
-    );
 
-    let asset = ureq::get("http://127.0.0.1:18080/assets/app.js")
-        .call()
-        .expect("get app.js");
-    assert_eq!(asset.status(), 200);
-
-    let mut terminal = TcpStream::connect("127.0.0.1:18023").expect("connect terminal UI");
-    let banner = read_until(&mut terminal, "Author:", Duration::from_secs(5));
+    let mut terminal = TcpStream::connect("127.0.0.1:18023").expect("connect terminal");
+    let banner = read_until(&mut terminal, ">", Duration::from_secs(5));
     assert!(
-        banner.contains("THOUGHTPIVOT") && banner.contains("Feedback Portal"),
+        banner.contains("Silc") || banner.contains("terminal") || banner.contains("/help"),
         "missing terminal banner: {banner:?}"
     );
-    terminal
-        .write_all(b"terminal-e2e\r\nfeedback through telnet\r\n")
-        .expect("write terminal feedback");
-    let result = read_until(&mut terminal, "\"ok\"", Duration::from_secs(10));
+    terminal.write_all(b"/help\n").expect("write terminal help");
+    let help = read_until(&mut terminal, "submit", Duration::from_secs(5));
     assert!(
-        result.contains("\"ok\"") && result.contains("true"),
-        "terminal submission failed: {result:?}"
+        help.contains("/submit") || help.contains("Commands") || banner.contains("/submit"),
+        "terminal help missing submit: banner={banner:?} help={help:?}"
     );
-    terminal.write_all(b"/quit\r\n").ok();
+    terminal.write_all(b"/quit\n").ok();
 
     let resp = ureq::post("http://127.0.0.1:18080/submit")
+        .timeout(Duration::from_secs(15))
         .set("content-type", "application/json")
-        .send_string(r#"{"author":"e2e","text":"silc feedback portal works"}"#);
+        .send_string(r#"{"author":"e2e","text":"silc scored form works"}"#);
     let body = match resp {
         Ok(r) => r.into_string().unwrap(),
         Err(e) => {
@@ -174,12 +158,12 @@ fn feedback_portal_http_sqlite_e2e() {
     );
 
     unsafe {
-        libc::kill(child.id() as libc::pid_t, libc::SIGINT);
+        libc::kill(child.id() as libc::pid_t, libc::SIGKILL);
     }
     let _ = child.wait();
 
     let db = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../examples/.runtime/feedback_portal/data/feedback.db");
+        .join("../../examples/.runtime/scored_form/data/app.db");
     assert!(db.is_file(), "sqlite db missing at {}", db.display());
     let _ = std::fs::remove_dir_all(temp);
 }

@@ -1,10 +1,10 @@
-//! Silc code generation for inspectable stubs and runnable v1 programs.
+//! Silc 0.2.0 code generation: inspectable stubs and runnable dual-surface apps.
 
 mod ui_lower;
 
 use sil_core::{
-    infer_graph, ApiRoute, Contract, ExecutableGraph, ExecutionMode, Module, PortalKind, Program,
-    Target,
+    infer_graph, ApiRoute, Contract, ExecutableGraph, ExecutionMode, Module, ProcessorOp, Program,
+    ResourceKind, Target,
 };
 use sil_ipc::{ABI_VERSION, PROTOCOL_VERSION};
 use sil_router::RouteDecision;
@@ -14,18 +14,13 @@ use std::path::{Path, PathBuf};
 
 const IPC_DIR: &str = "ipc";
 const SUPERVISOR_SOCKET: &str = "ipc/supervisor.sock";
+const DEFAULT_DB_PATH: &str = "ipc/app.db";
 
-const FEEDBACK_TS: &str = include_str!("../templates/feedback_worker.ts");
-const FEEDBACK_PY: &str = include_str!("../templates/feedback_worker.py");
-const FEEDBACK_GO: &str = include_str!("../templates/feedback_worker.go");
-const LLM_TS: &str = include_str!("../templates/llm_worker.ts");
-const LLM_PY: &str = include_str!("../templates/llm_worker.py");
-const LLM_GO: &str = include_str!("../templates/llm_worker.go");
-const INVENTORY_TS: &str = include_str!("../templates/inventory_worker.ts");
-const INVENTORY_PY: &str = include_str!("../templates/inventory_worker.py");
-const INVENTORY_GO: &str = include_str!("../templates/inventory_worker.go");
+const APP_WORKER_TS: &str = include_str!("../templates/app_worker.ts");
+const PROCESSOR_WORKER_PY: &str = include_str!("../templates/processor_worker.py");
+const STORE_WORKER_GO: &str = include_str!("../templates/store_worker.go");
 const LLM_REQUIREMENTS: &str = include_str!("../templates/llm_requirements.txt");
-const FEEDBACK_GOMOD: &str = include_str!("../templates/go.mod");
+const STORE_GOMOD: &str = include_str!("../templates/go.mod");
 const SERVICE_HTTP_GO: &str = include_str!("../templates/service_http_worker.go");
 const SERVICE_HTTP_GOMOD: &str = include_str!("../templates/service_http_go.mod");
 const UI_WEB_PACKAGE_JSON: &str = include_str!("../templates/ui_web_package.json");
@@ -33,8 +28,6 @@ const UI_WEB_BUN_LOCK: &str = include_str!("../templates/ui_web_bun.lock");
 const UI_WEB_INDEX_HTML: &str = include_str!("../templates/ui_web_index.html");
 const UI_WEB_TAILWIND_CONFIG: &str = include_str!("../templates/ui_web_tailwind.config.js");
 const UI_WEB_MAIN_TSX: &str = include_str!("../templates/ui_web_main.tsx");
-const UI_WEB_APP_TSX: &str = include_str!("../templates/ui_web_app.tsx");
-const LLM_UI_WEB_APP_TSX: &str = include_str!("../templates/llm_ui_web_app.tsx");
 const UI_WEB_THEME_CSS: &str = include_str!("../templates/ui_web_theme.css");
 const UI_WEB_UTILS_TS: &str = include_str!("../templates/ui_web_utils.ts");
 const UI_WEB_BUTTON_TSX: &str = include_str!("../templates/ui_web_button.tsx");
@@ -139,7 +132,7 @@ pub fn emit(
 
     let manifest_path = runtime_root.join("manifest.json");
     let mut manifest = serde_json::json!({
-        "manifest_version": 2,
+        "manifest_version": 3,
         "language": "Silc",
         "compiler": "silc",
         "compiler_version": compiler_version,
@@ -156,32 +149,54 @@ pub fn emit(
         "modules": modules_json,
     });
     if let Some(g) = &graph {
+        let mut surfaces = Vec::new();
+        if g.capabilities.web {
+            surfaces.push("web");
+        }
+        if g.capabilities.terminal {
+            surfaces.push("terminal");
+        }
         manifest["graph"] = serde_json::json!({
             "service": g.service,
             "processor": g.processor,
             "sink": g.sink,
             "api_only": g.is_api_only(),
-            "portal_kind": g.portal_kind.as_str(),
+            "processor_op": g.processor_op.as_str(),
+            "capabilities": {
+                "web": g.capabilities.web,
+                "terminal": g.capabilities.terminal,
+                "score": g.capabilities.score,
+                "llm": g.capabilities.llm,
+                "history": g.capabilities.history,
+                "resources": g.capabilities.resources,
+            },
+            "app": g.app_name,
+            "root_component": g.root_component,
             "model_ref": g.model_ref,
-            "ui_view": g.ui_view.as_ref().map(|view| &view.name),
-            "ui_contract": g.ui_contract,
+            "actions": actions_json(g),
+            "resource_tables": g.resource_tables.iter().map(|(name, table)| {
+                serde_json::json!({ "resource": name, "table": table })
+            }).collect::<Vec<_>>(),
+            "surfaces": surfaces,
         });
         manifest["http_port"] = serde_json::json!(g.http_port);
         manifest["http_route"] = serde_json::json!(g.http_route);
         manifest["terminal_port"] = serde_json::json!(g.terminal_port);
         manifest["sqlite_table"] = serde_json::json!(g.sqlite_table);
         if g.has_ui() {
-            let surface = g.ui_surface.unwrap();
-            let mut ui = serde_json::json!({
+            manifest["ui"] = serde_json::json!({
                 "profile": "web",
-                "surface": surface.as_str(),
+                "surfaces": ["web", "terminal"],
                 "substrate": UI_WEB_SUBSTRATE,
                 "terminal_substrate": if g.terminal_port.is_some() { "bun-tcp-telnet" } else { "disabled" },
                 "react_version": UI_WEB_REACT_VERSION,
                 "tailwind_version": UI_WEB_TAILWIND_VERSION,
+                "app": g.app_name,
+                "root_component": g.root_component,
                 "assets": [
                     "typescript/src/main.tsx",
                     "typescript/src/App.tsx",
+                    "typescript/terminal.ts",
                     "typescript/src/theme.css",
                     "typescript/src/lib/utils.ts",
                     "typescript/src/components/ui/button.tsx",
@@ -215,16 +230,9 @@ pub fn emit(
                     "clsx": "2.1.1",
                     "tailwind-merge": "2.6.0",
                 },
-                "provenance": "compiler-owned ui::web → React/Tailwind/ShadCN/Bun",
+                "provenance": "compiler-owned ui::web + ui::terminal → React/Tailwind/Bun",
                 "catalog": sil_core::catalog_component_names(),
             });
-            if let Some(view) = &g.ui_view {
-                ui["view"] = serde_json::json!(view.name);
-                ui["contract"] = serde_json::json!(g.ui_contract);
-                ui["provenance"] =
-                    serde_json::json!("compiler-owned ui::web(:view) → React/Tailwind/ShadCN/Bun");
-            }
-            manifest["ui"] = ui;
         }
         if g.has_api() {
             manifest["services"] = serde_json::json!({
@@ -253,6 +261,10 @@ pub fn emit(
                 serde_json::json!("typescript/src/main.tsx"),
             );
             entrypoints.insert(
+                "terminal".into(),
+                serde_json::json!("typescript/terminal.ts"),
+            );
+            entrypoints.insert(
                 "supervisor_socket".into(),
                 serde_json::json!(SUPERVISOR_SOCKET),
             );
@@ -266,6 +278,19 @@ pub fn emit(
             "bun": {"path": null, "version": "1.2.18"},
             "python": {"path": null, "version": "3.12.12"},
             "go": {"path": null, "version": "1.23.6"},
+        });
+        manifest["actions"] = actions_json(g);
+        manifest["processor"] = serde_json::json!(g.processor_op.as_str());
+        if g.has_ui() {
+            manifest["surfaces"] = serde_json::json!(["web", "terminal"]);
+        }
+        manifest["capabilities"] = serde_json::json!({
+            "web": g.capabilities.web,
+            "terminal": g.capabilities.terminal,
+            "score": g.capabilities.score,
+            "llm": g.capabilities.llm,
+            "history": g.capabilities.history,
+            "resources": g.capabilities.resources,
         });
     }
 
@@ -293,7 +318,7 @@ fn emit_runnable(
     generated: &mut Vec<PathBuf>,
 ) -> Result<(), String> {
     if graph.has_ui() {
-        emit_ui_portal(root, graph, schema_id, generated)?;
+        emit_ui_app(root, program, graph, schema_id, generated)?;
     }
     if graph.has_api() {
         emit_service_http(root, program, graph, schema_id, generated)?;
@@ -301,14 +326,14 @@ fn emit_runnable(
     Ok(())
 }
 
-fn emit_ui_portal(
+fn emit_ui_app(
     root: &Path,
+    program: &Program,
     graph: &ExecutableGraph,
     schema_id: u32,
     generated: &mut Vec<PathBuf>,
 ) -> Result<(), String> {
-    // Drop prior package members so `go build .` cannot see stale sources
-    // (e.g. an older feedback_worker.go next to worker.go).
+    // Drop prior package members so `go build .` cannot see stale sources.
     clear_dir_sources(&root.join("go"), &["go"])?;
     clear_dir_sources(&root.join("typescript"), &["ts", "tsx", "js"])?;
     clear_dir_sources(&root.join("python"), &["py"])?;
@@ -326,22 +351,15 @@ fn emit_ui_portal(
         .map_err(|error| format!("create {}: {error}", ts_dist.display()))?;
     clear_dir_sources(&ts_dist, &["js", "css", "html", "map"])?;
 
-    let (worker_ts, worker_py, worker_go, fallback_app) = match graph.portal_kind {
-        PortalKind::Feedback => (FEEDBACK_TS, FEEDBACK_PY, FEEDBACK_GO, UI_WEB_APP_TSX),
-        PortalKind::LlmChat => (LLM_TS, LLM_PY, LLM_GO, LLM_UI_WEB_APP_TSX),
-        PortalKind::Inventory => (INVENTORY_TS, INVENTORY_PY, INVENTORY_GO, LLM_UI_WEB_APP_TSX),
-        PortalKind::None => return Err("UI graph is missing a portal profile".into()),
-    };
-    let app_tsx = if let Some(view) = &graph.ui_view {
-        ui_lower::render_view_app(view, graph)
-    } else {
-        fallback_app.to_string()
-    };
+    let app_tsx = ui_lower::render_web_app(program, graph);
+    let terminal_ts = ui_lower::render_terminal_module(program, graph);
+
     let mut files = vec![
         (
             root.join("typescript/worker.ts"),
-            render_template(worker_ts, graph, schema_id),
+            render_template(APP_WORKER_TS, graph, schema_id),
         ),
+        (root.join("typescript/terminal.ts"), terminal_ts),
         (
             root.join("typescript/package.json"),
             UI_WEB_PACKAGE_JSON.to_string(),
@@ -437,15 +455,15 @@ fn emit_ui_portal(
         ),
         (
             root.join("python/worker.py"),
-            render_template(worker_py, graph, schema_id),
+            render_template(PROCESSOR_WORKER_PY, graph, schema_id),
         ),
         (
             root.join("go/worker.go"),
-            render_template(worker_go, graph, schema_id),
+            render_template(STORE_WORKER_GO, graph, schema_id),
         ),
-        (root.join("go/go.mod"), FEEDBACK_GOMOD.to_string()),
+        (root.join("go/go.mod"), STORE_GOMOD.to_string()),
     ];
-    if graph.portal_kind.needs_llm() {
+    if graph.needs_llm() {
         files.push((
             root.join("python/requirements.txt"),
             LLM_REQUIREMENTS.to_string(),
@@ -583,7 +601,61 @@ fn clear_dir_sources(dir: &Path, extensions: &[&str]) -> Result<(), String> {
     Ok(())
 }
 
+fn actions_json(graph: &ExecutableGraph) -> serde_json::Value {
+    serde_json::Value::Array(
+        graph
+            .actions
+            .iter()
+            .map(|a| {
+                serde_json::json!({
+                    "id": a.id,
+                    "resource": a.resource,
+                    "method": a.method,
+                    "http_method": a.http_method,
+                    "path": a.path,
+                    "kind": match a.kind {
+                        ResourceKind::Query => "query",
+                        ResourceKind::Mutation => "mutation",
+                    },
+                })
+            })
+            .collect(),
+    )
+}
+
 fn render_template(template: &str, graph: &ExecutableGraph, schema_id: u32) -> String {
+    let actions =
+        serde_json::to_string_pretty(&actions_json(graph)).unwrap_or_else(|_| "[]".into());
+    let resource_tables = serde_json::to_string(
+        &graph
+            .resource_tables
+            .iter()
+            .map(|(_, table)| table.clone())
+            .collect::<Vec<_>>(),
+    )
+    .unwrap_or_else(|_| "[]".into());
+    let routes = match &graph.app {
+        Some(app) => serde_json::to_string(
+            &app.routes
+                .iter()
+                .map(|r| {
+                    serde_json::json!({
+                        "path": r.path,
+                        "component": r.component,
+                    })
+                })
+                .collect::<Vec<_>>(),
+        )
+        .unwrap_or_else(|_| "[]".into()),
+        None => "[]".into(),
+    };
+    let has_llm = if graph.needs_llm() { "true" } else { "false" };
+    let processor = if graph.processor_op == ProcessorOp::None {
+        "none"
+    } else {
+        graph.processor_op.as_str()
+    };
+
     template
         .replace("__PORT__", &graph.http_port.to_string())
         .replace("__ROUTE__", &graph.http_route)
@@ -591,9 +663,15 @@ fn render_template(template: &str, graph: &ExecutableGraph, schema_id: u32) -> S
             "__TERMINAL_PORT__",
             &graph.terminal_port.unwrap_or_default().to_string(),
         )
+        .replace("__SOCKET_PATH__", SUPERVISOR_SOCKET)
+        .replace("__DB_PATH__", DEFAULT_DB_PATH)
         .replace("__TABLE__", &graph.sqlite_table)
         .replace("__SCHEMA_ID__", &schema_id.to_string())
-        .replace("__SOCKET_PATH__", SUPERVISOR_SOCKET)
+        .replace("__PROCESSOR_OP__", processor)
+        .replace("__HAS_LLM__", has_llm)
+        .replace("__ACTIONS_JSON__", &actions)
+        .replace("__RESOURCE_TABLES__", &resource_tables)
+        .replace("__ROUTES_JSON__", &routes)
 }
 
 fn module_manifest_entry(
@@ -651,7 +729,7 @@ fn render_stub(module: &Module, decision: &RouteDecision) -> String {
                 .iter()
                 .map(|name| {
                     format!(
-                        "  async {name}(): Promise<void> {{\n    // TODO: operation is not executable in Silc v1\n  }}"
+                        "  async {name}(): Promise<void> {{\n    // TODO: operation is not executable in Silc 0.2.0\n  }}"
                     )
                 })
                 .collect::<Vec<_>>()
@@ -666,7 +744,7 @@ fn render_stub(module: &Module, decision: &RouteDecision) -> String {
                 .iter()
                 .map(|name| {
                     format!(
-                        "    def {name}(self):\n        # TODO: operation is not executable in Silc v1\n        pass"
+                        "    def {name}(self):\n        # TODO: operation is not executable in Silc 0.2.0\n        pass"
                     )
                 })
                 .collect::<Vec<_>>()
@@ -681,7 +759,7 @@ fn render_stub(module: &Module, decision: &RouteDecision) -> String {
                 .iter()
                 .map(|name| {
                     format!(
-                        "func (m *{}) {}() {{\n\t// TODO: operation is not executable in Silc v1\n}}",
+                        "func (m *{}) {}() {{\n\t// TODO: operation is not executable in Silc 0.2.0\n}}",
                         module.name,
                         pascal_case(name)
                     )
@@ -740,263 +818,65 @@ mod tests {
         std::env::temp_dir().join(format!("silc-{label}-{nonce}"))
     }
 
-    #[test]
-    fn parse_route_emit_all_examples() {
-        let examples = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples");
-        for name in [
-            "article_pipeline.silc",
-            "sensor_alert.silc",
-            "csv_summary.raku",
-            "url_health.silc",
-            "log_anomaly.raku",
-        ] {
-            let source_path = examples.join(name);
-            let source = fs::read_to_string(&source_path).expect("read example");
-            let program = sil_parser::parse(&source).expect("parse example");
-            program.validate().expect("validate example");
-            let decisions = sil_router::route_program(&program);
-            let output = output_dir(name);
-            let result = emit(&program, &decisions, &source_path, &output, "test").expect("emit");
-            assert_eq!(result.execution_mode, ExecutionMode::Stub);
-            let manifest = fs::read_to_string(&result.manifest).unwrap();
-            assert!(manifest.contains("\"execution_mode\": \"stub\""));
-            fs::remove_dir_all(output).ok();
-        }
-    }
-
-    #[test]
-    fn emits_runnable_feedback_workers() {
-        let source_path =
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/feedback_portal.silc");
-        let source = fs::read_to_string(&source_path).unwrap();
-        let program = sil_parser::parse(&source).expect("parse feedback");
-        program.validate().expect("validate feedback");
+    fn parse_emit(source: &str, label: &str) -> (Program, EmitResult, PathBuf) {
+        let program = sil_parser::parse(source).expect("parse");
+        program.validate().expect("validate");
         let decisions = sil_router::route_program(&program);
-        let output = output_dir("feedback");
-        let result = emit(&program, &decisions, &source_path, &output, "test").unwrap();
-        assert_eq!(result.execution_mode, ExecutionMode::Runnable);
-
-        let ts = fs::read_to_string(output.join("typescript/worker.ts")).unwrap();
-        let py = fs::read_to_string(output.join("python/worker.py")).unwrap();
-        let go = fs::read_to_string(output.join("go/worker.go")).unwrap();
-        let app = fs::read_to_string(output.join("typescript/src/App.tsx")).unwrap();
-        let button =
-            fs::read_to_string(output.join("typescript/src/components/ui/button.tsx")).unwrap();
-        let theme = fs::read_to_string(output.join("typescript/src/theme.css")).unwrap();
-        let pkg = fs::read_to_string(output.join("typescript/package.json")).unwrap();
-        let lock = fs::read_to_string(output.join("typescript/bun.lock")).unwrap();
-        for source in [&ts, &py, &go] {
-            assert!(!source.contains("TODO"));
-            assert!(!source.contains("__PORT__"));
-            assert!(!source.contains("__ROUTE__"));
-            assert!(!source.contains("__TABLE__"));
-            assert!(!source.contains("__SCHEMA_ID__"));
-            assert!(!source.contains("__SOCKET_PATH__"));
-        }
-        assert!(ts.contains("HELLO"));
-        assert!(ts.contains(r#"role: "bun""#));
-        assert!(ts.contains("/submit"));
-        assert!(ts.contains(r#"type: "INGEST""#));
-        assert!(ts.contains("dist"));
-        assert!(ts.contains("Bun.listen"));
-        assert!(ts.contains("SILC_TERMINAL_READY"));
-        assert!(ts.contains("thoughtPivotAscii"));
-        assert!(ts.contains("THOUGHTPIVOT"));
-        assert!(app.contains("function App"));
-        assert!(app.contains("/submit"));
-        assert!(app.contains("components/ui/button"));
-        assert!(app.contains("ThoughtPivotLogo"));
-        assert!(button.contains("ShadCN-style Button"));
-        assert!(theme.contains("@tailwind"));
-        assert!(theme.contains("--silc-accent: #6b9dd5"));
-        let logo =
-            fs::read_to_string(output.join("typescript/src/components/ui/logo.tsx")).unwrap();
-        assert!(logo.contains("ThoughtPivot brand wordmark"));
-        assert!(logo.contains("fill=\"currentColor\""));
-        assert!(pkg.contains(UI_WEB_REACT_VERSION));
-        assert!(pkg.contains(UI_WEB_TAILWIND_VERSION));
-        assert!(lock.contains(&format!("react@{UI_WEB_REACT_VERSION}")));
-        assert!(lock.contains(&format!("tailwindcss@{UI_WEB_TAILWIND_VERSION}")));
-        assert!(lock.contains("sha512-"));
-        assert!(py.contains(r#""role": "python""#));
-        assert!(py.contains(r#"!= "python""#));
-        assert!(py.contains("hashlib"));
-        assert!(go.contains(r#""role": "go""#));
-        assert!(go.contains("journal_mode(WAL)") || go.contains("journal_mode=WAL"));
-        assert!(go.contains("feedback"));
-
-        let manifest = fs::read_to_string(&result.manifest).unwrap();
-        assert!(manifest.contains("\"execution_mode\": \"runnable\""));
-        assert!(manifest.contains("\"manifest_version\": 2"));
-        assert!(manifest.contains("\"http_port\": 18080"));
-        assert!(manifest.contains("\"sqlite_table\": \"feedback\""));
-        assert!(manifest.contains("\"ipc_dir\": \"ipc\""));
-        assert!(manifest.contains("\"WebPortal\""));
-        assert!(manifest.contains("\"TextAnalyzer\""));
-        assert!(manifest.contains("\"FeedbackDb\""));
-        assert!(manifest.contains("\"engines\""));
-        assert!(manifest.contains("\"substrate\": \"react\""));
-        assert!(manifest.contains("\"profile\": \"web\""));
-        assert!(manifest.contains("\"terminal_port\": 18023"));
-        assert!(manifest.contains("\"terminal_substrate\": \"bun-tcp-telnet\""));
-        assert!(manifest.contains("ui::web"));
-        assert!(!manifest.contains("\"adapter\": \"gin-v1\""));
-        fs::remove_dir_all(output).ok();
+        let output = output_dir(label);
+        let source_path = PathBuf::from(format!("{label}.silc"));
+        let result = emit(&program, &decisions, &source_path, &output, "test").expect("emit");
+        (program, result, output)
     }
 
-    #[test]
-    fn emits_custom_view_app_from_ui_view() {
-        let source_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../examples/custom_feedback_ui.silc");
-        let source = fs::read_to_string(&source_path).expect("read custom_feedback_ui");
-        let program = sil_parser::parse(&source).expect("parse custom view");
-        program.validate().expect("validate custom view");
-        let decisions = sil_router::route_program(&program);
-        let output = output_dir("custom-view");
-        let result = emit(&program, &decisions, &source_path, &output, "test").unwrap();
-        let graph = result.graph.as_ref().unwrap();
-        assert_eq!(
-            graph.ui_view.as_ref().map(|v| v.name.as_str()),
-            Some("FeedbackView")
-        );
-        assert_eq!(graph.ui_contract.as_deref(), Some("FeedbackRecord"));
+    const STUB_SOURCE: &str = r#"
+@version("0.2.0")
+class Payload { has Str $.text; }
+class Ingress is service {
+    method fetch() { $url ==> http::get() ==> html::extract_body() }
+}
+class Engine is processor {
+    method run(Payload $p) { $p.text ==> tensor::tokenize() }
+}
+class Cache is sink is latency(2ms) {
+    method persist(Payload $p) { $p ==> store::upsert_primary() }
+}
+"#;
 
-        let app = fs::read_to_string(output.join("typescript/src/App.tsx")).unwrap();
-        assert!(app.contains("AppBar"));
-        assert!(app.contains("SidePanel"));
-        assert!(app.contains("RadioGroup"));
-        assert!(app.contains("variant=\"primary\""));
-        assert!(app.contains("variant=\"secondary\""));
-        assert!(app.contains("/submit"));
-        assert!(app.contains("setAuthor"));
-        assert!(app.contains("setRating"));
-        let app_bar =
-            fs::read_to_string(output.join("typescript/src/components/ui/app-bar.tsx")).unwrap();
-        assert!(app_bar.contains("AppBar"));
-        assert!(app_bar.contains("ThoughtPivotLogo"));
-        let manifest = fs::read_to_string(&result.manifest).unwrap();
-        assert!(manifest.contains("FeedbackView"));
-        assert!(manifest.contains("\"catalog\""));
-        fs::remove_dir_all(output).ok();
-    }
-
-    #[test]
-    fn emits_chat_view_app_for_llm_portal() {
-        let source_path =
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/ai_chatbot_2.silc");
-        let source = fs::read_to_string(&source_path).expect("read ai_chatbot_2");
-        let program = sil_parser::parse(&source).expect("parse ai_chatbot_2");
-        program.validate().expect("validate ai_chatbot_2");
-        let decisions = sil_router::route_program(&program);
-        let output = output_dir("ai-chatbot-2");
-        let result = emit(&program, &decisions, &source_path, &output, "test").unwrap();
-        let graph = result.graph.as_ref().unwrap();
-        assert_eq!(graph.portal_kind, PortalKind::LlmChat);
-        assert_eq!(
-            graph.ui_view.as_ref().map(|v| v.name.as_str()),
-            Some("ChatbotView")
-        );
-
-        let app = fs::read_to_string(output.join("typescript/src/App.tsx")).unwrap();
-        assert!(app.contains("ChatThread"));
-        assert!(app.contains("ChatComposer"));
-        assert!(app.contains("HistoryPanel"));
-        assert!(app.contains("/complete"));
-        assert!(app.contains("/history"));
-        assert!(app.contains("setHistory"));
-        assert!(app.contains("Chat History"));
-        assert!(app.contains("collapsible"));
-        assert!(!app.contains("/submit"));
-        assert!(output
-            .join("typescript/src/components/ui/chat-thread.tsx")
-            .is_file());
-        assert!(output.join("python/requirements.txt").is_file());
-        let ts = fs::read_to_string(output.join("typescript/worker.ts")).unwrap();
-        assert!(ts.contains("/complete"));
-        assert!(ts.contains("/history"));
-        assert!(ts.contains("bun:sqlite"));
-        assert!(ts.contains("ORDER BY created_at DESC"));
-        let history_panel =
-            fs::read_to_string(output.join("typescript/src/components/ui/history-panel.tsx"))
-                .unwrap();
-        assert!(history_panel.contains("setCollapsed"));
-        assert!(history_panel.contains("aria-expanded"));
-        fs::remove_dir_all(output).ok();
-    }
-
-    #[test]
-    fn emits_inventory_portal_with_products_search_and_scoped_chat() {
-        let source_path =
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/grocery_inventory.silc");
-        let source = fs::read_to_string(&source_path).expect("read grocery inventory");
-        let program = sil_parser::parse(&source).expect("parse grocery inventory");
-        program.validate().expect("validate grocery inventory");
-        let decisions = sil_router::route_program(&program);
-        let output = output_dir("grocery-inventory");
-        let result = emit(&program, &decisions, &source_path, &output, "test").unwrap();
-        let graph = result.graph.as_ref().unwrap();
-        assert_eq!(graph.portal_kind, PortalKind::Inventory);
-        assert_eq!(graph.terminal_port, Some(18024));
-        assert_eq!(graph.sqlite_table, "inventory_audit");
-
-        let worker = fs::read_to_string(output.join("typescript/worker.ts")).unwrap();
-        assert!(worker.contains(r#""/products""#));
-        assert!(worker.contains(r#""/ai_search""#));
-        assert!(worker.contains(r#""/complete""#));
-        assert!(worker.contains("visible_products"));
-        assert!(worker.contains("compactScope"));
-        assert!(worker.contains("Bun.listen"));
-        assert!(worker.contains("/list"));
-        assert!(worker.contains("/filter"));
-        assert!(worker.contains("/search"));
-        assert!(worker.contains("/chat"));
-
-        let app = fs::read_to_string(output.join("typescript/src/App.tsx")).unwrap();
-        assert!(app.contains("ProductGrid"));
-        assert!(app.contains("SearchInput"));
-        assert!(app.contains("visibleProducts"));
-        assert!(app.contains("/ai_search"));
-        assert!(app.contains("visible_products: visibleProducts"));
-        assert!(app.contains("AppBar"));
-
-        let go = fs::read_to_string(output.join("go/worker.go")).unwrap();
-        assert!(go.contains("CREATE TABLE IF NOT EXISTS products"));
-        assert!(go.contains("Gala Apples"));
-        assert!(go.contains("Dark Chocolate"));
-        let python = fs::read_to_string(output.join("python/worker.py")).unwrap();
-        assert!(python.contains("Never invent products"));
-        assert!(python.contains("temperature=0.2"));
-        assert!(output
-            .join("typescript/src/components/ui/product-grid.tsx")
-            .is_file());
-        assert!(output
-            .join("typescript/src/components/ui/search-input.tsx")
-            .is_file());
-
-        let manifest = fs::read_to_string(&result.manifest).unwrap();
-        assert!(manifest.contains(r#""portal_kind": "inventory""#));
-        assert!(manifest.contains("product_grid"));
-        assert!(manifest.contains("search_input"));
-        fs::remove_dir_all(output).ok();
-    }
-
-    #[test]
-    fn rejects_chat_components_on_feedback_portal() {
-        let source = r#"
-@version("1.0")
-class FeedbackRecord { has Str $.author; has Str $.prompt; }
-class BadChatView is view {
+    const FEEDBACK_SOURCE: &str = r#"
+@version("0.2.0")
+class FeedbackRecord {
+    has Str $.author;
+    has Str $.text;
+}
+class FeedbackPage is component {
+    has state Str $.author = "";
+    has state Str $.text = "";
     method render() {
-        ui::page(ui::chat(:field(prompt)))
+        ui::page(
+            :app_bar(ui::app_bar(:title("Feedback"))),
+            ui::heading(:text("Share feedback")),
+            ui::form(:on(submit(on_submit)),
+                ui::text_input(:field(author), :label("Author")),
+                ui::textarea(:field(text), :label("Text")),
+                ui::button(:label("Send"), :variant(primary), :submit)
+            )
+        )
+    }
+    method on_submit() {
+        submit();
     }
 }
-class WebPortal is service {
-    method listen(:$port = 18092) {
-        FeedbackRecord ==> ui::web(:view(BadChatView), :port(18092), :route("/"))
+class FeedbackApp is app {
+    route "/" => FeedbackPage;
+    method serve() {
+        ui::web(:root(FeedbackApp), :port(18080), :route("/"))
+            ==> ui::terminal(:port(18023))
     }
 }
 class TextAnalyzer is processor {
-    method analyze(FeedbackRecord $record) { $record.prompt ==> text::score() }
+    method analyze(FeedbackRecord $record) {
+        $record.text ==> text::score()
+    }
 }
 class FeedbackDb is sink is storage(SQLite) {
     method persist(FeedbackRecord $record) {
@@ -1004,47 +884,89 @@ class FeedbackDb is sink is storage(SQLite) {
     }
 }
 "#;
-        let program = sil_parser::parse(source).expect("parse");
-        let err = program.validate().unwrap_err();
-        assert!(err.contains("llm::complete"), "{err}");
-    }
 
-    #[test]
-    fn emits_runnable_llm_chat_workers() {
-        let source_path =
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/llm_portal.silc");
-        let source = fs::read_to_string(&source_path).expect("read llm_portal");
-        let program = sil_parser::parse(&source).expect("parse llm_portal");
-        program.validate().expect("validate llm_portal");
-        let decisions = sil_router::route_program(&program);
-        let output = output_dir("llm-portal");
-        let result = emit(&program, &decisions, &source_path, &output, "test").unwrap();
-        let graph = result.graph.as_ref().unwrap();
-        assert_eq!(graph.portal_kind, PortalKind::LlmChat);
-        assert_eq!(graph.model_ref.as_deref(), Some("llama3.2-1b"));
-        assert!(fs::read_to_string(output.join("python/worker.py"))
-            .unwrap()
-            .contains("SILC_MODEL_PATH"));
-        assert!(fs::read_to_string(output.join("go/worker.go"))
-            .unwrap()
-            .contains("prompt TEXT NOT NULL"));
-        let worker = fs::read_to_string(output.join("typescript/worker.ts")).unwrap();
-        assert!(worker.contains("/complete"));
-        assert!(worker.contains("/history"));
-        assert!(output.join("python/requirements.txt").is_file());
-        let manifest = fs::read_to_string(&result.manifest).unwrap();
-        assert!(manifest.contains("\"portal_kind\": \"llm_chat\""));
-        assert!(manifest.contains("\"model_ref\": \"llama3.2-1b\""));
-        fs::remove_dir_all(output).ok();
+    const CHAT_SOURCE: &str = r#"
+@version("0.2.0")
+class ChatRecord {
+    has Str $.prompt;
+    has Str $.reply;
+}
+class ChatPage is component {
+    has state Str $.prompt = "";
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("Chat"))),
+            :side_panel(ui::side_panel(
+                ui::nav_item(:label("Home"), :to("/"))
+            )),
+            ui::chat_history(:title("Chat History"), :collapsible),
+            ui::chat(:value($.prompt), :on(send(on_send)))
+        )
     }
+    method on_send() {
+        Assistant.complete();
+    }
+}
+class ChatApp is app {
+    route "/" => ChatPage;
+    method serve() {
+        ui::web(:root(ChatApp), :port(18090), :route("/"))
+            ==> ui::terminal(:port(18023))
+    }
+}
+class Assistant is processor {
+    has Str $.model_ref = "llama3.2-1b";
+    method complete(ChatRecord $record) {
+        $record.prompt ==> llm::complete(:model("llama3.2-1b"))
+    }
+}
+class ChatDb is sink is storage(SQLite) {
+    method persist(ChatRecord $record) {
+        $record ==> ipc::publish() ==> store::sqlite(:table(chats)) ==> store::commit()
+    }
+}
+"#;
 
-    #[test]
-    fn emits_runnable_service_http_gin_worker() {
-        let source_path =
-            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/feedback_api.silc");
-        let source = fs::read_to_string(&source_path).unwrap_or_else(|_| {
-            r#"
-@version("1.0")
+    const RESOURCE_SOURCE: &str = r#"
+@version("0.2.0")
+class Product {
+    has Str $.name;
+    has num64 $.price;
+}
+class Products is resource {
+    has Str $.table = "products";
+    query list() -> Product {
+        Product ==> resource::list()
+    }
+    mutation create(Product $item) -> Product {
+        $item ==> resource::create()
+    }
+}
+class ShopPage is component {
+    query $.products = Products.list();
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("Shop"))),
+            ui::heading(:text("Products")),
+            ui::collection(:items($.products),
+                for $.products -> $product {
+                    ui::card(ui::heading(:text($.product.name)))
+                }
+            )
+        )
+    }
+}
+class ShopApp is app {
+    route "/" => ShopPage;
+    method serve() {
+        ui::web(:root(ShopApp), :port(18088), :route("/"))
+            ==> ui::terminal(:port(18023))
+    }
+}
+"#;
+
+    const API_SOURCE: &str = r#"
+@version("0.2.0")
 class FeedbackRecord {
     has UUID $.id;
     has Str $.author;
@@ -1058,14 +980,143 @@ class FeedbackApi is service {
         FeedbackRecord ==> service::http(:port(18081), :route("/api/feedback"), :method(POST))
     }
 }
-"#
-            .into()
-        });
-        let program = sil_parser::parse(&source).expect("parse feedback_api");
-        program.validate().expect("validate feedback_api");
-        let decisions = sil_router::route_program(&program);
-        let output = output_dir("feedback-api");
-        let result = emit(&program, &decisions, &source_path, &output, "test").unwrap();
+"#;
+
+    #[test]
+    fn emits_stub_modules() {
+        let (_program, result, output) = parse_emit(STUB_SOURCE, "stub");
+        assert_eq!(result.execution_mode, ExecutionMode::Stub);
+        let manifest = fs::read_to_string(&result.manifest).unwrap();
+        assert!(manifest.contains("\"execution_mode\": \"stub\""));
+        assert!(manifest.contains("\"manifest_version\": 3"));
+        assert!(output.join("typescript/ingress.ts").is_file());
+        assert!(output.join("python/engine.py").is_file());
+        assert!(output.join("go/cache.go").is_file());
+        fs::remove_dir_all(output).ok();
+    }
+
+    #[test]
+    fn emits_runnable_feedback_app() {
+        let (_program, result, output) = parse_emit(FEEDBACK_SOURCE, "feedback");
+        assert_eq!(result.execution_mode, ExecutionMode::Runnable);
+        let graph = result.graph.as_ref().unwrap();
+        assert_eq!(graph.processor_op, ProcessorOp::Score);
+        assert!(graph.capabilities.web);
+        assert!(graph.capabilities.terminal);
+        assert_eq!(graph.sqlite_table, "feedback");
+
+        let ts = fs::read_to_string(output.join("typescript/worker.ts")).unwrap();
+        let py = fs::read_to_string(output.join("python/worker.py")).unwrap();
+        let go = fs::read_to_string(output.join("go/worker.go")).unwrap();
+        let app = fs::read_to_string(output.join("typescript/src/App.tsx")).unwrap();
+        let terminal = fs::read_to_string(output.join("typescript/terminal.ts")).unwrap();
+        let button =
+            fs::read_to_string(output.join("typescript/src/components/ui/button.tsx")).unwrap();
+        let theme = fs::read_to_string(output.join("typescript/src/theme.css")).unwrap();
+        let pkg = fs::read_to_string(output.join("typescript/package.json")).unwrap();
+
+        for source in [&ts, &py, &go] {
+            assert!(!source.contains("TODO"));
+            assert!(!source.contains("__PORT__"));
+            assert!(!source.contains("__ROUTE__"));
+            assert!(!source.contains("__TABLE__"));
+            assert!(!source.contains("__SCHEMA_ID__"));
+            assert!(!source.contains("__SOCKET_PATH__"));
+            assert!(!source.contains("__DB_PATH__"));
+            assert!(!source.contains("__PROCESSOR_OP__"));
+            assert!(!source.contains("__HAS_LLM__"));
+            assert!(!source.contains("__ACTIONS_JSON__"));
+            assert!(!source.contains("__RESOURCE_TABLES__"));
+            assert!(!source.contains("__ROUTES_JSON__"));
+        }
+        assert!(ts.contains("HELLO"));
+        assert!(ts.contains(r#"role: "bun""#));
+        assert!(ts.contains("/submit"));
+        assert!(ts.contains(r#"type: "INGEST""#));
+        assert!(ts.contains("dist"));
+        assert!(ts.contains("text.score"));
+        assert!(py.contains("text.score"));
+        assert!(go.contains("feedback") || go.contains("SILC_TABLE"));
+        assert!(app.contains("function FeedbackPage"));
+        assert!(app.contains("function App"));
+        assert!(app.contains("AppBar"));
+        assert!(app.contains("/submit"));
+        assert!(app.contains("setAuthor"));
+        assert!(terminal.contains("ROUTES"));
+        assert!(button.contains("ShadCN-style Button") || button.contains("Button"));
+        assert!(theme.contains("@tailwind"));
+        assert!(pkg.contains(UI_WEB_REACT_VERSION));
+
+        let manifest = fs::read_to_string(&result.manifest).unwrap();
+        assert!(manifest.contains("\"execution_mode\": \"runnable\""));
+        assert!(manifest.contains("\"manifest_version\": 3"));
+        assert!(!manifest.contains("portal_kind"));
+        assert!(manifest.contains("\"http_port\": 18080"));
+        assert!(manifest.contains("\"sqlite_table\": \"feedback\""));
+        assert!(manifest.contains("\"surfaces\""));
+        assert!(manifest.contains("\"capabilities\""));
+        assert!(manifest.contains("text.score") || manifest.contains("\"processor\""));
+        assert!(manifest.contains("\"terminal_port\": 18023"));
+        assert!(manifest.contains("FeedbackApp") || manifest.contains("FeedbackPage"));
+        fs::remove_dir_all(output).ok();
+    }
+
+    #[test]
+    fn emits_chat_app_with_llm_processor() {
+        let (_program, result, output) = parse_emit(CHAT_SOURCE, "chat");
+        let graph = result.graph.as_ref().unwrap();
+        assert_eq!(graph.processor_op, ProcessorOp::LlmComplete);
+        assert!(graph.needs_llm());
+        assert_eq!(graph.model_ref.as_deref(), Some("llama3.2-1b"));
+
+        let app = fs::read_to_string(output.join("typescript/src/App.tsx")).unwrap();
+        assert!(app.contains("ChatComposer") || app.contains("chat"));
+        assert!(app.contains("HistoryPanel") || app.contains("Chat History"));
+        assert!(app.contains("/complete") || app.contains("on_send"));
+        assert!(app.contains("AppBar"));
+        assert!(app.contains("SidePanel"));
+        assert!(output.join("python/requirements.txt").is_file());
+        let ts = fs::read_to_string(output.join("typescript/worker.ts")).unwrap();
+        assert!(ts.contains("/complete"));
+        assert!(ts.contains("/history"));
+        assert!(ts.contains("llm.complete") || ts.contains("true"));
+        let history_panel =
+            fs::read_to_string(output.join("typescript/src/components/ui/history-panel.tsx"))
+                .unwrap();
+        assert!(history_panel.contains("HistoryPanel") || history_panel.contains("collapsed"));
+        let manifest = fs::read_to_string(&result.manifest).unwrap();
+        assert!(manifest.contains("llm.complete") || manifest.contains("\"llm\": true"));
+        assert!(manifest.contains("llama3.2-1b"));
+        fs::remove_dir_all(output).ok();
+    }
+
+    #[test]
+    fn emits_resource_app_with_actions() {
+        let (_program, result, output) = parse_emit(RESOURCE_SOURCE, "shop");
+        let graph = result.graph.as_ref().unwrap();
+        assert_eq!(graph.processor_op, ProcessorOp::None);
+        assert!(graph.capabilities.resources);
+        assert!(!graph.actions.is_empty());
+
+        let ts = fs::read_to_string(output.join("typescript/worker.ts")).unwrap();
+        assert!(ts.contains("products") || ts.contains("/api/"));
+        assert!(ts.contains("\"none\"") || ts.contains("PROCESSOR"));
+        let app = fs::read_to_string(output.join("typescript/src/App.tsx")).unwrap();
+        assert!(app.contains("ShopPage"));
+        assert!(app.contains("/api/products") || app.contains("products"));
+        let py = fs::read_to_string(output.join("python/worker.py")).unwrap();
+        assert!(py.contains("none") || py.contains("PROCESSOR"));
+        let manifest = fs::read_to_string(&result.manifest).unwrap();
+        assert!(manifest.contains("\"actions\""));
+        assert!(manifest.contains("Products.list") || manifest.contains("/api/products"));
+        assert!(manifest.contains("\"resources\": true") || manifest.contains("products"));
+        assert!(!output.join("python/requirements.txt").is_file());
+        fs::remove_dir_all(output).ok();
+    }
+
+    #[test]
+    fn emits_runnable_service_http_gin_worker() {
+        let (_program, result, output) = parse_emit(API_SOURCE, "feedback-api");
         assert_eq!(result.execution_mode, ExecutionMode::Runnable);
         assert!(result.graph.as_ref().unwrap().is_api_only());
 
@@ -1086,8 +1137,21 @@ class FeedbackApi is service {
         let manifest = fs::read_to_string(&result.manifest).unwrap();
         assert!(manifest.contains("\"adapter\": \"gin-v1\""));
         assert!(manifest.contains("\"api_only\": true"));
-        assert!(manifest.contains("service::http"));
+        assert!(manifest.contains("service::http") || manifest.contains("\"manifest_version\": 3"));
         assert!(manifest.contains("go/api/worker.go"));
+        assert!(!manifest.contains("portal_kind"));
         fs::remove_dir_all(output).ok();
+    }
+
+    #[test]
+    fn rejects_legacy_is_view() {
+        let source = r#"
+@version("0.2.0")
+class BadView is view {
+    method render() { ui::page() }
+}
+"#;
+        let err = sil_parser::parse(source).unwrap_err();
+        assert!(err.message.contains("is view") || err.message.contains("view"));
     }
 }

@@ -33,17 +33,29 @@ jobs:
         run: cargo check --workspace
 
       - name: Cargo test
-        run: cargo test --workspace -- --test-threads=1
+        run: cargo test --workspace --lib -- --test-threads=1
 
-      - name: Generate LLM portal workers (offline smoke)
-        run: cargo test -p sil-codegen emits_runnable_llm_chat_workers
-
-      - name: Build feedback portal
-        run: cargo build -p silc && ./target/debug/silc build examples/feedback_portal.silc
-
-      - name: Concurrent correctness (short)
+      - name: Codegen smoke (0.2.0 apps)
         run: |
-          ./target/debug/silc examples/feedback_portal.silc > /tmp/silc-run.log 2>&1 &
+          cargo test -p sil-codegen emits_runnable_feedback_app
+          cargo test -p sil-codegen emits_chat_app_with_llm_processor
+          cargo test -p sil-codegen emits_resource_app_with_actions
+
+      - name: Build scored_form + shopping examples
+        run: |
+          cargo build -p silc
+          ./target/debug/silc build examples/scored_form.silc
+          ./target/debug/silc build examples/shopping_app.silc
+          ./target/debug/silc build examples/components.silc
+
+      - name: Dual-surface end-to-end
+        run: |
+          cargo test -p silc --test scored_form_e2e -- --test-threads=1
+          cargo test -p silc --test shopping_e2e -- --test-threads=1
+
+      - name: Concurrent scored_form correctness
+        run: |
+          ./target/debug/silc examples/scored_form.silc > /tmp/silc-run.log 2>&1 &
           PID=$!
           for i in $(seq 1 90); do
             if curl -sf http://127.0.0.1:18080/health >/dev/null; then break; fi
@@ -55,6 +67,29 @@ jobs:
               -H 'content-type: application/json' \
               -d "{\"author\":\"ci$i\",\"text\":\"hello from ci $i\"}" >/tmp/resp$i.json
           done
-          kill -INT $PID || true
+          kill -KILL $PID || true
           wait $PID || true
-          test -f examples/.runtime/feedback_portal/data/feedback.db
+          test -f examples/.runtime/scored_form/data/app.db
+
+  release-plz:
+    name: release-plz
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: check
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run release-plz
+        uses: release-plz/action@v0.5
+        with:
+          command: release-pr
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,6 +1,6 @@
 #!/usr/bin/env silc
-# Starter Silc program — edit this file; do not edit .runtime/
-@version("1.0")
+# Starter Silc 0.2.0 program — edit this file; do not edit .runtime/
+@version("0.2.0")
 
 subset Uri of Str where { .contains("://") }
 
@@ -23,7 +23,7 @@ class Analyzer is processor {
     method classify(Payload $payload) {
         $payload.body
             ==> tensor::tokenize()
-            ==> tensor::infer(:batch(1), :prefer<CPU>)
+            ==> tensor::infer(:batch(1), :prefer(CPU))
     }
 }
 

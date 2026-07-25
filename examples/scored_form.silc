@@ -1,0 +1,64 @@
+@version("0.2.0")
+
+# Dual-surface scored form (replaces the former feedback portal profile).
+
+class FeedbackRecord {
+    has Str $.author;
+    has Str $.text;
+    has Str $.rating;
+}
+
+class FeedbackPage is component {
+    has state Str $.author = "";
+    has state Str $.text = "";
+    has state Str $.rating = "Okay";
+
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("Feedback"))),
+            :side_panel(ui::side_panel(
+                ui::nav_item(:label("Inbox"), :to("/"), :active),
+                ui::nav_item(:label("Archive"), :to("/"))
+            )),
+            ui::stack(
+                ui::heading(:text("Share feedback"), :level(2)),
+                ui::form(:on(submit(on_submit)),
+                    ui::text_input(:field(author), :label("Author")),
+                    ui::textarea(:field(text), :label("Feedback")),
+                    ui::radio_group(:field(rating), :options(["Good", "Okay", "Bad"]), :label("Rating")),
+                    ui::toolbar(
+                        ui::button(:label("Submit"), :variant(primary), :submit)
+                    )
+                )
+            )
+        )
+    }
+
+    method on_submit() {
+        submit();
+    }
+}
+
+class FeedbackApp is app {
+    route "/" => FeedbackPage;
+
+    method serve() {
+        ui::web(:root(FeedbackApp), :port(18080), :route("/"))
+            ==> ui::terminal(:port(18023))
+    }
+}
+
+class TextAnalyzer is processor {
+    method analyze(FeedbackRecord $record) {
+        $record.text ==> text::score()
+    }
+}
+
+class FeedbackDb is sink is storage(SQLite) {
+    method persist(FeedbackRecord $record) {
+        $record
+            ==> ipc::publish()
+            ==> store::sqlite(:table(feedback))
+            ==> store::commit()
+    }
+}
