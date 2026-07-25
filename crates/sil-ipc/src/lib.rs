@@ -141,6 +141,9 @@ pub enum ControlFrame {
         /// Prompt text for llm::complete, or form body for text::score.
         #[serde(default)]
         text: String,
+        /// Optional multi-chat session key persisted onto the chat record.
+        #[serde(default)]
+        session_id: String,
     },
     Response {
         request_id: String,
@@ -482,10 +485,12 @@ mod tests {
                 request_id,
                 author,
                 text,
+                session_id,
             } => {
                 assert_eq!(request_id, "r1");
                 assert_eq!(author, "");
                 assert_eq!(text, "");
+                assert_eq!(session_id, "");
             }
             other => panic!("expected Ingest, got {other:?}"),
         }

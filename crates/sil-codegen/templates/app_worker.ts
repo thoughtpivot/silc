@@ -210,6 +210,7 @@ async function handleAction(req: Request, pathname: string): Promise<Response | 
         prompt,
         reply: "",
         model: body.model || "",
+        session_id: body.session_id || "",
       },
       requestId
     );
@@ -219,8 +220,13 @@ async function handleAction(req: Request, pathname: string): Promise<Response | 
     return json({ ok: true, request_id: requestId, reply: response.reply || response.summary || "", ...response });
   }
   if (pathname === "/history" && req.method === "GET") {
-    const rows = db.query(`SELECT payload FROM app_events WHERE kind = 'chat' ORDER BY created_at DESC LIMIT 50`).all() as any[];
-    return json(rows.map((r) => JSON.parse(r.payload)));
+    const sessionId = new URL(req.url).searchParams.get("session_id");
+    const rows = db.query(`SELECT payload FROM app_events WHERE kind = 'chat' ORDER BY created_at DESC LIMIT 200`).all() as any[];
+    let items = rows.map((r) => JSON.parse(r.payload));
+    if (sessionId !== null) {
+      items = items.filter((row) => (row.session_id || "") === sessionId);
+    }
+    return json(items.slice(0, 50));
   }
   return null;
 }
