@@ -1,0 +1,22 @@
+[package]
+name = "sil-training"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Provider-neutral silclm prompt generation and compiler-backed dataset banking"
+
+[[bin]]
+name = "sil-training"
+path = "src/main.rs"
+
+[dependencies]
+sil-core = { workspace = true }
+sil-parser = { workspace = true }
+sil-router = { workspace = true }
+sil-codegen = { workspace = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+hex = "0.4"
+uuid = { version = "1", features = ["v4"] }

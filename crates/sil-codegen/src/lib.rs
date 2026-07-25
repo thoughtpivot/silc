@@ -923,9 +923,9 @@ class ChatApp is app {
     }
 }
 class Assistant is processor {
-    has Str $.model_ref = "llama3.2-1b";
+    has Str $.model_ref = "silclm";
     method complete(ChatRecord $record) {
-        $record.prompt ==> llm::complete(:model("llama3.2-1b"))
+        $record.prompt ==> llm::complete(:model("silclm"))
     }
 }
 class ChatDb is sink is storage(SQLite) {
@@ -1094,7 +1094,7 @@ class FeedbackApi is service {
         let graph = result.graph.as_ref().unwrap();
         assert_eq!(graph.processor_op, ProcessorOp::LlmComplete);
         assert!(graph.needs_llm());
-        assert_eq!(graph.model_ref.as_deref(), Some("llama3.2-1b"));
+        assert_eq!(graph.model_ref.as_deref(), Some("silclm"));
 
         let app = fs::read_to_string(output.join("typescript/src/App.tsx")).unwrap();
         assert!(app.contains("ChatComposer") || app.contains("chat"));
@@ -1151,6 +1151,14 @@ class FeedbackApi is service {
         assert!(app.contains("AppBar"));
         assert!(app.contains("SidePanel"));
         assert!(output.join("python/requirements.txt").is_file());
+        let py = fs::read_to_string(output.join("python/worker.py")).unwrap();
+        assert!(
+            py.contains("SILC_LLM_N_CTX")
+                && py.contains("DEFAULT_N_CTX = 8192")
+                && py.contains("n_ctx=N_CTX")
+                && !py.contains("n_ctx=2048"),
+            "silclm worker must read SILC_LLM_N_CTX with an 8K default"
+        );
         let ts = fs::read_to_string(output.join("typescript/worker.ts")).unwrap();
         assert!(ts.contains("/complete"));
         assert!(ts.contains("/history"));
@@ -1186,7 +1194,7 @@ class FeedbackApi is service {
         );
         let manifest = fs::read_to_string(&result.manifest).unwrap();
         assert!(manifest.contains("llm.complete") || manifest.contains("\"llm\": true"));
-        assert!(manifest.contains("llama3.2-1b"));
+        assert!(manifest.contains("silclm"));
         fs::remove_dir_all(output).ok();
     }
 

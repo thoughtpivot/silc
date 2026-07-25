@@ -14,6 +14,23 @@ PROCESSOR = "__PROCESSOR_OP__"
 MODEL_PATH = os.environ.get("SILC_MODEL_PATH", "")
 SOCKET_PATH = os.environ.get("SILC_SOCKET", "__SOCKET_PATH__")
 IPC_DIR = os.environ.get("SILC_IPC_DIR", "ipc")
+DEFAULT_N_CTX = 8192
+
+
+def _env_positive_int(name: str, default: int) -> int:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be a positive integer, got {raw!r}") from exc
+    if value <= 0:
+        raise RuntimeError(f"{name} must be a positive integer, got {value}")
+    return value
+
+
+N_CTX = _env_positive_int("SILC_LLM_N_CTX", DEFAULT_N_CTX)
 
 _llm = None
 
@@ -55,7 +72,7 @@ def ensure_llm():
         return _llm
     from llama_cpp import Llama
 
-    _llm = Llama(model_path=MODEL_PATH, n_ctx=2048, verbose=False)
+    _llm = Llama(model_path=MODEL_PATH, n_ctx=N_CTX, verbose=False)
     return _llm
 
 

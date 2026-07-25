@@ -19,6 +19,10 @@
 *.onnx
 !models/.gitkeep
 
+# silclm training outputs (prompts, candidates, banks)
+training/out/**
+!training/out/.gitkeep
+
 # Env / secrets
 .env
 .env.*

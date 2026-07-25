@@ -1,0 +1,6 @@
+{
+  "id": "chat_assistant",
+  "category": "chat",
+  "description": "Build a multi-session local chat assistant using llm::complete with silclm (or omit :model). Include session create/select UI, ui::chat, history, and SQLite persistence of chat turns. Serve both ui::web and ui::terminal.",
+  "tags": ["chat", "silclm", "llm::complete", "sessions"]
+}

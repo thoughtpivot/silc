@@ -38,10 +38,10 @@ class ChatApp is app {
 }
 
 class Assistant is processor {
-    has Str $.model_ref = "llama3.2-1b";
+    has Str $.model_ref = "silclm";
 
     method complete(ChatRecord $record) {
-        $record.prompt ==> llm::complete(:model("llama3.2-1b"))
+        $record.prompt ==> llm::complete(:model("silclm"))
     }
 }
 

@@ -1,0 +1,6 @@
+{
+  "id": "http_api",
+  "category": "api",
+  "description": "Build an API-only Silc program using service::http that exposes a small JSON HTTP API (for example health and a feedback POST). No UI surfaces required for API-only graphs.",
+  "tags": ["service::http", "api", "gin"]
+}

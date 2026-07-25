@@ -707,6 +707,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "sil-training"
+version = "0.2.0"
+dependencies = [
+ "hex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sil-codegen",
+ "sil-core",
+ "sil-parser",
+ "sil-router",
+ "uuid",
+]
+
+[[package]]
 name = "silc"
 version = "0.2.0"
 dependencies = [

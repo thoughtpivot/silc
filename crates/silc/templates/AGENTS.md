@@ -127,6 +127,10 @@ Executable today:
 `resource::list`, `resource::get`, `resource::create`, `resource::update`,
 `resource::delete`.
 
+Local LLM chat uses **silclm** (default catalog id). Prefer
+`llm::complete(:model("silclm"))` or omit `:model`. Do not invent Ollama,
+OpenAI, or ad-hoc GGUF paths in `.silc`.
+
 Stub-only (parse/route/emit, do not run): `http::get`, `tensor::*`, `pandas::*`,
 and other non-registry ops. Mixing stub-only ops into a runnable graph is a
 **compile error**.

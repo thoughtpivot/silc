@@ -29,8 +29,8 @@ pub use constraint::TraitArg;
 pub use contract::{Contract, Field, Subset};
 pub use expr::{BinOp, Expr, InterpPart, UnaryOp};
 pub use model_catalog::{
-    is_known_model_id, lookup_model, validate_model_id, ModelCatalogEntry, DEFAULT_MODEL_ID,
-    MODEL_CATALOG,
+    is_known_model_id, lookup_model, validate_model_id, ModelCatalogEntry, DEFAULT_LLM_N_CTX,
+    DEFAULT_MODEL_ID, LEGACY_MODEL_ID, MODEL_CATALOG,
 };
 pub use module::{Method, Module, ModuleKind, Param};
 pub use operation::{

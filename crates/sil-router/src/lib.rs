@@ -232,7 +232,7 @@ class ChatApp is app {
 }
 class Assistant is processor {
     method complete(ChatRecord $record) {
-        $record.prompt ==> llm::complete(:model("llama3.2-1b"))
+        $record.prompt ==> llm::complete(:model("silclm"))
     }
 }
 class ChatDb is sink is storage(SQLite) {

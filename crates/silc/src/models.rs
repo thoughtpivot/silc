@@ -5,7 +5,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use sha2::{Digest, Sha256};
-use sil_core::{validate_model_id, ModelCatalogEntry};
+use sil_core::{validate_model_id, ModelCatalogEntry, LEGACY_MODEL_ID};
 
 use crate::runtimes::cache_root;
 
@@ -16,6 +16,35 @@ pub fn ensure_model(model_id: &str) -> Result<PathBuf, String> {
     if dest.is_file() {
         verify_file_sha256(&dest, entry.sha256, entry.id)?;
         return Ok(dest);
+    }
+    // One-release migration: reuse a previously cached llama3.2-1b GGUF.
+    if let Ok(legacy) = legacy_model_path(entry) {
+        if legacy.is_file() {
+            verify_file_sha256(&legacy, entry.sha256, entry.id)?;
+            if let Some(parent) = dest.parent() {
+                fs::create_dir_all(parent).map_err(|error| {
+                    format!(
+                        "failed to provision model `{}`: create {}: {error}",
+                        entry.id,
+                        parent.display()
+                    )
+                })?;
+            }
+            fs::copy(&legacy, &dest).map_err(|error| {
+                format!(
+                    "failed to provision model `{}`: migrate {} -> {}: {error}",
+                    entry.id,
+                    legacy.display(),
+                    dest.display()
+                )
+            })?;
+            println!(
+                "silc: migrated legacy model cache {} -> {}",
+                legacy.display(),
+                dest.display()
+            );
+            return Ok(dest);
+        }
     }
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent).map_err(|error| {
@@ -50,6 +79,13 @@ pub fn model_path(entry: &ModelCatalogEntry) -> Result<PathBuf, String> {
     Ok(cache_root()?
         .join("models")
         .join(entry.id)
+        .join(entry.filename))
+}
+
+fn legacy_model_path(entry: &ModelCatalogEntry) -> Result<PathBuf, String> {
+    Ok(cache_root()?
+        .join("models")
+        .join(LEGACY_MODEL_ID)
         .join(entry.filename))
 }
 
@@ -141,7 +177,7 @@ mod tests {
     fn default_model_resolves_under_cache() {
         let entry = validate_model_id(DEFAULT_MODEL_ID).unwrap();
         let path = model_path(entry).unwrap();
-        assert!(path.to_string_lossy().contains("models/llama3.2-1b"));
+        assert!(path.to_string_lossy().contains("models/silclm"));
         assert!(path
             .to_string_lossy()
             .ends_with("Llama-3.2-1B-Instruct-Q4_K_M.gguf"));

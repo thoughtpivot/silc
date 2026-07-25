@@ -162,7 +162,7 @@ when $.products {
 | --- | --- |
 | [`examples/components.silc`](examples/components.silc) | Props, state, events, dual surfaces |
 | [`examples/scored_form.silc`](examples/scored_form.silc) | Form + `text::score` + SQLite (CI path) |
-| [`examples/chat_assistant.silc`](examples/chat_assistant.silc) | Local `llm::complete` chat |
+| [`examples/chat_assistant.silc`](examples/chat_assistant.silc) | Local `llm::complete` chat via **silclm** |
 | [`examples/shopping_app.silc`](examples/shopping_app.silc) | Resources, routes, cart — no Shopping profile |
 | [`examples/http_api.silc`](examples/http_api.silc) | `service::http` → Go/Gin |
 | [`examples/data_pipeline.silc`](examples/data_pipeline.silc) | Stub routing across Bun / Python / Go |
@@ -173,6 +173,10 @@ Runnable operations are gated by an explicit registry in
 `ui::web`, `ui::terminal`, `service::http`, `text::score`, `llm::complete`,
 `ipc::publish`, `store::sqlite`, `store::commit`,
 `resource::list|get|create|update|delete`.
+
+Local chat uses **silclm** (Silc's owned model identity; v0 is a pinned Llama
+3.2 1B GGUF). Omit `:model` or pass `:model("silclm")`. See
+[ADR-005](docs/ADR-005-local-llm-complete.md).
 
 Mixing stub-only ops into a runnable graph is a compile error — by design.
 
@@ -199,7 +203,8 @@ Silc source (.silc)
 ```
 
 Workspace crates: `sil-core`, `sil-lexer`, `sil-parser`, `sil-router`,
-`sil-codegen`, `sil-ipc`, `silc` (CLI + supervisor).
+`sil-codegen`, `sil-ipc`, `silc` (CLI + supervisor), `sil-training`
+(provider-neutral silclm dataset harness).
 
 Per-app output lands in `{workdir}/.runtime/{program}/` (gitignored). Engines
 stay in `~/.silc/runtimes/`. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).

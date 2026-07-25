@@ -937,6 +937,11 @@ fn spawn_workers(
         if let Some(id) = graph.model_ref.as_deref() {
             command.env("SILC_MODEL_ID", id);
         }
+        if graph.needs_llm() {
+            let n_ctx = std::env::var("SILC_LLM_N_CTX")
+                .unwrap_or_else(|_| sil_core::DEFAULT_LLM_N_CTX.to_string());
+            command.env("SILC_LLM_N_CTX", n_ctx);
+        }
         children.push(
             command
                 .spawn()

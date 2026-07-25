@@ -1,0 +1,6 @@
+{
+  "id": "data_pipeline",
+  "category": "pipeline",
+  "description": "Author a stub-friendly data pipeline Silc program that routes work across Bun/Python/Go namespaces with ==> pipelines. Prefer parse/route/emit-valid structure; do not mix stub-only ops into a runnable UI graph.",
+  "tags": ["pipeline", "stub", "routing"]
+}
