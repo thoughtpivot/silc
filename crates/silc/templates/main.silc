@@ -1,35 +1,65 @@
 #!/usr/bin/env silc
-# Starter Silc 0.2.0 program — edit this file; do not edit .runtime/
+# Starter Silc 0.2.0 app — edit this file; do not edit .runtime/
 @version("0.2.0")
 
-subset Uri of Str where { .contains("://") }
-
-class Payload {
-    has Uri $.url;
-    has Str $.body;
-    has Str $.label;
+# Contract: typed record shape shared by UI, processor, and store.
+class Note {
+    has Str $.author;
+    has Str $.text;
 }
 
-class Ingress is service {
-    method fetch(Uri $url, :$timeout = 1500ms) {
-        $url
-            ==> http::get()
-            ==> html::extract_body()
-            ==> schema::bind(Payload)
+# Author-defined component: local state, events, and a render tree.
+# The same tree lowers to both web and terminal — never write React/OpenTUI.
+class HomePage is component {
+    has state Str $.author = "";
+    has state Str $.text = "";
+
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("My Silc App"))),
+            :side_panel(ui::side_panel(
+                ui::nav_item(:label("Home"), :to("/"), :active)
+            )),
+            ui::stack(
+                ui::heading(:text("Leave a note"), :level(2)),
+                ui::form(:on(submit(on_submit)),
+                    ui::text_input(:field(author), :label("Author")),
+                    ui::textarea(:field(text), :label("Note")),
+                    ui::toolbar(
+                        ui::button(:label("Submit"), :variant(primary), :submit)
+                    )
+                )
+            )
+        )
+    }
+
+    method on_submit() {
+        submit();
     }
 }
 
-class Analyzer is processor {
-    method classify(Payload $payload) {
-        $payload.body
-            ==> tensor::tokenize()
-            ==> tensor::infer(:batch(1), :prefer(CPU))
+# App: explicit routes + dual-surface serve (web and terminal are required).
+class MyApp is app {
+    route "/" => HomePage;
+
+    method serve() {
+        ui::web(:root(MyApp), :port(18080), :route("/"))
+            ==> ui::terminal(:port(18023))
     }
 }
 
-class Store is sink is latency(5ms) {
-    method persist(Payload $payload) {
-        $payload
-            ==> store::upsert_primary()
+# Optional processor / sink — scoring + SQLite persistence.
+class NoteScorer is processor {
+    method analyze(Note $note) {
+        $note.text ==> text::score()
+    }
+}
+
+class NoteDb is sink is storage(SQLite) {
+    method persist(Note $note) {
+        $note
+            ==> ipc::publish()
+            ==> store::sqlite(:table(notes))
+            ==> store::commit()
     }
 }

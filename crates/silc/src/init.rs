@@ -141,6 +141,16 @@ mod tests {
         assert!(tmp.join("AGENTS.md").is_file());
         assert!(tmp.join("main.silc").is_file());
         assert!(tmp.join(".gitignore").is_file());
+        let main = fs::read_to_string(tmp.join("main.silc")).unwrap();
+        assert!(main.contains("is component"));
+        assert!(main.contains("is app"));
+        assert!(main.contains("ui::web"));
+        assert!(main.contains("ui::terminal"));
+        assert!(!main.contains("is view"));
+        let agents = fs::read_to_string(tmp.join("AGENTS.md")).unwrap();
+        assert!(agents.contains("is component"));
+        assert!(agents.contains("dual-surface") || agents.contains("ui::terminal"));
+        assert!(agents.contains("Removed in 0.2.0") || agents.contains("portal profiles"));
         let gi = fs::read_to_string(tmp.join(".gitignore")).unwrap();
         assert!(gitignore_has_line(&gi, GITIGNORE_ENTRY));
         assert!(gitignore_has_line(&gi, SILC_META_ENTRY));
