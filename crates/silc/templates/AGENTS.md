@@ -48,12 +48,19 @@ Express UI intent in Silc only:
 `ui::page`, `ui::app_bar`, `ui::side_panel`, `ui::nav_item`, `ui::toolbar`,
 `ui::stack`, `ui::row`, `ui::grid`, `ui::card`, `ui::heading`, `ui::text`,
 `ui::form`, `ui::text_input`, `ui::textarea`, `ui::radio_group`, `ui::button`,
-`ui::chat`, `ui::chat_history`
+`ui::chat`, `ui::chat_history`, `ui::search_input`, `ui::filter_bar`,
+`ui::product_grid`
 
 `ui::chat(:field(prompt), :label, :placeholder)` renders a conversation thread
 plus its send button. `ui::chat_history(:title, :collapsible)` renders persisted
 SQLite turns and can collapse to a narrow rail. Both require an `llm::complete`
 portal.
+
+An inventory view uses `ui::filter_bar(ui::search_input(...))`,
+`ui::product_grid`, and `ui::chat`. The compiler provides seeded read-only
+products, deterministic filters, optional AI filter interpretation, and chat
+grounded only in the currently visible products. See
+`examples/grocery_inventory.silc`.
 
 Props are semantic (`:title`, `:label`, `:field`, `:options([...])`,
 `:variant(primary|secondary|destructive)`, `:size(sm|md|lg)`, `:submit`,
@@ -101,6 +108,8 @@ Executable today:
 - UI portal: `ui::web` (optional `:view(Name)` or `html::form` + `http::serve`),
   optional `ui::terminal(:port)`, either `text::score` or `llm::complete`, then
   `ipc::publish`, `store::sqlite`, `store::commit`
+- Inventory profile: `ui::web(:view(...))` where the view contains
+  `ui::product_grid`, plus `llm::complete` and optional `ui::terminal`
 
 For `llm::complete`, name only a Silc catalog id such as `llama3.2-1b`.
 Never add Ollama, model paths, pip packages, or Python inference code to Silc

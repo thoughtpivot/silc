@@ -92,6 +92,9 @@ registry; unknown components or props are hard errors.
 | `ui::button` | Action | `:label`, optional `:variant(primary\|secondary\|destructive)`, `:size(sm\|md\|lg)`, `:submit` |
 | `ui::chat` | Conversation thread + composer (LLM portals) | `:field` (Contract), optional `:label`, `:placeholder` |
 | `ui::chat_history` | SQLite-backed turn history (LLM portals) | optional `:title`, `:collapsible` |
+| `ui::search_input` | Deterministic text filter plus AI interpretation action | `:field`, optional `:label`, `:placeholder` |
+| `ui::filter_bar` | Inventory filter toolbar | children: `search_input`, `button` |
+| `ui::product_grid` | Read-only cards for compiler-seeded products | optional `:empty_text` |
 
 Rules:
 
@@ -100,6 +103,11 @@ Rules:
 - Every interactive form view must include a `ui::button` with `:submit`
   (`ui::chat` counts — it embeds its own send button).
 - `ui::chat` / `ui::chat_history` require an `llm::complete` portal.
+- A referenced view containing `ui::product_grid` plus `llm::complete` selects
+  the inventory portal. It must also contain `ui::search_input` and `ui::chat`.
+- Inventory `/products` filtering is deterministic. `/ai_search` converts
+  natural language to bounded filter JSON, and `/complete` caps and validates
+  the visible-product context before local inference.
 - LLM workers expose the latest 200 SQLite-backed turns through `/history`;
   generated chat views load them on mount so history survives page reloads.
 - No raw CSS, Tailwind utilities, JSX, HTML, event handlers, or package names.

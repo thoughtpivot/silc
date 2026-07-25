@@ -674,6 +674,7 @@ fn handle_client(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn start_ingest(
     workers: &Mutex<HashMap<String, WorkerPool>>,
     pending: &Mutex<HashMap<String, Pending>>,
@@ -687,7 +688,7 @@ fn start_ingest(
 ) -> Result<(), String> {
     let id = Uuid::new_v4().to_string();
     let record = match portal_kind {
-        PortalKind::LlmChat => serde_json::json!({
+        PortalKind::LlmChat | PortalKind::Inventory => serde_json::json!({
             "id": id,
             "prompt": text,
             "reply": "",
@@ -730,6 +731,7 @@ fn start_ingest(
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn on_ack(
     workers: &Mutex<HashMap<String, WorkerPool>>,
     pending: &Mutex<HashMap<String, Pending>>,
@@ -873,6 +875,7 @@ fn notify_role(
     write_frame(&mut *writer, &frame)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn spawn_workers(
     output: &EmitResult,
     lock: &RuntimeLock,

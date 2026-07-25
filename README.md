@@ -307,6 +307,7 @@ silc examples/feedback_portal.silc     # ui::web (React/Bun) + SQLite feedback p
 silc examples/custom_feedback_ui.silc  # ui::web(:view) with app bar / side panel / radio
 silc examples/llm_portal.silc          # real local Llama completion + SQLite history
 silc examples/ai_chatbot_2.silc        # chat view: thread + composer left, history right
+silc examples/grocery_inventory.silc   # seeded inventory + filters + scoped AI + telnet
 silc examples/feedback_api.silc        # service::http (Go/Gin) JSON API
 ```
 
@@ -322,6 +323,11 @@ Runnable v1 programs use either:
   pinned GGUF under `~/.silc/models/`; authors do not install or configure an
   inference runtime.
   `ui::terminal(:port)` adds a loopback TCP interface reachable with telnet.
+- **Inventory portal:** a view containing `ui::product_grid`,
+  `ui::search_input`, and `ui::chat` selects the compiler-owned read-only
+  inventory profile. Deterministic `/products` filters work without inference;
+  `/ai_search` interprets natural language into bounded filter JSON; `/complete`
+  receives only the caller's currently visible seeded products.
 
 Other examples still parse/route and emit inspectable stubs. Authors never write
 HTML, CSS, React, Tailwind, Go, Gin, or package manifests — those are
@@ -332,6 +338,18 @@ The feedback portal exposes both UI surfaces by default:
 ```bash
 silc examples/feedback_portal.silc
 telnet 127.0.0.1 18023
+```
+
+The grocery example serves 24 seeded products at `http://127.0.0.1:18094` and
+provides the same inventory session over telnet:
+
+```bash
+silc examples/grocery_inventory.silc
+telnet 127.0.0.1 18024
+# /list
+# /filter category=Snacks max_price=5 in_stock_only=true
+# /search affordable dairy for breakfast
+# /chat Which visible product has the most stock?
 ```
 
 The API example serves Contract-shaped JSON:

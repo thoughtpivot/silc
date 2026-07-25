@@ -74,6 +74,7 @@ impl UiSurface {
 pub enum PortalKind {
     Feedback,
     LlmChat,
+    Inventory,
     None,
 }
 
@@ -82,12 +83,13 @@ impl PortalKind {
         match self {
             PortalKind::Feedback => "feedback",
             PortalKind::LlmChat => "llm_chat",
+            PortalKind::Inventory => "inventory",
             PortalKind::None => "none",
         }
     }
 
     pub fn needs_llm(self) -> bool {
-        self == PortalKind::LlmChat
+        matches!(self, PortalKind::LlmChat | PortalKind::Inventory)
     }
 }
 
@@ -488,10 +490,23 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
                             "runnable LLM chat portal requires {SUPPORTED_OPS_HELP}"
                         ));
                     }
-                    portal_kind = PortalKind::LlmChat;
+                    let inventory_view = view_name
+                        .as_ref()
+                        .and_then(|name| program.views.iter().find(|view| view.name == *name));
+                    portal_kind = if inventory_view
+                        .is_some_and(|view| view.root.contains_component("product_grid"))
+                    {
+                        PortalKind::Inventory
+                    } else {
+                        PortalKind::LlmChat
+                    };
                     model_ref = Some(resolve_model_ref(&processors, model_from_op)?);
                     if sqlite_table == "feedback" {
-                        sqlite_table = "chat_turns".into();
+                        sqlite_table = if portal_kind == PortalKind::Inventory {
+                            "inventory_audit".into()
+                        } else {
+                            "chat_turns".into()
+                        };
                     }
                 } else if saw_score {
                     if !(saw_publish && saw_sqlite && saw_commit) {

@@ -21,6 +21,9 @@ const FEEDBACK_GO: &str = include_str!("../templates/feedback_worker.go");
 const LLM_TS: &str = include_str!("../templates/llm_worker.ts");
 const LLM_PY: &str = include_str!("../templates/llm_worker.py");
 const LLM_GO: &str = include_str!("../templates/llm_worker.go");
+const INVENTORY_TS: &str = include_str!("../templates/inventory_worker.ts");
+const INVENTORY_PY: &str = include_str!("../templates/inventory_worker.py");
+const INVENTORY_GO: &str = include_str!("../templates/inventory_worker.go");
 const LLM_REQUIREMENTS: &str = include_str!("../templates/llm_requirements.txt");
 const FEEDBACK_GOMOD: &str = include_str!("../templates/go.mod");
 const SERVICE_HTTP_GO: &str = include_str!("../templates/service_http_worker.go");
@@ -48,6 +51,8 @@ const UI_WEB_TOOLBAR_TSX: &str = include_str!("../templates/ui_web_toolbar.tsx")
 const UI_WEB_CHAT_THREAD_TSX: &str = include_str!("../templates/ui_web_chat_thread.tsx");
 const UI_WEB_CHAT_COMPOSER_TSX: &str = include_str!("../templates/ui_web_chat_composer.tsx");
 const UI_WEB_HISTORY_PANEL_TSX: &str = include_str!("../templates/ui_web_history_panel.tsx");
+const UI_WEB_SEARCH_INPUT_TSX: &str = include_str!("../templates/ui_web_search_input.tsx");
+const UI_WEB_PRODUCT_GRID_TSX: &str = include_str!("../templates/ui_web_product_grid.tsx");
 
 /// Compiler-pinned React version for ui::web (must match ui_web_package.json).
 pub const UI_WEB_REACT_VERSION: &str = "18.3.1";
@@ -193,6 +198,8 @@ pub fn emit(
                     "typescript/src/components/ui/chat-thread.tsx",
                     "typescript/src/components/ui/chat-composer.tsx",
                     "typescript/src/components/ui/history-panel.tsx",
+                    "typescript/src/components/ui/search-input.tsx",
+                    "typescript/src/components/ui/product-grid.tsx",
                     "typescript/tailwind.config.js",
                     "typescript/index.html",
                     "typescript/package.json",
@@ -322,6 +329,7 @@ fn emit_ui_portal(
     let (worker_ts, worker_py, worker_go, fallback_app) = match graph.portal_kind {
         PortalKind::Feedback => (FEEDBACK_TS, FEEDBACK_PY, FEEDBACK_GO, UI_WEB_APP_TSX),
         PortalKind::LlmChat => (LLM_TS, LLM_PY, LLM_GO, LLM_UI_WEB_APP_TSX),
+        PortalKind::Inventory => (INVENTORY_TS, INVENTORY_PY, INVENTORY_GO, LLM_UI_WEB_APP_TSX),
         PortalKind::None => return Err("UI graph is missing a portal profile".into()),
     };
     let app_tsx = if let Some(view) = &graph.ui_view {
@@ -418,6 +426,14 @@ fn emit_ui_portal(
         (
             root.join("typescript/src/components/ui/history-panel.tsx"),
             UI_WEB_HISTORY_PANEL_TSX.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/ui/search-input.tsx"),
+            UI_WEB_SEARCH_INPUT_TSX.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/ui/product-grid.tsx"),
+            UI_WEB_PRODUCT_GRID_TSX.to_string(),
         ),
         (
             root.join("python/worker.py"),
@@ -905,6 +921,62 @@ mod tests {
                 .unwrap();
         assert!(history_panel.contains("setCollapsed"));
         assert!(history_panel.contains("aria-expanded"));
+        fs::remove_dir_all(output).ok();
+    }
+
+    #[test]
+    fn emits_inventory_portal_with_products_search_and_scoped_chat() {
+        let source_path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/grocery_inventory.silc");
+        let source = fs::read_to_string(&source_path).expect("read grocery inventory");
+        let program = sil_parser::parse(&source).expect("parse grocery inventory");
+        program.validate().expect("validate grocery inventory");
+        let decisions = sil_router::route_program(&program);
+        let output = output_dir("grocery-inventory");
+        let result = emit(&program, &decisions, &source_path, &output, "test").unwrap();
+        let graph = result.graph.as_ref().unwrap();
+        assert_eq!(graph.portal_kind, PortalKind::Inventory);
+        assert_eq!(graph.terminal_port, Some(18024));
+        assert_eq!(graph.sqlite_table, "inventory_audit");
+
+        let worker = fs::read_to_string(output.join("typescript/worker.ts")).unwrap();
+        assert!(worker.contains(r#""/products""#));
+        assert!(worker.contains(r#""/ai_search""#));
+        assert!(worker.contains(r#""/complete""#));
+        assert!(worker.contains("visible_products"));
+        assert!(worker.contains("compactScope"));
+        assert!(worker.contains("Bun.listen"));
+        assert!(worker.contains("/list"));
+        assert!(worker.contains("/filter"));
+        assert!(worker.contains("/search"));
+        assert!(worker.contains("/chat"));
+
+        let app = fs::read_to_string(output.join("typescript/src/App.tsx")).unwrap();
+        assert!(app.contains("ProductGrid"));
+        assert!(app.contains("SearchInput"));
+        assert!(app.contains("visibleProducts"));
+        assert!(app.contains("/ai_search"));
+        assert!(app.contains("visible_products: visibleProducts"));
+        assert!(app.contains("AppBar"));
+
+        let go = fs::read_to_string(output.join("go/worker.go")).unwrap();
+        assert!(go.contains("CREATE TABLE IF NOT EXISTS products"));
+        assert!(go.contains("Gala Apples"));
+        assert!(go.contains("Dark Chocolate"));
+        let python = fs::read_to_string(output.join("python/worker.py")).unwrap();
+        assert!(python.contains("Never invent products"));
+        assert!(python.contains("temperature=0.2"));
+        assert!(output
+            .join("typescript/src/components/ui/product-grid.tsx")
+            .is_file());
+        assert!(output
+            .join("typescript/src/components/ui/search-input.tsx")
+            .is_file());
+
+        let manifest = fs::read_to_string(&result.manifest).unwrap();
+        assert!(manifest.contains(r#""portal_kind": "inventory""#));
+        assert!(manifest.contains("product_grid"));
+        assert!(manifest.contains("search_input"));
         fs::remove_dir_all(output).ok();
     }
 

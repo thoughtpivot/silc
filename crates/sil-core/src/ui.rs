@@ -84,6 +84,9 @@ const LAYOUT_CHILDREN: &[&str] = &[
     "button",
     "chat",
     "chat_history",
+    "search_input",
+    "filter_bar",
+    "product_grid",
 ];
 
 const FORM_CHILDREN: &[&str] = &[
@@ -98,6 +101,8 @@ const FORM_CHILDREN: &[&str] = &[
     "radio_group",
     "toolbar",
     "button",
+    "search_input",
+    "filter_bar",
 ];
 
 /// Compiler-owned semantic catalog for the web vertical slice.
@@ -334,6 +339,44 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
                 required: false,
             },
         ],
+        slots: &[],
+        children: ChildPolicy::None,
+    },
+    ComponentSpec {
+        name: "search_input",
+        props: &[
+            PropSpec {
+                name: "field",
+                kind: PropKind::Ident,
+                required: true,
+            },
+            PropSpec {
+                name: "label",
+                kind: PropKind::String,
+                required: false,
+            },
+            PropSpec {
+                name: "placeholder",
+                kind: PropKind::String,
+                required: false,
+            },
+        ],
+        slots: &[],
+        children: ChildPolicy::None,
+    },
+    ComponentSpec {
+        name: "filter_bar",
+        props: &[],
+        slots: &[],
+        children: ChildPolicy::AnyOf(&["search_input", "button"]),
+    },
+    ComponentSpec {
+        name: "product_grid",
+        props: &[PropSpec {
+            name: "empty_text",
+            kind: PropKind::String,
+            required: false,
+        }],
         slots: &[],
         children: ChildPolicy::None,
     },

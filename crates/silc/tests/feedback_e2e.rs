@@ -145,7 +145,7 @@ fn feedback_portal_http_sqlite_e2e() {
     let mut terminal = TcpStream::connect("127.0.0.1:18023").expect("connect terminal UI");
     let banner = read_until(&mut terminal, "Author:", Duration::from_secs(5));
     assert!(
-        banner.contains("Silc Feedback Portal"),
+        banner.contains("THOUGHTPIVOT") && banner.contains("Feedback Portal"),
         "missing terminal banner: {banner:?}"
     );
     terminal

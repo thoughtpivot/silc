@@ -88,11 +88,31 @@ impl Program {
                 validate_view(view, contract)?;
                 let uses_chat = view.root.contains_component("chat")
                     || view.root.contains_component("chat_history");
-                if uses_chat && graph.portal_kind != crate::operation::PortalKind::LlmChat {
+                if uses_chat
+                    && !matches!(
+                        graph.portal_kind,
+                        crate::operation::PortalKind::LlmChat
+                            | crate::operation::PortalKind::Inventory
+                    )
+                {
                     return Err(format!(
                         "view `{}` uses `ui::chat`/`ui::chat_history`, which require an `llm::complete` portal",
                         view.name
                     ));
+                }
+                if graph.portal_kind == crate::operation::PortalKind::Inventory {
+                    if !view.root.contains_component("search_input") {
+                        return Err(format!(
+                            "inventory view `{}` must include `ui::search_input`",
+                            view.name
+                        ));
+                    }
+                    if !view.root.contains_component("chat") {
+                        return Err(format!(
+                            "inventory view `{}` must include `ui::chat` for scoped product questions",
+                            view.name
+                        ));
+                    }
                 }
             }
         }
