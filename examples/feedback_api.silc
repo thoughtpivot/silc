@@ -1,0 +1,25 @@
+#!/usr/bin/env silc
+# Runnable Silc v1: declarative HTTP API via service::http → Go/Gin.
+@version("1.0")
+
+subset NonEmpty of Str where { .chars > 0 }
+
+class FeedbackRecord {
+    has UUID $.id;
+    has NonEmpty $.author;
+    has NonEmpty $.text;
+    has Str $.summary;
+    has num64 $.score;
+}
+
+class FeedbackApi is service {
+    method list(:$port = 18081) {
+        FeedbackRecord
+            ==> service::http(:port(18081), :route("/api/feedback"), :method(GET))
+    }
+
+    method create(:$port = 18081) {
+        FeedbackRecord
+            ==> service::http(:port(18081), :route("/api/feedback"), :method(POST))
+    }
+}

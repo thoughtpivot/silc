@@ -48,17 +48,34 @@ primitives, and OpenTUI are **implementation substrates**, not authoring APIs.
 
 Legacy aliases (still runnable): `html::form` + `http::serve` → same web profile.
 
+## Declarative HTTP services (do not write Go/Gin)
+
+Express backend API intent in Silc only:
+
+- `service::http(:port, :route, :method)` — Contract-bound HTTP route
+  (compiler lowers to Go + Gin)
+
+Example:
+
+```silc
+FeedbackRecord
+    ==> service::http(:port(18081), :route("/api/feedback"), :method(GET))
+```
+
+Never emit Go, Gin routers, or `go.mod`. Those are compiler-owned under
+`.runtime/`. UI stays on Bun; backend APIs use Go/Gin.
+
 One `.silc` file can declare a full app (Contract + service + processor + sink).
 Polyglot workers under `.runtime/` are compiler output, not an authoring model.
 
 ## Runnable v1 operations
 
-Executable today (feedback-portal shape):
+Executable today:
 
-- `ui::web` (preferred) or `html::form` + `http::serve`
-- optional `ui::terminal(:port)` alongside the web surface
-- `text::score`
-- `ipc::publish`, `store::sqlite`, `store::commit`
+- `service::http` — API-only (Go/Gin; no processor/sink required)
+- Feedback-portal shape: `ui::web` (or `html::form` + `http::serve`), optional
+  `ui::terminal(:port)`, `text::score`, `ipc::publish`, `store::sqlite`,
+  `store::commit`
 
 Other namespaces still parse/route/stub-emit but do not execute yet.
 

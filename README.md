@@ -302,21 +302,36 @@ runnable build transparently provisions pinned engines into
 silc build main.silc          # compile only
 silc main.silc                # compile; run if program is runnable v1
 silc examples/feedback_portal.silc   # ui::web (React/Bun) + SQLite feedback portal
+silc examples/feedback_api.silc      # service::http (Go/Gin) JSON API
 ```
 
-Runnable v1 programs use `ui::web` (or legacy `html::form` + `http::serve`),
-`text::score`, `ipc::publish`, `store::sqlite`, and `store::commit`.
-`ui::terminal(:port)` adds a loopback TCP interface reachable with telnet; a
-future rich local-terminal adapter will use OpenTUI. Other examples still
-parse/route and emit inspectable stubs. Authors never write
-HTML, CSS, React, Tailwind, or package manifests — those are compiler-owned
-under `.runtime/`.
+Runnable v1 programs use either:
 
-The feedback portal exposes both surfaces by default:
+- **Declarative HTTP API:** `service::http(:port, :route, :method)` bound to a
+  Contract — compiler emits a Go/Gin worker (no Bun UI).
+- **Declarative UI portal:** `ui::web` (or legacy `html::form` + `http::serve`),
+  `text::score`, `ipc::publish`, `store::sqlite`, and `store::commit`.
+  `ui::terminal(:port)` adds a loopback TCP interface reachable with telnet.
+
+Other examples still parse/route and emit inspectable stubs. Authors never write
+HTML, CSS, React, Tailwind, Go, Gin, or package manifests — those are
+compiler-owned under `.runtime/`. UI surfaces use Bun; backend APIs use Go/Gin.
+
+The feedback portal exposes both UI surfaces by default:
 
 ```bash
 silc examples/feedback_portal.silc
 telnet 127.0.0.1 18023
+```
+
+The API example serves Contract-shaped JSON:
+
+```bash
+silc examples/feedback_api.silc
+curl http://127.0.0.1:18081/api/feedback
+curl -X POST http://127.0.0.1:18081/api/feedback \
+  -H 'content-type: application/json' \
+  -d '{"id":"1","author":"Ada","text":"hello","summary":"","score":0}'
 ```
 
 ```

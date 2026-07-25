@@ -71,12 +71,21 @@ fn compile_and_maybe_run(entry: &Path) -> Result<(), String> {
             println!();
             println!("stub emit complete — worker execution requires runnable v1 operations");
             println!(
-                "(ui::web or html::form+http::serve, text::score, ipc::publish, store::sqlite, store::commit)"
+                "(service::http, or ui::web / html::form+http::serve with optional ui::terminal, text::score, ipc::publish, store::sqlite, store::commit)"
             );
-            println!("ui::terminal is a documented Bun/OpenTUI stub (not executable in v1)");
             Ok(())
         }
-        ExecutionMode::Runnable => supervisor::run_feedback(&output, &lock),
+        ExecutionMode::Runnable => {
+            let graph = output
+                .graph
+                .as_ref()
+                .ok_or_else(|| "runnable program missing executable graph".to_string())?;
+            if graph.is_api_only() {
+                supervisor::run_api(&output, &lock)
+            } else {
+                supervisor::run_feedback(&output, &lock)
+            }
+        }
     }
 }
 
@@ -125,8 +134,17 @@ fn compile_common(
     )?;
 
     if output.execution_mode == ExecutionMode::Runnable {
-        supervisor::build_ui_web(&lock, &output.root)?;
-        supervisor::build_go_worker(&lock, &output.root)?;
+        let graph = output
+            .graph
+            .as_ref()
+            .ok_or_else(|| "runnable program missing executable graph".to_string())?;
+        if graph.has_ui() {
+            supervisor::build_ui_web(&lock, &output.root)?;
+            supervisor::build_go_worker(&lock, &output.root)?;
+        }
+        if graph.has_api() {
+            supervisor::build_go_api_worker(&lock, &output.root)?;
+        }
     }
 
     println!("routes:");

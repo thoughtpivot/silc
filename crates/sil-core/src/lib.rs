@@ -17,7 +17,8 @@ pub use constraint::TraitArg;
 pub use contract::{Contract, Field, Subset};
 pub use module::{Method, Module, ModuleKind, Param};
 pub use operation::{
-    classify_program, infer_graph, is_executable_op, ExecutableGraph, ExecutionMode, UiSurface,
+    classify_program, infer_graph, is_executable_op, ApiRoute, ExecutableGraph, ExecutionMode,
+    UiSurface,
 };
 pub use pipeline::{Pipeline, PipelineStep};
 pub use program::Program;

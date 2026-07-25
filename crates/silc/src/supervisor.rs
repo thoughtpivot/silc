@@ -84,6 +84,49 @@ pub fn build_go_worker(lock: &RuntimeLock, runtime_root: &Path) -> Result<PathBu
     Ok(out)
 }
 
+/// Build the compiler-owned Gin HTTP API binary for `service::http`.
+pub fn build_go_api_worker(lock: &RuntimeLock, runtime_root: &Path) -> Result<PathBuf, String> {
+    let api_dir = runtime_root.join("go/api");
+    if !api_dir.join("worker.go").is_file() {
+        return Err("missing compiler-generated go/api/worker.go for service::http".into());
+    }
+    if !api_dir.join("go.mod").is_file() {
+        return Err("missing compiler-generated go/api/go.mod for service::http".into());
+    }
+    let out = api_dir.join("worker");
+    let tidy = Command::new(&lock.go_bin)
+        .current_dir(&api_dir)
+        .args(["mod", "tidy"])
+        .env("GOTOOLCHAIN", "local")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| format!("failed to tidy Go API module with Silc Go: {e}"))?;
+    if !tidy.status.success() {
+        return Err(format!(
+            "Silc Go API `go mod tidy` failed:\n{}\n{}",
+            String::from_utf8_lossy(&tidy.stdout),
+            String::from_utf8_lossy(&tidy.stderr)
+        ));
+    }
+    let status = Command::new(&lock.go_bin)
+        .current_dir(&api_dir)
+        .args(["build", "-o", "worker", "."])
+        .env("GOTOOLCHAIN", "local")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| format!("failed to build Go API worker with Silc Go: {e}"))?;
+    if !status.status.success() || !out.is_file() {
+        return Err(format!(
+            "Silc Go API worker build failed:\n{}\n{}",
+            String::from_utf8_lossy(&status.stdout),
+            String::from_utf8_lossy(&status.stderr)
+        ));
+    }
+    Ok(out)
+}
+
 /// Install compiler-pinned React/Tailwind deps and bundle ui::web assets with Silc-owned Bun.
 pub fn build_ui_web(lock: &RuntimeLock, runtime_root: &Path) -> Result<(), String> {
     let ts_dir = runtime_root.join("typescript");
@@ -175,16 +218,78 @@ pub fn build_ui_web(lock: &RuntimeLock, runtime_root: &Path) -> Result<(), Strin
     Ok(())
 }
 
+/// Run an API-only `service::http` program (Go/Gin, no Bun UI).
+pub fn run_api(output: &EmitResult, _lock: &RuntimeLock) -> Result<(), String> {
+    let graph = output
+        .graph
+        .as_ref()
+        .ok_or_else(|| "program is not executable in Silc v1".to_string())?;
+    if !graph.is_api_only() {
+        return Err("run_api requires an API-only service::http program".into());
+    }
+    let port = graph
+        .api_port()
+        .ok_or_else(|| "service::http graph missing API port".to_string())?;
+    ensure_api_port_available(port)?;
+
+    let api_bin = output.root.join("go/api/worker");
+    if !api_bin.is_file() {
+        return Err(format!("Go API binary missing at {}", api_bin.display()));
+    }
+
+    fs::write(
+        output.root.join("run.json"),
+        serde_json::to_string_pretty(&serde_json::json!({
+            "api_port": port,
+            "adapter": "gin-v1",
+            "routes": graph.api_routes.iter().map(|r| serde_json::json!({
+                "method": r.method,
+                "path": r.path,
+                "contract": r.contract,
+            })).collect::<Vec<_>>(),
+        }))
+        .unwrap(),
+    )
+    .map_err(|e| e.to_string())?;
+
+    let mut child = Command::new(&api_bin)
+        .env("SILC_API_PORT", port.to_string())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .map_err(|e| format!("failed to spawn Silc Go API worker: {e}"))?;
+
+    wait_for_http_health(port, Duration::from_secs(30))?;
+
+    println!("silc: service::http (gin-v1) listening on http://127.0.0.1:{port}");
+    for route in &graph.api_routes {
+        println!("silc:   {} {}", route.method, route.path);
+    }
+    println!("silc: press Ctrl-C to stop");
+
+    wait_for_ctrl_c();
+    let _ = child.kill();
+    let _ = child.wait();
+    println!("silc: stopped");
+    Ok(())
+}
+
 pub fn run_feedback(output: &EmitResult, lock: &RuntimeLock) -> Result<(), String> {
     let graph = output
         .graph
         .as_ref()
         .ok_or_else(|| "program is not executable in Silc v1".to_string())?;
+    if graph.is_api_only() {
+        return run_api(output, lock);
+    }
     // Fail before spawning any workers. Previously Bun could report READY over
     // UDS and then fail its HTTP bind, leaving the supervisor claiming success.
     ensure_http_port_available(graph.http_port)?;
     if let Some(port) = graph.terminal_port {
         ensure_terminal_port_available(port)?;
+    }
+    if let Some(port) = graph.api_port() {
+        ensure_api_port_available(port)?;
     }
     let ipc_dir = output.root.join("ipc");
     let data_dir = output.root.join("data");
@@ -247,6 +352,22 @@ pub fn run_feedback(output: &EmitResult, lock: &RuntimeLock) -> Result<(), Strin
     wait_for_pool(&workers, "python", PYTHON_REPLICAS, Duration::from_secs(90))?;
     wait_for_pool(&workers, "go", GO_REPLICAS, Duration::from_secs(90))?;
 
+    if graph.has_api() {
+        let api_bin = output.root.join("go/api/worker");
+        if !api_bin.is_file() {
+            return Err(format!("Go API binary missing at {}", api_bin.display()));
+        }
+        let api_port = graph.api_port().unwrap();
+        let api_child = Command::new(&api_bin)
+            .env("SILC_API_PORT", api_port.to_string())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .map_err(|e| format!("failed to spawn Silc Go API worker: {e}"))?;
+        children.push(api_child);
+        wait_for_http_health(api_port, Duration::from_secs(30))?;
+    }
+
     let bun_child = Command::new(&lock.bun_bin)
         .arg(output.root.join("typescript/worker.ts"))
         .env("SILC_SOCKET", &socket_path)
@@ -263,15 +384,24 @@ pub fn run_feedback(output: &EmitResult, lock: &RuntimeLock) -> Result<(), Strin
     children.push(bun_child);
     wait_for_pool(&workers, "bun", 1, Duration::from_secs(30))?;
 
+    let surface = graph
+        .ui_surface
+        .expect("run_feedback UI path requires ui_surface");
     println!(
         "silc: ui::web ({}) listening on http://127.0.0.1:{}{}",
-        graph.ui_surface.substrate(),
+        surface.substrate(),
         graph.http_port,
         graph.http_route
     );
     if let Some(port) = graph.terminal_port {
         println!("silc: ui::terminal listening at telnet://127.0.0.1:{port}");
         println!("silc: connect with `telnet 127.0.0.1 {port}`");
+    }
+    if let Some(port) = graph.api_port() {
+        println!("silc: service::http (gin-v1) listening on http://127.0.0.1:{port}");
+        for route in &graph.api_routes {
+            println!("silc:   {} {}", route.method, route.path);
+        }
     }
     println!("silc: press Ctrl-C to stop");
 
@@ -308,6 +438,16 @@ fn ensure_http_port_available(port: u16) -> Result<(), String> {
     Ok(())
 }
 
+fn ensure_api_port_available(port: u16) -> Result<(), String> {
+    let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|error| {
+        format!(
+            "service::http cannot listen on http://127.0.0.1:{port}: {error} (choose another :port or stop the existing process)"
+        )
+    })?;
+    drop(listener);
+    Ok(())
+}
+
 fn ensure_terminal_port_available(port: u16) -> Result<(), String> {
     let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|error| {
         format!(
@@ -316,6 +456,22 @@ fn ensure_terminal_port_available(port: u16) -> Result<(), String> {
     })?;
     drop(listener);
     Ok(())
+}
+
+fn wait_for_http_health(port: u16, timeout: Duration) -> Result<(), String> {
+    let url = format!("http://127.0.0.1:{port}/health");
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        if let Ok(response) = ureq::get(&url).timeout(Duration::from_secs(1)).call() {
+            if (200..300).contains(&response.status()) {
+                return Ok(());
+            }
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    Err(format!(
+        "timed out waiting for service::http health at {url}"
+    ))
 }
 
 fn accept_loop(

@@ -1,8 +1,11 @@
 //! Silc code generation for inspectable stubs and runnable v1 programs.
 
-use sil_core::{infer_graph, ExecutableGraph, ExecutionMode, Module, Program, Target};
+use sil_core::{
+    infer_graph, ApiRoute, Contract, ExecutableGraph, ExecutionMode, Module, Program, Target,
+};
 use sil_ipc::{ABI_VERSION, PROTOCOL_VERSION};
 use sil_router::RouteDecision;
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -13,6 +16,8 @@ const FEEDBACK_TS: &str = include_str!("../templates/feedback_worker.ts");
 const FEEDBACK_PY: &str = include_str!("../templates/feedback_worker.py");
 const FEEDBACK_GO: &str = include_str!("../templates/feedback_worker.go");
 const FEEDBACK_GOMOD: &str = include_str!("../templates/go.mod");
+const SERVICE_HTTP_GO: &str = include_str!("../templates/service_http_worker.go");
+const SERVICE_HTTP_GOMOD: &str = include_str!("../templates/service_http_go.mod");
 const UI_WEB_PACKAGE_JSON: &str = include_str!("../templates/ui_web_package.json");
 const UI_WEB_BUN_LOCK: &str = include_str!("../templates/ui_web_bun.lock");
 const UI_WEB_INDEX_HTML: &str = include_str!("../templates/ui_web_index.html");
@@ -30,6 +35,9 @@ const UI_WEB_TEXTAREA_TSX: &str = include_str!("../templates/ui_web_textarea.tsx
 pub const UI_WEB_REACT_VERSION: &str = "18.3.1";
 pub const UI_WEB_TAILWIND_VERSION: &str = "3.4.17";
 pub const UI_WEB_SUBSTRATE: &str = "react";
+/// Compiler-owned Gin adapter for `service::http`.
+pub const SERVICE_HTTP_ADAPTER: &str = "gin-v1";
+pub const SERVICE_HTTP_GIN_VERSION: &str = "1.10.0";
 
 #[derive(Debug, Clone)]
 pub struct EmitResult {
@@ -66,7 +74,7 @@ pub fn emit(
 
     if mode == ExecutionMode::Runnable {
         let g = graph.as_ref().unwrap();
-        emit_runnable(runtime_root, g, schema_id, &mut generated)?;
+        emit_runnable(runtime_root, program, g, schema_id, &mut generated)?;
     } else {
         for module in &program.modules {
             let decision = decision_for(decisions, module)?;
@@ -93,11 +101,13 @@ pub fn emit(
     }
 
     if mode == ExecutionMode::Runnable {
+        let g = graph.as_ref().unwrap();
         for module in &program.modules {
             let decision = decision_for(decisions, module)?;
             let generated_path = match decision.target {
                 Target::Bun => "typescript/worker.ts".to_string(),
                 Target::Python => "python/worker.py".to_string(),
+                Target::Go if g.is_api_only() => "go/api/worker.go".to_string(),
                 Target::Go => "go/worker.go".to_string(),
             };
             modules_json.push(module_manifest_entry(module, decision, generated_path));
@@ -127,52 +137,84 @@ pub fn emit(
             "service": g.service,
             "processor": g.processor,
             "sink": g.sink,
+            "api_only": g.is_api_only(),
         });
         manifest["http_port"] = serde_json::json!(g.http_port);
         manifest["http_route"] = serde_json::json!(g.http_route);
         manifest["terminal_port"] = serde_json::json!(g.terminal_port);
         manifest["sqlite_table"] = serde_json::json!(g.sqlite_table);
-        manifest["ui"] = serde_json::json!({
-            "profile": "web",
-            "surface": g.ui_surface.as_str(),
-            "substrate": UI_WEB_SUBSTRATE,
-            "terminal_substrate": if g.terminal_port.is_some() { "bun-tcp-telnet" } else { "disabled" },
-            "react_version": UI_WEB_REACT_VERSION,
-            "tailwind_version": UI_WEB_TAILWIND_VERSION,
-            "assets": [
-                "typescript/src/main.tsx",
-                "typescript/src/App.tsx",
-                "typescript/src/theme.css",
-                "typescript/src/lib/utils.ts",
-                "typescript/src/components/ui/button.tsx",
-                "typescript/src/components/ui/input.tsx",
-                "typescript/src/components/ui/label.tsx",
-                "typescript/src/components/ui/textarea.tsx",
-                "typescript/tailwind.config.js",
-                "typescript/index.html",
-                "typescript/package.json",
-                "typescript/bun.lock",
-                "typescript/dist/index.html",
-                "typescript/dist/app.js",
-                "typescript/dist/theme.css",
-            ],
-            "dependencies": {
-                "react": UI_WEB_REACT_VERSION,
-                "react-dom": UI_WEB_REACT_VERSION,
-                "tailwindcss": UI_WEB_TAILWIND_VERSION,
-                "clsx": "2.1.1",
-                "tailwind-merge": "2.6.0",
-            },
-            "provenance": "compiler-owned ui::web → React/Tailwind/ShadCN/Bun (ADR-003)",
-        });
-        manifest["entrypoints"] = serde_json::json!({
-            "bun": "typescript/worker.ts",
-            "python": "python/worker.py",
-            "go_source": "go/worker.go",
-            "go_binary": "go/worker",
-            "ui_web_entry": "typescript/src/main.tsx",
-            "supervisor_socket": SUPERVISOR_SOCKET,
-        });
+        if g.has_ui() {
+            let surface = g.ui_surface.unwrap();
+            manifest["ui"] = serde_json::json!({
+                "profile": "web",
+                "surface": surface.as_str(),
+                "substrate": UI_WEB_SUBSTRATE,
+                "terminal_substrate": if g.terminal_port.is_some() { "bun-tcp-telnet" } else { "disabled" },
+                "react_version": UI_WEB_REACT_VERSION,
+                "tailwind_version": UI_WEB_TAILWIND_VERSION,
+                "assets": [
+                    "typescript/src/main.tsx",
+                    "typescript/src/App.tsx",
+                    "typescript/src/theme.css",
+                    "typescript/src/lib/utils.ts",
+                    "typescript/src/components/ui/button.tsx",
+                    "typescript/src/components/ui/input.tsx",
+                    "typescript/src/components/ui/label.tsx",
+                    "typescript/src/components/ui/textarea.tsx",
+                    "typescript/tailwind.config.js",
+                    "typescript/index.html",
+                    "typescript/package.json",
+                    "typescript/bun.lock",
+                    "typescript/dist/index.html",
+                    "typescript/dist/app.js",
+                    "typescript/dist/theme.css",
+                ],
+                "dependencies": {
+                    "react": UI_WEB_REACT_VERSION,
+                    "react-dom": UI_WEB_REACT_VERSION,
+                    "tailwindcss": UI_WEB_TAILWIND_VERSION,
+                    "clsx": "2.1.1",
+                    "tailwind-merge": "2.6.0",
+                },
+                "provenance": "compiler-owned ui::web → React/Tailwind/ShadCN/Bun",
+            });
+        }
+        if g.has_api() {
+            manifest["services"] = serde_json::json!({
+                "profile": "http",
+                "adapter": SERVICE_HTTP_ADAPTER,
+                "engine": "go",
+                "gin_version": SERVICE_HTTP_GIN_VERSION,
+                "port": g.api_port(),
+                "routes": g.api_routes.iter().map(|r| serde_json::json!({
+                    "port": r.port,
+                    "path": r.path,
+                    "method": r.method,
+                    "contract": r.contract,
+                })).collect::<Vec<_>>(),
+                "provenance": "compiler-owned service::http → Go/Gin",
+            });
+        }
+        let mut entrypoints = serde_json::Map::new();
+        if g.has_ui() {
+            entrypoints.insert("bun".into(), serde_json::json!("typescript/worker.ts"));
+            entrypoints.insert("python".into(), serde_json::json!("python/worker.py"));
+            entrypoints.insert("go_source".into(), serde_json::json!("go/worker.go"));
+            entrypoints.insert("go_binary".into(), serde_json::json!("go/worker"));
+            entrypoints.insert(
+                "ui_web_entry".into(),
+                serde_json::json!("typescript/src/main.tsx"),
+            );
+            entrypoints.insert(
+                "supervisor_socket".into(),
+                serde_json::json!(SUPERVISOR_SOCKET),
+            );
+        }
+        if g.has_api() {
+            entrypoints.insert("api_source".into(), serde_json::json!("go/api/worker.go"));
+            entrypoints.insert("api_binary".into(), serde_json::json!("go/api/worker"));
+        }
+        manifest["entrypoints"] = serde_json::Value::Object(entrypoints);
         manifest["engines"] = serde_json::json!({
             "bun": {"path": null, "version": "1.2.18"},
             "python": {"path": null, "version": "3.12.12"},
@@ -197,6 +239,22 @@ pub fn emit(
 }
 
 fn emit_runnable(
+    root: &Path,
+    program: &Program,
+    graph: &ExecutableGraph,
+    schema_id: u32,
+    generated: &mut Vec<PathBuf>,
+) -> Result<(), String> {
+    if graph.has_ui() {
+        emit_ui_feedback(root, graph, schema_id, generated)?;
+    }
+    if graph.has_api() {
+        emit_service_http(root, program, graph, schema_id, generated)?;
+    }
+    Ok(())
+}
+
+fn emit_ui_feedback(
     root: &Path,
     graph: &ExecutableGraph,
     schema_id: u32,
@@ -293,6 +351,106 @@ fn emit_runnable(
         generated.push(path);
     }
     Ok(())
+}
+
+fn emit_service_http(
+    root: &Path,
+    program: &Program,
+    graph: &ExecutableGraph,
+    schema_id: u32,
+    generated: &mut Vec<PathBuf>,
+) -> Result<(), String> {
+    let api_dir = root.join("go/api");
+    fs::create_dir_all(&api_dir)
+        .map_err(|error| format!("create {}: {error}", api_dir.display()))?;
+    clear_dir_sources(&api_dir, &["go"])?;
+
+    let contracts_used: BTreeSet<&str> = graph
+        .api_routes
+        .iter()
+        .map(|r| r.contract.as_str())
+        .collect();
+    let mut structs = String::new();
+    let mut stores = String::new();
+    for name in &contracts_used {
+        let contract = program
+            .contracts
+            .iter()
+            .find(|c| c.name == *name)
+            .ok_or_else(|| format!("missing Contract `{name}` for service::http"))?;
+        structs.push_str(&render_go_contract_struct(contract));
+        structs.push('\n');
+        let store_name = format!("store{}", contract.name);
+        stores.push_str(&format!(
+            "var {store_name} = struct {{\n\tmu    sync.Mutex\n\titems []{}\n}}{{\n\titems: []{}{{}},\n}}\n\n",
+            contract.name, contract.name
+        ));
+    }
+
+    let mut routes = String::new();
+    for route in &graph.api_routes {
+        routes.push_str(&render_go_route(route));
+    }
+
+    let port = graph.api_port().unwrap_or(8080);
+    let body = SERVICE_HTTP_GO
+        .replace("__STRUCTS__", structs.trim_end())
+        .replace("__STORES__", stores.trim_end())
+        .replace("__ROUTES__", &routes)
+        .replace("__SCHEMA_ID__", &schema_id.to_string())
+        .replace("__PORT__", &port.to_string());
+
+    let worker_path = api_dir.join("worker.go");
+    let gomod_path = api_dir.join("go.mod");
+    fs::write(&worker_path, body)
+        .map_err(|error| format!("write {}: {error}", worker_path.display()))?;
+    fs::write(&gomod_path, SERVICE_HTTP_GOMOD)
+        .map_err(|error| format!("write {}: {error}", gomod_path.display()))?;
+    generated.push(worker_path);
+    generated.push(gomod_path);
+    Ok(())
+}
+
+fn render_go_contract_struct(contract: &Contract) -> String {
+    let mut out = format!("type {} struct {{\n", contract.name);
+    for field in &contract.fields {
+        let go_ty = go_type_for(field.ty.name());
+        let json = field.name.as_str();
+        out.push_str(&format!(
+            "\t{} {} `json:\"{}\"`\n",
+            pascal_case(&field.name),
+            go_ty,
+            json
+        ));
+    }
+    out.push_str("}\n");
+    out
+}
+
+fn go_type_for(ty: &str) -> &'static str {
+    match ty {
+        "Int" | "Int32" | "int32" => "int32",
+        "Int64" | "int64" => "int64",
+        "num32" | "Float32" => "float32",
+        "num64" | "Float64" | "Num" => "float64",
+        "Bool" | "bool" => "bool",
+        _ => "string",
+    }
+}
+
+fn render_go_route(route: &ApiRoute) -> String {
+    let store = format!("store{}", route.contract);
+    let path = route.path.replace('"', "");
+    match route.method.as_str() {
+        "GET" => format!(
+            "\tr.GET(\"{path}\", func(c *gin.Context) {{\n\t\t{store}.mu.Lock()\n\t\tdefer {store}.mu.Unlock()\n\t\tc.JSON(http.StatusOK, {store}.items)\n\t}})\n"
+        ),
+        "POST" => format!(
+            "\tr.POST(\"{path}\", func(c *gin.Context) {{\n\t\tvar item {}\n\t\tif err := c.ShouldBindJSON(&item); err != nil {{\n\t\t\tc.JSON(http.StatusBadRequest, gin.H{{\"error\": err.Error()}})\n\t\t\treturn\n\t\t}}\n\t\t{store}.mu.Lock()\n\t\t{store}.items = append({store}.items, item)\n\t\t{store}.mu.Unlock()\n\t\tc.JSON(http.StatusCreated, item)\n\t}})\n",
+            route.contract
+        ),
+        other => format!("\t// unsupported method {other} for {path}\n"),
+    }
 }
 
 fn clear_dir_sources(dir: &Path, extensions: &[&str]) -> Result<(), String> {
@@ -566,6 +724,60 @@ mod tests {
         assert!(manifest.contains("\"terminal_port\": 18023"));
         assert!(manifest.contains("\"terminal_substrate\": \"bun-tcp-telnet\""));
         assert!(manifest.contains("ui::web"));
+        assert!(!manifest.contains("\"adapter\": \"gin-v1\""));
+        fs::remove_dir_all(output).ok();
+    }
+
+    #[test]
+    fn emits_runnable_service_http_gin_worker() {
+        let source_path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/feedback_api.silc");
+        let source = fs::read_to_string(&source_path).unwrap_or_else(|_| {
+            r#"
+@version("1.0")
+class FeedbackRecord {
+    has UUID $.id;
+    has Str $.author;
+    has Str $.text;
+}
+class FeedbackApi is service {
+    method list(:$port = 18081) {
+        FeedbackRecord ==> service::http(:port(18081), :route("/api/feedback"), :method(GET))
+    }
+    method create(:$port = 18081) {
+        FeedbackRecord ==> service::http(:port(18081), :route("/api/feedback"), :method(POST))
+    }
+}
+"#
+            .into()
+        });
+        let program = sil_parser::parse(&source).expect("parse feedback_api");
+        program.validate().expect("validate feedback_api");
+        let decisions = sil_router::route_program(&program);
+        let output = output_dir("feedback-api");
+        let result = emit(&program, &decisions, &source_path, &output, "test").unwrap();
+        assert_eq!(result.execution_mode, ExecutionMode::Runnable);
+        assert!(result.graph.as_ref().unwrap().is_api_only());
+
+        let go = fs::read_to_string(output.join("go/api/worker.go")).unwrap();
+        let gomod = fs::read_to_string(output.join("go/api/go.mod")).unwrap();
+        assert!(!go.contains("__PORT__"));
+        assert!(!go.contains("__STRUCTS__"));
+        assert!(!go.contains("__ROUTES__"));
+        assert!(go.contains("type FeedbackRecord struct"));
+        assert!(go.contains("r.GET(\"/api/feedback\""));
+        assert!(go.contains("r.POST(\"/api/feedback\""));
+        assert!(go.contains("github.com/gin-gonic/gin"));
+        assert!(go.contains("/health"));
+        assert!(gomod.contains("github.com/gin-gonic/gin"));
+        assert!(!output.join("typescript/worker.ts").is_file());
+        assert!(!output.join("python/worker.py").is_file());
+
+        let manifest = fs::read_to_string(&result.manifest).unwrap();
+        assert!(manifest.contains("\"adapter\": \"gin-v1\""));
+        assert!(manifest.contains("\"api_only\": true"));
+        assert!(manifest.contains("service::http"));
+        assert!(manifest.contains("go/api/worker.go"));
         fs::remove_dir_all(output).ok();
     }
 }

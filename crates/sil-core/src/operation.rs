@@ -8,11 +8,13 @@ use crate::program::Program;
 ///
 /// `ui::web` is the canonical web UI op. `html::form` and `http::serve` remain
 /// executable compatibility aliases that lower to the same web profile.
+/// `service::http` is the canonical declarative HTTP API op (Go/Gin substrate).
 pub const EXECUTABLE_OPS: &[(&str, &str)] = &[
     ("ui", "web"),
     ("ui", "terminal"),
     ("html", "form"),
     ("http", "serve"),
+    ("service", "http"),
     ("text", "score"),
     ("ipc", "publish"),
     ("store", "sqlite"),
@@ -20,10 +22,13 @@ pub const EXECUTABLE_OPS: &[(&str, &str)] = &[
 ];
 
 const SUPPORTED_OPS_HELP: &str =
-    "ui::web (or html::form + http::serve), optional ui::terminal, text::score, ipc::publish, store::sqlite, store::commit";
+    "service::http, or ui::web (or html::form + http::serve) with optional ui::terminal, text::score, ipc::publish, store::sqlite, store::commit";
 
 /// Default TCP port for `ui::terminal` (telnet-friendly; mnemonic for historic 23).
 pub const DEFAULT_TERMINAL_PORT: u16 = 18023;
+
+/// Default TCP port for `service::http` when `:port` is omitted.
+pub const DEFAULT_API_PORT: u16 = 8080;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExecutionMode {
@@ -61,18 +66,51 @@ impl UiSurface {
     }
 }
 
+/// One declarative HTTP API route bound to a Contract (`service::http`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApiRoute {
+    pub port: u16,
+    pub path: String,
+    pub method: String,
+    pub contract: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutableGraph {
     pub mode: ExecutionMode,
     pub service: String,
+    /// Empty for API-only programs (no processor module).
     pub processor: String,
+    /// Empty for API-only programs (no sink module).
     pub sink: String,
     pub http_port: u16,
     pub http_route: String,
     pub sqlite_table: String,
-    pub ui_surface: UiSurface,
+    /// `None` for API-only programs (no browser UI).
+    pub ui_surface: Option<UiSurface>,
     /// When set, Bun also listens for line-oriented telnet/TCP sessions.
     pub terminal_port: Option<u16>,
+    /// Declarative Go/Gin HTTP API routes (`service::http`).
+    pub api_routes: Vec<ApiRoute>,
+}
+
+impl ExecutableGraph {
+    pub fn has_ui(&self) -> bool {
+        self.ui_surface.is_some()
+    }
+
+    pub fn has_api(&self) -> bool {
+        !self.api_routes.is_empty()
+    }
+
+    pub fn is_api_only(&self) -> bool {
+        self.has_api() && !self.has_ui()
+    }
+
+    /// Primary API listen port (first `service::http` route).
+    pub fn api_port(&self) -> Option<u16> {
+        self.api_routes.first().map(|r| r.port)
+    }
 }
 
 pub fn is_executable_op(namespace: &str, name: &str) -> bool {
@@ -86,6 +124,7 @@ fn is_known_namespace(ns: &str) -> bool {
         ns,
         "ui" | "http"
             | "html"
+            | "service"
             | "text"
             | "ipc"
             | "store"
@@ -100,7 +139,10 @@ fn is_known_namespace(ns: &str) -> bool {
 }
 
 fn is_v1_exec_namespace(ns: &str) -> bool {
-    matches!(ns, "ui" | "http" | "html" | "text" | "ipc" | "store")
+    matches!(
+        ns,
+        "ui" | "http" | "html" | "service" | "text" | "ipc" | "store"
+    )
 }
 
 pub fn classify_program(program: &Program) -> Result<ExecutionMode, String> {
@@ -172,11 +214,8 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
                 .iter()
                 .filter(|m| m.kind == ModuleKind::Sink)
                 .collect();
-            if services.len() != 1 || processors.len() != 1 || sinks.len() != 1 {
-                return Err(
-                    "runnable Silc v1 programs require exactly one service, one processor, and one sink"
-                        .into(),
-                );
+            if services.len() != 1 {
+                return Err("runnable Silc v1 programs require exactly one service module".into());
             }
 
             let mut http_port = 8080u16;
@@ -191,122 +230,229 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
             let mut saw_sqlite = false;
             let mut saw_commit = false;
             let mut sqlite_table = String::from("feedback");
+            let mut api_routes: Vec<ApiRoute> = Vec::new();
+            let contract_names: Vec<&str> =
+                program.contracts.iter().map(|c| c.name.as_str()).collect();
 
             for module in &program.modules {
                 for method in &module.methods {
+                    let mut last_contract: Option<String> = None;
                     for step in &method.pipeline.steps {
-                        if let PipelineStep::Call {
-                            namespace: Some(ns),
-                            name,
-                            args,
-                        } = step
-                        {
-                            match (ns.as_str(), name.as_str()) {
-                                ("ui", "web") => {
-                                    saw_ui_web = true;
-                                    if let Some(port) = args.iter().find(|a| a.name == "port") {
-                                        http_port = port.value.parse().map_err(|_| {
-                                            format!("invalid :port({})", port.value)
-                                        })?;
-                                    }
-                                    if let Some(route) = args.iter().find(|a| a.name == "route") {
-                                        http_route = normalize_route(&route.value);
-                                    }
+                        match step {
+                            PipelineStep::Name(name) => {
+                                if contract_names.iter().any(|c| *c == name.as_str()) {
+                                    last_contract = Some(name.clone());
                                 }
-                                ("ui", "terminal") => {
-                                    saw_terminal = true;
-                                    let mut port = DEFAULT_TERMINAL_PORT;
-                                    if let Some(p) = args.iter().find(|a| a.name == "port") {
-                                        port = p
-                                            .value
-                                            .parse()
-                                            .map_err(|_| format!("invalid :port({})", p.value))?;
-                                    }
-                                    terminal_port = Some(port);
-                                }
-                                ("html", "form") => saw_form = true,
-                                ("http", "serve") => {
-                                    saw_serve = true;
-                                    if let Some(port) = args.iter().find(|a| a.name == "port") {
-                                        http_port = port.value.parse().map_err(|_| {
-                                            format!("invalid :port({})", port.value)
-                                        })?;
-                                    }
-                                    if let Some(route) = args.iter().find(|a| a.name == "route") {
-                                        http_route = normalize_route(&route.value);
-                                    }
-                                }
-                                ("text", "score") => saw_score = true,
-                                ("ipc", "publish") => saw_publish = true,
-                                ("store", "sqlite") => {
-                                    saw_sqlite = true;
-                                    if let Some(table) = args.iter().find(|a| a.name == "table") {
-                                        sqlite_table = table.value.clone();
-                                    }
-                                }
-                                ("store", "commit") => saw_commit = true,
-                                _ => {}
                             }
+                            PipelineStep::Call {
+                                namespace: Some(ns),
+                                name,
+                                args,
+                            } => {
+                                match (ns.as_str(), name.as_str()) {
+                                    ("ui", "web") => {
+                                        saw_ui_web = true;
+                                        if let Some(port) = args.iter().find(|a| a.name == "port") {
+                                            http_port = port.value.parse().map_err(|_| {
+                                                format!("invalid :port({})", port.value)
+                                            })?;
+                                        }
+                                        if let Some(route) = args.iter().find(|a| a.name == "route")
+                                        {
+                                            http_route = normalize_route(&route.value);
+                                        }
+                                    }
+                                    ("ui", "terminal") => {
+                                        saw_terminal = true;
+                                        let mut port = DEFAULT_TERMINAL_PORT;
+                                        if let Some(p) = args.iter().find(|a| a.name == "port") {
+                                            port = p.value.parse().map_err(|_| {
+                                                format!("invalid :port({})", p.value)
+                                            })?;
+                                        }
+                                        terminal_port = Some(port);
+                                    }
+                                    ("html", "form") => saw_form = true,
+                                    ("http", "serve") => {
+                                        saw_serve = true;
+                                        if let Some(port) = args.iter().find(|a| a.name == "port") {
+                                            http_port = port.value.parse().map_err(|_| {
+                                                format!("invalid :port({})", port.value)
+                                            })?;
+                                        }
+                                        if let Some(route) = args.iter().find(|a| a.name == "route")
+                                        {
+                                            http_route = normalize_route(&route.value);
+                                        }
+                                    }
+                                    ("service", "http") => {
+                                        let contract = last_contract.clone().ok_or_else(|| {
+                                            "service::http requires a Contract on the left of `==>`"
+                                                .to_string()
+                                        })?;
+                                        let mut port = DEFAULT_API_PORT;
+                                        if let Some(p) = args.iter().find(|a| a.name == "port") {
+                                            port = p.value.parse().map_err(|_| {
+                                                format!("invalid :port({})", p.value)
+                                            })?;
+                                        }
+                                        let path = args
+                                            .iter()
+                                            .find(|a| a.name == "route")
+                                            .map(|a| normalize_route(&a.value))
+                                            .unwrap_or_else(|| "/".into());
+                                        let method = args
+                                            .iter()
+                                            .find(|a| a.name == "method")
+                                            .map(|a| normalize_http_method(&a.value))
+                                            .transpose()?
+                                            .unwrap_or_else(|| "GET".into());
+                                        api_routes.push(ApiRoute {
+                                            port,
+                                            path,
+                                            method,
+                                            contract,
+                                        });
+                                    }
+                                    ("text", "score") => saw_score = true,
+                                    ("ipc", "publish") => saw_publish = true,
+                                    ("store", "sqlite") => {
+                                        saw_sqlite = true;
+                                        if let Some(table) = args.iter().find(|a| a.name == "table")
+                                        {
+                                            sqlite_table = table.value.clone();
+                                        }
+                                    }
+                                    ("store", "commit") => saw_commit = true,
+                                    _ => {}
+                                }
+                            }
+                            _ => {}
                         }
                     }
                 }
             }
 
-            let ui_surface = if saw_ui_web {
-                if saw_form || saw_serve {
+            let has_ui = saw_ui_web || (saw_form && saw_serve);
+            let has_api = !api_routes.is_empty();
+
+            if !has_ui && !has_api {
+                if saw_terminal {
                     return Err(
-                        "use either `ui::web` or the legacy `html::form` + `http::serve` alias, not both"
+                        "runnable feedback portal requires `ui::web` (or html::form + http::serve); add `ui::terminal` alongside it for telnet"
                             .into(),
                     );
                 }
-                UiSurface::Web
-            } else if saw_form && saw_serve {
-                UiSurface::LegacyHtmlHttp
-            } else if saw_terminal {
-                // Terminal alone is not enough for the feedback portal shape —
-                // browser (or legacy HTML) remains required so React/HTTP health stays available.
-                return Err(
-                    "runnable feedback portal requires `ui::web` (or html::form + http::serve); add `ui::terminal` alongside it for telnet"
-                        .into(),
-                );
-            } else {
-                return Err(format!(
-                    "runnable feedback portal requires {SUPPORTED_OPS_HELP}"
-                ));
-            };
-
-            if !(saw_score && saw_publish && saw_sqlite && saw_commit) {
-                return Err(format!(
-                    "runnable feedback portal requires {SUPPORTED_OPS_HELP}"
-                ));
+                return Err(format!("runnable program requires {SUPPORTED_OPS_HELP}"));
             }
 
-            if let Some(tp) = terminal_port {
-                if tp == http_port {
-                    return Err(format!(
-                        "ui::terminal :port({tp}) must differ from ui::web :port({http_port})"
-                    ));
+            if has_api {
+                let ports: Vec<u16> = api_routes.iter().map(|r| r.port).collect();
+                let first = ports[0];
+                if ports.iter().any(|p| *p != first) {
+                    return Err(
+                        "service::http v1 requires all routes to share one :port (one Go/Gin process)"
+                            .into(),
+                    );
+                }
+                for route in &api_routes {
+                    if !matches!(route.method.as_str(), "GET" | "POST") {
+                        return Err(format!(
+                            "service::http :method({}) is not supported in v1 (use GET or POST)",
+                            route.method
+                        ));
+                    }
+                    if !contract_names
+                        .iter()
+                        .any(|c| *c == route.contract.as_str())
+                    {
+                        return Err(format!(
+                            "service::http references unknown Contract `{}`",
+                            route.contract
+                        ));
+                    }
                 }
             }
 
-            let storage_ok = sinks[0]
-                .traits
-                .iter()
-                .any(|t| t.name == "storage" && t.value.eq_ignore_ascii_case("SQLite"));
-            if !storage_ok {
-                return Err("runnable sink must declare `is storage(SQLite)`".into());
-            }
+            let ui_surface = if has_ui {
+                if processors.len() != 1 || sinks.len() != 1 {
+                    return Err(
+                        "runnable UI programs require exactly one service, one processor, and one sink"
+                            .into(),
+                    );
+                }
+                let surface = if saw_ui_web {
+                    if saw_form || saw_serve {
+                        return Err(
+                            "use either `ui::web` or the legacy `html::form` + `http::serve` alias, not both"
+                                .into(),
+                        );
+                    }
+                    UiSurface::Web
+                } else {
+                    UiSurface::LegacyHtmlHttp
+                };
+                if !(saw_score && saw_publish && saw_sqlite && saw_commit) {
+                    return Err(format!(
+                        "runnable feedback portal requires {SUPPORTED_OPS_HELP}"
+                    ));
+                }
+                if let Some(tp) = terminal_port {
+                    if tp == http_port {
+                        return Err(format!(
+                            "ui::terminal :port({tp}) must differ from ui::web :port({http_port})"
+                        ));
+                    }
+                }
+                if has_api {
+                    if let Some(api_port) = api_routes.first().map(|r| r.port) {
+                        if api_port == http_port {
+                            return Err(format!(
+                                "service::http :port({api_port}) must differ from ui::web :port({http_port})"
+                            ));
+                        }
+                        if terminal_port == Some(api_port) {
+                            return Err(format!(
+                                "service::http :port({api_port}) must differ from ui::terminal :port({api_port})"
+                            ));
+                        }
+                    }
+                }
+                let storage_ok = sinks[0]
+                    .traits
+                    .iter()
+                    .any(|t| t.name == "storage" && t.value.eq_ignore_ascii_case("SQLite"));
+                if !storage_ok {
+                    return Err("runnable sink must declare `is storage(SQLite)`".into());
+                }
+                Some(surface)
+            } else {
+                // API-only: service module alone is enough.
+                if !processors.is_empty() || !sinks.is_empty() {
+                    return Err(
+                        "API-only `service::http` programs must not declare processor or sink modules (add ui::web for the feedback-portal shape)"
+                            .into(),
+                    );
+                }
+                None
+            };
+
+            let api_http_port = api_routes.first().map(|r| r.port).unwrap_or(DEFAULT_API_PORT);
 
             Ok(Some(ExecutableGraph {
                 mode: ExecutionMode::Runnable,
                 service: services[0].name.clone(),
-                processor: processors[0].name.clone(),
-                sink: sinks[0].name.clone(),
-                http_port,
+                processor: processors
+                    .first()
+                    .map(|m| m.name.clone())
+                    .unwrap_or_default(),
+                sink: sinks.first().map(|m| m.name.clone()).unwrap_or_default(),
+                http_port: if has_ui { http_port } else { api_http_port },
                 http_route,
                 sqlite_table,
                 ui_surface,
                 terminal_port,
+                api_routes,
             }))
         }
     }
@@ -321,6 +467,14 @@ fn normalize_route(raw: &str) -> String {
     } else {
         format!("/{trimmed}")
     }
+}
+
+fn normalize_http_method(raw: &str) -> Result<String, String> {
+    let trimmed = raw.trim().trim_matches('"').trim_matches('\'').to_ascii_uppercase();
+    if trimmed.is_empty() {
+        return Err("service::http :method() must not be empty".into());
+    }
+    Ok(trimmed)
 }
 
 #[cfg(test)]
@@ -505,7 +659,8 @@ mod tests {
         let graph = infer_graph(&program).unwrap().unwrap();
         assert_eq!(graph.http_port, 18080);
         assert_eq!(graph.sqlite_table, "feedback");
-        assert_eq!(graph.ui_surface, UiSurface::LegacyHtmlHttp);
+        assert_eq!(graph.ui_surface, Some(UiSurface::LegacyHtmlHttp));
+        assert!(graph.api_routes.is_empty());
     }
 
     #[test]
@@ -515,8 +670,9 @@ mod tests {
         let graph = infer_graph(&program).unwrap().unwrap();
         assert_eq!(graph.http_port, 18080);
         assert_eq!(graph.http_route, "/");
-        assert_eq!(graph.ui_surface, UiSurface::Web);
-        assert_eq!(graph.ui_surface.substrate(), "react");
+        assert_eq!(graph.ui_surface, Some(UiSurface::Web));
+        assert_eq!(graph.ui_surface.unwrap().substrate(), "react");
+        assert!(!graph.has_api());
     }
 
     #[test]
@@ -547,7 +703,7 @@ mod tests {
         assert_eq!(classify_program(&program).unwrap(), ExecutionMode::Runnable);
         assert!(infer_graph(&program)
             .unwrap_err()
-            .contains("exactly one service, one processor, and one sink"));
+            .contains("ui::web"));
     }
 
     #[test]
@@ -580,5 +736,97 @@ mod tests {
         let graph = infer_graph(&program).unwrap().unwrap();
         assert_eq!(graph.terminal_port, Some(18023));
         assert_eq!(graph.http_port, 18080);
+    }
+
+    #[test]
+    fn classifies_runnable_service_http_api_only() {
+        let program = Program {
+            version: Some("1.0".into()),
+            subsets: vec![],
+            contracts: vec![Contract {
+                name: "FeedbackRecord".into(),
+                fields: vec![Field {
+                    name: "author".into(),
+                    ty: TypeExpr::Named("Str".into()),
+                    default: None,
+                }],
+                span: Span::default(),
+            }],
+            modules: vec![Module {
+                name: "FeedbackApi".into(),
+                kind: ModuleKind::Service,
+                traits: vec![],
+                fields: vec![],
+                methods: vec![
+                    Method {
+                        name: "list".into(),
+                        params: vec![],
+                        pipeline: Pipeline {
+                            steps: vec![
+                                PipelineStep::Name("FeedbackRecord".into()),
+                                PipelineStep::Call {
+                                    namespace: Some("service".into()),
+                                    name: "http".into(),
+                                    args: vec![
+                                        TraitArg {
+                                            name: "port".into(),
+                                            value: "18081".into(),
+                                        },
+                                        TraitArg {
+                                            name: "route".into(),
+                                            value: "/api/feedback".into(),
+                                        },
+                                        TraitArg {
+                                            name: "method".into(),
+                                            value: "GET".into(),
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    },
+                    Method {
+                        name: "create".into(),
+                        params: vec![],
+                        pipeline: Pipeline {
+                            steps: vec![
+                                PipelineStep::Name("FeedbackRecord".into()),
+                                PipelineStep::Call {
+                                    namespace: Some("service".into()),
+                                    name: "http".into(),
+                                    args: vec![
+                                        TraitArg {
+                                            name: "port".into(),
+                                            value: "18081".into(),
+                                        },
+                                        TraitArg {
+                                            name: "route".into(),
+                                            value: "/api/feedback".into(),
+                                        },
+                                        TraitArg {
+                                            name: "method".into(),
+                                            value: "POST".into(),
+                                        },
+                                    ],
+                                },
+                            ],
+                        },
+                    },
+                ],
+                span: Span::default(),
+            }],
+        };
+        assert_eq!(classify_program(&program).unwrap(), ExecutionMode::Runnable);
+        let graph = infer_graph(&program).unwrap().unwrap();
+        assert!(graph.is_api_only());
+        assert_eq!(graph.api_routes.len(), 2);
+        assert_eq!(graph.api_port(), Some(18081));
+        assert_eq!(graph.http_port, 18081);
+        assert_eq!(graph.api_routes[0].method, "GET");
+        assert_eq!(graph.api_routes[1].method, "POST");
+        assert_eq!(graph.api_routes[0].contract, "FeedbackRecord");
+        assert!(graph.processor.is_empty());
+        assert!(graph.sink.is_empty());
+        assert!(graph.ui_surface.is_none());
     }
 }

@@ -63,10 +63,23 @@ pub fn route_module(module: &Module) -> RouteDecision {
             Target::Python,
             "tier1: processor+data/ML/text → Python (scientific/ML and text scoring)".to_string(),
         )
+    } else if module.kind == ModuleKind::Service && has(&["service"]) && !has(&["ui", "html"]) {
+        (
+            Target::Go,
+            "tier1: service+service::http → Go (Gin HTTP API)".to_string(),
+        )
     } else if module.kind == ModuleKind::Service {
         (
             Target::Bun,
-            "tier1: service → Bun (async I/O and web protocols)".to_string(),
+            "tier1: service → Bun (async I/O and web UI protocols)".to_string(),
+        )
+    } else if has(&["service"]) && !has(&["ui", "html"]) {
+        (
+            Target::Go,
+            format!(
+                "tier2: namespaces [{}] → Go (declarative HTTP API)",
+                namespaces.join(", ")
+            ),
         )
     } else if has(&["http", "html", "ws", "ui"]) {
         (
@@ -189,5 +202,23 @@ class FeedbackDb is sink is latency(5ms) is storage(SQLite) {
         assert_eq!(decisions[0].target, Target::Bun);
         assert_eq!(decisions[1].target, Target::Python);
         assert_eq!(decisions[2].target, Target::Go);
+    }
+
+    #[test]
+    fn routes_service_http_to_go() {
+        let source = r#"
+@version("1.0")
+class FeedbackRecord { has Str $.author; has Str $.text; }
+class FeedbackApi is service {
+    method list(:$port = 18081) {
+        FeedbackRecord ==> service::http(:port(18081), :route("/api/feedback"), :method(GET))
+    }
+}
+"#;
+        let program = sil_parser::parse(source).expect("parse");
+        let decisions = route_program(&program);
+        assert_eq!(decisions.len(), 1);
+        assert_eq!(decisions[0].target, Target::Go);
+        assert!(decisions[0].provenance.contains("Gin") || decisions[0].provenance.contains("Go"));
     }
 }
