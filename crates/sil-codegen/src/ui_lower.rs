@@ -73,11 +73,18 @@ fn render_web_component(component: &Component, program: &Program) -> String {
     let chat_field = find_chat_field(&component.render);
     let has_chat_ui =
         chat_field.is_some() || template_has_component(&component.render, "chat_history");
-    let session_field = component
-        .state
-        .iter()
-        .find(|f| f.name == "active_session" || f.name == "session_id")
-        .map(|f| f.name.clone());
+    let session_field = find_chat_session_field(&component.render).or_else(|| {
+        component
+            .state
+            .iter()
+            .find(|f| {
+                matches!(
+                    f.name.as_str(),
+                    "active_session" | "session_id" | "current_session" | "selected_session"
+                )
+            })
+            .map(|f| f.name.clone())
+    });
 
     let mut state_decls = String::new();
     for field in &component.state {
@@ -124,15 +131,48 @@ fn render_web_component(component: &Component, program: &Program) -> String {
             state_decls.push_str(&format!(
                 r#"  const [messages, setMessages] = useState([]);
   const [thinking, setThinking] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+  const [chatError, setChatError] = useState("");
+  const activeSessionRef = useRef({session});
+  const historyRequestRef = useRef(0);
+  const inFlightSessionsRef = useRef(new Set());
   useEffect(() => {{
+    activeSessionRef.current = {session};
+    const requestId = ++historyRequestRef.current;
+    const controller = new AbortController();
+    setMessages([]);
+    setHistoryError("");
+    setChatError("");
+    setThinking(inFlightSessionsRef.current.has({session}));
     if (!{session}) {{
-      setMessages([]);
-      return;
+      setHistoryLoading(false);
+      return () => controller.abort();
     }}
-    fetch(`/history?session_id=${{encodeURIComponent({session})}}`)
-      .then((r) => r.json())
-      .then((rows) => setMessages(Array.isArray(rows) ? [...rows].reverse() : []))
-      .catch(console.error);
+    setHistoryLoading(true);
+    fetch(`/history?session_id=${{encodeURIComponent({session})}}`, {{
+      signal: controller.signal,
+    }})
+      .then((r) => {{
+        if (!r.ok) throw new Error(`history request failed (${{r.status}})`);
+        return r.json();
+      }})
+      .then((rows) => {{
+        if (historyRequestRef.current !== requestId || activeSessionRef.current !== {session}) return;
+        setMessages(Array.isArray(rows) ? [...rows].reverse() : []);
+      }})
+      .catch((error) => {{
+        if (error?.name === "AbortError") return;
+        if (historyRequestRef.current === requestId && activeSessionRef.current === {session}) {{
+          setHistoryError(error instanceof Error ? error.message : String(error));
+        }}
+      }})
+      .finally(() => {{
+        if (historyRequestRef.current === requestId && activeSessionRef.current === {session}) {{
+          setHistoryLoading(false);
+        }}
+      }});
+    return () => controller.abort();
   }}, [{session}]);
 "#,
                 session = session
@@ -141,30 +181,50 @@ fn render_web_component(component: &Component, program: &Program) -> String {
                 r#"  async function __chatComplete(promptText) {{
     const prompt = (promptText ?? {field} ?? "").toString().trim();
     if (!prompt) return;
-    if (!{session}) return;
+    const capturedSession = {session};
+    if (!capturedSession || inFlightSessionsRef.current.has(capturedSession)) return;
+    const pendingId = crypto.randomUUID();
+    inFlightSessionsRef.current.add(capturedSession);
+    setChatError("");
     setThinking(true);
+    setMessages((prev) => [
+      ...prev,
+      {{ id: pendingId, prompt, reply: "", pending: true, session_id: capturedSession }},
+    ]);
+    set{pascal}("");
     try {{
       const resp = await fetch("/complete", {{
         method: "POST",
         headers: {{ "content-type": "application/json" }},
-        body: JSON.stringify({{ prompt, session_id: {session} }}),
+        body: JSON.stringify({{ prompt, session_id: capturedSession }}),
       }});
       const data = await resp.json();
       if (!resp.ok || data.ok === false) {{
         throw new Error(data.error || "complete failed");
       }}
-      setMessages((prev) => [
-        ...prev,
-        {{
+      if (activeSessionRef.current === capturedSession) {{
+        const completed = {{
+          id: data.id || pendingId,
           prompt,
           reply: data.reply || data.summary || "",
           model: data.model || undefined,
-          session_id: {session},
-        }},
-      ]);
-      set{pascal}("");
+          session_id: capturedSession,
+        }};
+        setMessages((prev) =>
+          prev.some((message) => message.id === pendingId)
+            ? prev.map((message) => message.id === pendingId ? completed : message)
+            : [...prev, completed]
+        );
+      }}
+    }} catch (error) {{
+      if (activeSessionRef.current === capturedSession) {{
+        setMessages((prev) => prev.filter((message) => message.id !== pendingId));
+        set{pascal}((draft) => draft || prompt);
+        setChatError(error instanceof Error ? error.message : String(error));
+      }}
     }} finally {{
-      setThinking(false);
+      inFlightSessionsRef.current.delete(capturedSession);
+      if (activeSessionRef.current === capturedSession) setThinking(false);
     }}
   }}
 "#,
@@ -176,19 +236,39 @@ fn render_web_component(component: &Component, program: &Program) -> String {
             state_decls.push_str(
                 r#"  const [messages, setMessages] = useState([]);
   const [thinking, setThinking] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState("");
+  const [chatError, setChatError] = useState("");
   useEffect(() => {
-    fetch("/history")
-      .then((r) => r.json())
+    const controller = new AbortController();
+    fetch("/history", { signal: controller.signal })
+      .then((r) => {
+        if (!r.ok) throw new Error(`history request failed (${r.status})`);
+        return r.json();
+      })
       .then((rows) => setMessages(Array.isArray(rows) ? [...rows].reverse() : []))
-      .catch(console.error);
+      .catch((error) => {
+        if (error?.name !== "AbortError") {
+          setHistoryError(error instanceof Error ? error.message : String(error));
+        }
+      })
+      .finally(() => setHistoryLoading(false));
+    return () => controller.abort();
   }, []);
 "#,
             );
             state_decls.push_str(&format!(
                 r#"  async function __chatComplete(promptText) {{
     const prompt = (promptText ?? {field} ?? "").toString().trim();
-    if (!prompt) return;
+    if (!prompt || thinking) return;
+    const pendingId = crypto.randomUUID();
+    setChatError("");
     setThinking(true);
+    setMessages((prev) => [
+      ...prev,
+      {{ id: pendingId, prompt, reply: "", pending: true }},
+    ]);
+    set{pascal}("");
     try {{
       const resp = await fetch("/complete", {{
         method: "POST",
@@ -199,15 +279,19 @@ fn render_web_component(component: &Component, program: &Program) -> String {
       if (!resp.ok || data.ok === false) {{
         throw new Error(data.error || "complete failed");
       }}
-      setMessages((prev) => [
-        ...prev,
-        {{
-          prompt,
-          reply: data.reply || data.summary || "",
-          model: data.model || undefined,
-        }},
-      ]);
-      set{pascal}("");
+      const completed = {{
+        id: data.id || pendingId,
+        prompt,
+        reply: data.reply || data.summary || "",
+        model: data.model || undefined,
+      }};
+      setMessages((prev) =>
+        prev.map((message) => message.id === pendingId ? completed : message)
+      );
+    }} catch (error) {{
+      setMessages((prev) => prev.filter((message) => message.id !== pendingId));
+      set{pascal}((draft) => draft || prompt);
+      setChatError(error instanceof Error ? error.message : String(error));
     }} finally {{
       setThinking(false);
     }}
@@ -242,6 +326,14 @@ fn render_web_component(component: &Component, program: &Program) -> String {
     }
 
     let body = render_template(&component.render, 2);
+    let body = if let Some(session) = session_field.as_deref() {
+        body.replace(
+            "submitting={thinking} />",
+            &format!("submitting={{thinking}} focusKey={{{session}}} />"),
+        )
+    } else {
+        body
+    };
     format!(
         "function {name}(props = {{}}) {{\n{state}{handlers}  return (\n{body}\n  );\n}}\n",
         name = component.name,
@@ -301,6 +393,25 @@ fn find_chat_field(template: &UiTemplate) -> Option<String> {
         } => find_chat_field(body).or_else(|| else_body.as_ref().and_then(|b| find_chat_field(b))),
         UiTemplate::For { body, .. } => find_chat_field(body),
         UiTemplate::Block(items) => items.iter().find_map(find_chat_field),
+    }
+}
+
+fn find_chat_session_field(template: &UiTemplate) -> Option<String> {
+    match template {
+        UiTemplate::Node(node) => {
+            if node.component == "chat" {
+                if let Some(session) = node.prop("session").and_then(|e| e.as_ident()) {
+                    return Some(session.to_string());
+                }
+            }
+            node.children.iter().find_map(find_chat_session_field)
+        }
+        UiTemplate::When {
+            body, else_body, ..
+        } => find_chat_session_field(body)
+            .or_else(|| else_body.as_ref().and_then(|b| find_chat_session_field(b))),
+        UiTemplate::For { body, .. } => find_chat_session_field(body),
+        UiTemplate::Block(items) => items.iter().find_map(find_chat_session_field),
     }
 }
 
@@ -583,11 +694,20 @@ fn render_node(node: &UiNode, indent: usize) -> String {
                 .prop("submit")
                 .map(|_| "submit")
                 .unwrap_or("button");
+            let variant = if let Some(active) = node.prop("active") {
+                format!(
+                    "({} ? \"secondary\" : ({} ?? \"primary\"))",
+                    expr_to_js(active),
+                    prop_js(node, "variant")
+                )
+            } else {
+                prop_js(node, "variant")
+            };
             format!(
                 "{pad}<Button type=\"{submit}\" variant={{{variant}}} onClick={{{on_click}}}>{{{label}}}</Button>",
                 pad = pad,
                 submit = submit,
-                variant = prop_js(node, "variant"),
+                variant = variant,
                 on_click = on_click,
                 label = prop_js(node, "label")
             )
@@ -627,13 +747,23 @@ fn render_node(node: &UiNode, indent: usize) -> String {
                     "async (e) => {{ e.preventDefault(); await __chatComplete({value}); }}"
                 ),
             };
+            let loading = node
+                .prop("loading")
+                .map(expr_to_js)
+                .unwrap_or_else(|| "historyLoading".into());
+            let error = node
+                .prop("error")
+                .map(expr_to_js)
+                .unwrap_or_else(|| "historyError || chatError".into());
             format!(
-                "{pad}<div className=\"flex min-h-0 flex-1 flex-col gap-4\">\n{pad}  <ChatThread messages={{messages}} thinking={{thinking}} />\n{pad}  <ChatComposer id={{\"{id}\"}} value={{{value}}} onChange={{{setter}}} onSubmit={{{on_submit}}} submitting={{thinking}} />\n{pad}</div>",
+                "{pad}<div className=\"flex min-h-0 flex-1 flex-col gap-4\">\n{pad}  <ChatThread messages={{messages}} thinking={{thinking}} loading={{{loading}}} error={{{error}}} />\n{pad}  <ChatComposer id={{\"{id}\"}} value={{{value}}} onChange={{{setter}}} onSubmit={{{on_submit}}} submitting={{thinking}} />\n{pad}</div>",
                 pad = pad,
                 id = field,
                 value = value,
                 setter = setter,
-                on_submit = on_submit
+                on_submit = on_submit,
+                loading = loading,
+                error = error
             )
         }
         "chat_history" => format!(
@@ -829,10 +959,7 @@ fn expr_to_js_stmt(expr: &Expr, component: &Component) -> String {
                 }
                 // Creating a chat session should select it so history scopes correctly.
                 let selects_session = matches!(field.as_str(), "create" | "add")
-                    && component
-                        .state
-                        .iter()
-                        .any(|f| f.name == "active_session")
+                    && component.state.iter().any(|f| f.name == "active_session")
                     && (table.contains("session")
                         || resource.to_ascii_lowercase().contains("session"));
                 if selects_session {
@@ -984,5 +1111,22 @@ mod tests {
         };
         let html = render_template(&UiTemplate::Node(node), 0);
         assert!(html.contains("Hello"));
+    }
+
+    #[test]
+    fn active_button_uses_session_selected_variant() {
+        let node = UiNode {
+            component: "button".into(),
+            props: vec![
+                ("label".into(), Expr::String("Session".into())),
+                ("active".into(), Expr::Var("is_selected".into())),
+            ],
+            events: vec![],
+            slots: vec![],
+            children: vec![],
+            span: Span::default(),
+        };
+        let html = render_template(&UiTemplate::Node(node), 0);
+        assert!(html.contains("is_selected ? \"secondary\""));
     }
 }

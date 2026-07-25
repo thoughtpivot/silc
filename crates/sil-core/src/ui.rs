@@ -361,6 +361,11 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
                 kind: PropKind::Flag,
                 required: false,
             },
+            PropSpec {
+                name: "active",
+                kind: PropKind::Expr,
+                required: false,
+            },
         ],
         slots: &[],
         children: ChildPolicy::None,
@@ -387,6 +392,21 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
             },
             PropSpec {
                 name: "placeholder",
+                kind: PropKind::Expr,
+                required: false,
+            },
+            PropSpec {
+                name: "session",
+                kind: PropKind::Expr,
+                required: false,
+            },
+            PropSpec {
+                name: "loading",
+                kind: PropKind::Expr,
+                required: false,
+            },
+            PropSpec {
+                name: "error",
                 kind: PropKind::Expr,
                 required: false,
             },

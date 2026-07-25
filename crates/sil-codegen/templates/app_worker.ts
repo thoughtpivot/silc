@@ -221,12 +221,23 @@ async function handleAction(req: Request, pathname: string): Promise<Response | 
   }
   if (pathname === "/history" && req.method === "GET") {
     const sessionId = new URL(req.url).searchParams.get("session_id");
-    const rows = db.query(`SELECT payload FROM app_events WHERE kind = 'chat' ORDER BY created_at DESC LIMIT 200`).all() as any[];
-    let items = rows.map((r) => JSON.parse(r.payload));
-    if (sessionId !== null) {
-      items = items.filter((row) => (row.session_id || "") === sessionId);
-    }
-    return json(items.slice(0, 50));
+    const rows = sessionId === null
+      ? db.query(`
+          SELECT payload
+          FROM app_events
+          WHERE kind = 'chat'
+          ORDER BY created_at DESC
+          LIMIT 50
+        `).all() as any[]
+      : db.query(`
+          SELECT payload
+          FROM app_events
+          WHERE kind = 'chat'
+            AND json_extract(payload, '$.session_id') = ?
+          ORDER BY created_at DESC
+          LIMIT 50
+        `).all(sessionId) as any[];
+    return json(rows.map((r) => JSON.parse(r.payload)));
   }
   return null;
 }

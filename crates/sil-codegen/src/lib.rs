@@ -893,6 +893,7 @@ class ChatRecord {
 }
 class ChatPage is component {
     has state Str $.prompt = "";
+    has state Str $.active_session = "session-a";
     method render() {
         ui::page(
             :app_bar(ui::app_bar(:title("Chat"))),
@@ -900,7 +901,14 @@ class ChatPage is component {
                 ui::nav_item(:label("Home"), :to("/"))
             )),
             ui::chat_history(:title("Chat History"), :collapsible),
-            ui::chat(:value($.prompt), :on(send(on_send)))
+            when $.active_session {
+                ui::text(:text("Session selected"))
+            },
+            ui::chat(
+                :value($.prompt),
+                :session($.active_session),
+                :on(send(on_send))
+            )
         )
     }
     method on_send() {
@@ -1092,6 +1100,32 @@ class FeedbackApi is service {
             app.contains("__chatComplete") && !app.contains("items={[]}"),
             "chat UI must use __chatComplete and must not hardcode empty history"
         );
+        assert!(
+            app.contains("AbortController")
+                && app.contains("historyRequestRef")
+                && app.contains("activeSessionRef"),
+            "session history must abort and ignore stale responses"
+        );
+        assert!(
+            app.contains("pendingId")
+                && app.contains("pending: true")
+                && app.contains("capturedSession"),
+            "chat send must be optimistic and guarded by its captured session"
+        );
+        assert!(
+            app.contains("setChatError")
+                && app.contains("setHistoryError")
+                && app.contains("draft || prompt"),
+            "chat failures must be visible and restore the draft"
+        );
+        assert!(
+            app.contains("focusKey={active_session}"),
+            "selecting a session must focus the chat composer"
+        );
+        assert!(
+            app.contains("(active_session) ?"),
+            "string session state must lower as a truthy conditional"
+        );
         assert!(app.contains("HistoryPanel") || app.contains("Chat History"));
         assert!(app.contains("items={messages}"));
         assert!(app.contains("/complete") || app.contains("on_send"));
@@ -1107,10 +1141,26 @@ class FeedbackApi is service {
             "complete ingest must send ControlFrame::Ingest.text"
         );
         assert!(ts.contains("INGEST_TIMEOUT_MS") || ts.contains("180_000"));
+        assert!(
+            ts.contains("json_extract(payload, '$.session_id') = ?") && ts.contains("LIMIT 50"),
+            "history must filter by session in SQLite before LIMIT"
+        );
         let history_panel =
             fs::read_to_string(output.join("typescript/src/components/ui/history-panel.tsx"))
                 .unwrap();
         assert!(history_panel.contains("HistoryPanel") || history_panel.contains("collapsed"));
+        let composer =
+            fs::read_to_string(output.join("typescript/src/components/ui/chat-composer.tsx"))
+                .unwrap();
+        assert!(composer.contains("focusKey") && composer.contains(".focus()"));
+        let thread =
+            fs::read_to_string(output.join("typescript/src/components/ui/chat-thread.tsx"))
+                .unwrap();
+        assert!(
+            thread.contains("Loading history")
+                && thread.contains("role=\"alert\"")
+                && thread.contains("message.pending")
+        );
         let manifest = fs::read_to_string(&result.manifest).unwrap();
         assert!(manifest.contains("llm.complete") || manifest.contains("\"llm\": true"));
         assert!(manifest.contains("llama3.2-1b"));

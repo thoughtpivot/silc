@@ -13,6 +13,7 @@ export function ChatComposer({
   onChange,
   onSubmit,
   submitting = false,
+  focusKey,
   className,
 }: {
   id: string;
@@ -22,9 +23,15 @@ export function ChatComposer({
   onChange: (value: string) => void;
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
   submitting?: boolean;
+  focusKey?: string;
   className?: string;
 }) {
   const formRef = React.useRef<HTMLFormElement | null>(null);
+  const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
+
+  React.useEffect(() => {
+    if (focusKey) textareaRef.current?.focus();
+  }, [focusKey]);
 
   function onKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -38,6 +45,7 @@ export function ChatComposer({
       {label ? <Label htmlFor={id}>{label}</Label> : null}
       <div className="flex items-end gap-3">
         <Textarea
+          ref={textareaRef}
           id={id}
           value={value}
           onChange={(event) => onChange(event.target.value)}

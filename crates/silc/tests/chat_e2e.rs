@@ -77,10 +77,89 @@ fn chat_assistant_builds_dual_surface() {
         worker.contains("text: prompt") || worker.contains("author: \"\""),
         "worker must send author/text on INGEST for /complete"
     );
+    assert!(
+        worker.contains("json_extract(payload, '$.session_id') = ?"),
+        "worker must filter scoped history in SQLite"
+    );
     let manifest = std::fs::read_to_string(root.join("manifest.json")).unwrap();
     assert!(!manifest.contains("portal_kind"));
     assert!(manifest.contains("llm") || manifest.contains("llm.complete"));
     assert!(manifest.contains("terminal"));
+}
+
+#[test]
+fn multi_session_chat_builds_race_safe_ui() {
+    let root = std::env::temp_dir().join(format!("silc-multi-chat-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+    let source = root.join("multi_chat.silc");
+    std::fs::write(
+        &source,
+        r#"@version("0.2.0")
+class ChatRecord {
+    has Str $.prompt;
+    has Str $.reply;
+    has Str $.session_id;
+}
+class ChatPage is component {
+    has state Str $.prompt = "";
+    has state Str $.active_session = "session-a";
+    method render() {
+        ui::page(
+            when $.active_session {
+                ui::text(:text("Selected"))
+            },
+            ui::chat_history(:title("History")),
+            ui::chat(
+                :value($.prompt),
+                :session($.active_session),
+                :on(send(on_send))
+            )
+        )
+    }
+    method on_send() { Assistant.complete(); }
+}
+class ChatApp is app {
+    route "/" => ChatPage;
+    method serve() {
+        ui::web(:root(ChatApp), :port(18190), :route("/"))
+            ==> ui::terminal(:port(18191))
+    }
+}
+class Assistant is processor {
+    has Str $.model_ref = "llama3.2-1b";
+    method complete(ChatRecord $record) {
+        $record.prompt ==> llm::complete(:model("llama3.2-1b"))
+    }
+}
+class ChatDb is sink is storage(SQLite) {
+    method persist(ChatRecord $record) {
+        $record ==> ipc::publish() ==> store::sqlite(:table(chats)) ==> store::commit()
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    let build = Command::new(silc_bin())
+        .args(["build", source.to_str().unwrap()])
+        .output()
+        .expect("build multi-session chat");
+    assert!(
+        build.status.success(),
+        "build failed: {}\n{}",
+        String::from_utf8_lossy(&build.stdout),
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let app =
+        std::fs::read_to_string(root.join(".runtime/multi_chat/typescript/src/App.tsx")).unwrap();
+    assert!(app.contains("AbortController"));
+    assert!(app.contains("pending: true"));
+    assert!(app.contains("capturedSession"));
+    assert!(app.contains("focusKey={active_session}"));
+    assert!(app.contains("historyLoading"));
+    assert!(app.contains("historyError || chatError"));
+    let _ = std::fs::remove_dir_all(root);
 }
 
 #[test]
@@ -137,7 +216,7 @@ fn chat_assistant_real_completion_e2e() {
 
     let complete = ureq::post("http://127.0.0.1:18090/complete")
         .set("content-type", "application/json")
-        .send_string(r#"{"prompt":"Say hi in one short word."}"#)
+        .send_string(r#"{"prompt":"Reply with alpha only.","session_id":"session-alpha"}"#)
         .expect("post /complete");
     let status = complete.status();
     let body = complete.into_string().unwrap_or_default();
@@ -153,14 +232,34 @@ fn chat_assistant_real_completion_e2e() {
         "expected non-empty reply: {body}"
     );
 
-    let history = ureq::get("http://127.0.0.1:18090/history")
+    let second = ureq::post("http://127.0.0.1:18090/complete")
+        .set("content-type", "application/json")
+        .send_string(r#"{"prompt":"Reply with beta only.","session_id":"session-beta"}"#)
+        .expect("post second /complete");
+    let second_status = second.status();
+    let second_body = second.into_string().unwrap_or_default();
+    assert_eq!(second_status, 200, "second /complete failed: {second_body}");
+
+    let alpha_history = ureq::get("http://127.0.0.1:18090/history?session_id=session-alpha")
         .call()
-        .expect("get /history")
+        .expect("get alpha /history")
         .into_string()
         .unwrap();
     assert!(
-        history.contains("Say hi") || history.contains("prompt"),
-        "expected chat history row, got: {history}"
+        alpha_history.contains("Reply with alpha only.")
+            && !alpha_history.contains("Reply with beta only."),
+        "alpha history leaked another session: {alpha_history}"
+    );
+
+    let beta_history = ureq::get("http://127.0.0.1:18090/history?session_id=session-beta")
+        .call()
+        .expect("get beta /history")
+        .into_string()
+        .unwrap();
+    assert!(
+        beta_history.contains("Reply with beta only.")
+            && !beta_history.contains("Reply with alpha only."),
+        "beta history leaked another session: {beta_history}"
     );
 
     let mut terminal = TcpStream::connect("127.0.0.1:18091").expect("connect terminal");
@@ -172,7 +271,13 @@ fn chat_assistant_real_completion_e2e() {
     terminal
         .write_all(b"/chat Hello from terminal\n")
         .expect("write terminal chat");
-    let reply = read_until(&mut terminal, ">", Duration::from_secs(180));
+    let first = read_until(&mut terminal, ">", Duration::from_secs(180));
+    // The initial prompt can arrive in a separate packet after the banner.
+    let reply = if first.trim() == ">" {
+        read_until(&mut terminal, ">", Duration::from_secs(180))
+    } else {
+        first
+    };
     assert!(
         !reply.contains("error:") && reply.len() > 2,
         "terminal /chat failed or hung: {reply:?}"

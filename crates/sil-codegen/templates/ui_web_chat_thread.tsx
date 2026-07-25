@@ -3,18 +3,24 @@ import * as React from "react";
 import { cn } from "../../lib/utils";
 
 export interface ChatMessage {
+  id?: string;
   prompt: string;
   reply: string;
   model?: string;
+  pending?: boolean;
 }
 
 export function ChatThread({
   messages,
   thinking = false,
+  loading = false,
+  error,
   className,
 }: {
   messages: ChatMessage[];
   thinking?: boolean;
+  loading?: boolean;
+  error?: string;
   className?: string;
 }) {
   // Scroll only this container; scrollIntoView would also scroll the page.
@@ -32,7 +38,17 @@ export function ChatThread({
         className
       )}
     >
-      {messages.length === 0 && !thinking ? (
+      {error ? (
+        <div role="alert" className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          {error}
+        </div>
+      ) : null}
+      {loading ? (
+        <div className="grid flex-1 place-items-center">
+          <p className="m-0 text-sm text-muted-foreground">Loading history…</p>
+        </div>
+      ) : null}
+      {messages.length === 0 && !thinking && !loading ? (
         <div className="grid flex-1 place-items-center">
           <p className="m-0 text-sm text-muted-foreground">
             Start the conversation — the model runs locally.
@@ -40,22 +56,24 @@ export function ChatThread({
         </div>
       ) : null}
       {messages.map((message, index) => (
-        <div key={index} className="grid gap-3">
+        <div key={message.id ?? index} className="grid gap-3">
           <div className="justify-self-end">
             <div className="max-w-[85%] justify-self-end rounded-2xl rounded-br-sm bg-primary px-4 py-2.5 text-sm leading-6 text-primary-foreground">
               {message.prompt}
             </div>
           </div>
-          <div className="justify-self-start">
-            <div className="max-w-[85%] rounded-2xl rounded-bl-sm border border-border bg-background/70 px-4 py-2.5 text-sm leading-6">
-              <p className="m-0 whitespace-pre-wrap">{message.reply}</p>
-              {message.model ? (
-                <p className="mb-0 mt-2 text-[11px] uppercase tracking-wider text-muted-foreground">
-                  {message.model}
-                </p>
-              ) : null}
+          {message.pending ? null : (
+            <div className="justify-self-start">
+              <div className="max-w-[85%] rounded-2xl rounded-bl-sm border border-border bg-background/70 px-4 py-2.5 text-sm leading-6">
+                <p className="m-0 whitespace-pre-wrap">{message.reply}</p>
+                {message.model ? (
+                  <p className="mb-0 mt-2 text-[11px] uppercase tracking-wider text-muted-foreground">
+                    {message.model}
+                  </p>
+                ) : null}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       ))}
       {thinking ? (
