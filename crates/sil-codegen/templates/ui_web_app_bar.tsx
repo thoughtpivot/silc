@@ -13,7 +13,7 @@ export function AppBar({
   return (
     <header
       className={cn(
-        "flex h-14 items-center border-b border-border bg-card/90 px-5 backdrop-blur",
+        "sticky top-0 z-20 flex h-14 shrink-0 items-center border-b border-border bg-card/90 px-5 backdrop-blur",
         className
       )}
     >

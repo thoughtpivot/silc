@@ -1050,6 +1050,25 @@ class FeedbackApi is service {
         assert!(app.contains("AppBar"));
         assert!(app.contains("/submit"));
         assert!(app.contains("setAuthor"));
+        assert!(
+            app.contains("h-screen overflow-hidden")
+                && app.contains("min-h-0 flex-1 flex")
+                && app.contains("min-h-0 min-w-0 flex-1 overflow-y-auto")
+                && !app.contains("min-h-screen"),
+            "ui::page must lower to a viewport-height shell with a scrollable main"
+        );
+        let app_bar =
+            fs::read_to_string(output.join("typescript/src/components/ui/app-bar.tsx")).unwrap();
+        assert!(
+            app_bar.contains("sticky top-0 z-20") && app_bar.contains("shrink-0"),
+            "app bar must stay pinned inside the page shell"
+        );
+        let side_panel =
+            fs::read_to_string(output.join("typescript/src/components/ui/side-panel.tsx")).unwrap();
+        assert!(
+            side_panel.contains("h-full") && side_panel.contains("overflow-y-auto"),
+            "side panel must scroll independently"
+        );
         assert!(terminal.contains("ROUTES"));
         assert!(button.contains("ShadCN-style Button") || button.contains("Button"));
         assert!(theme.contains("@tailwind"));

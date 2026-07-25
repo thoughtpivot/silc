@@ -12,7 +12,7 @@ export function SidePanel({
   return (
     <aside
       className={cn(
-        "flex w-56 shrink-0 flex-col gap-1 border-r border-border bg-card/70 p-3",
+        "flex h-full w-56 shrink-0 flex-col gap-1 overflow-y-auto border-r border-border bg-card/70 p-3",
         className
       )}
     >

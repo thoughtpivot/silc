@@ -516,8 +516,10 @@ fn render_node(node: &UiNode, indent: usize) -> String {
                 .map(|(_, t)| render_template(t, indent + 2))
                 .unwrap_or_default();
             let children = render_children(&node.children, indent + 4);
+            // Viewport-height shell: persistent app bar, independently
+            // scrollable sidebar and main content on every ui::page.
             format!(
-                "{pad}<div className=\"min-h-screen flex flex-col\">\n{app_bar}\n{pad}  <div className=\"flex flex-1\">\n{side}\n{pad}    <main className=\"flex-1 p-6 space-y-4\">\n{children}\n{pad}    </main>\n{pad}  </div>\n{pad}</div>",
+                "{pad}<div className=\"h-screen overflow-hidden flex flex-col\">\n{app_bar}\n{pad}  <div className=\"min-h-0 flex-1 flex\">\n{side}\n{pad}    <main className=\"min-h-0 min-w-0 flex-1 overflow-y-auto p-6 space-y-4\">\n{children}\n{pad}    </main>\n{pad}  </div>\n{pad}</div>",
                 pad = pad,
                 app_bar = app_bar,
                 side = side,
