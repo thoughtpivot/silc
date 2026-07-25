@@ -1153,6 +1153,10 @@ class FeedbackApi is service {
             fs::read_to_string(output.join("typescript/src/components/ui/chat-composer.tsx"))
                 .unwrap();
         assert!(composer.contains("focusKey") && composer.contains(".focus()"));
+        assert!(
+            composer.contains("isComposing") && !composer.contains("requestSubmit"),
+            "Enter must call onSubmit directly with IME/empty/submitting guards"
+        );
         let thread =
             fs::read_to_string(output.join("typescript/src/components/ui/chat-thread.tsx"))
                 .unwrap();

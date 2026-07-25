@@ -26,7 +26,6 @@ export function ChatComposer({
   focusKey?: string;
   className?: string;
 }) {
-  const formRef = React.useRef<HTMLFormElement | null>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
 
   React.useEffect(() => {
@@ -34,14 +33,14 @@ export function ChatComposer({
   }, [focusKey]);
 
   function onKeyDown(event: React.KeyboardEvent<HTMLTextAreaElement>) {
-    if (event.key === "Enter" && !event.shiftKey) {
-      event.preventDefault();
-      formRef.current?.requestSubmit();
-    }
+    if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+    event.preventDefault();
+    if (submitting || value.trim().length === 0) return;
+    onSubmit(event as unknown as React.FormEvent<HTMLFormElement>);
   }
 
   return (
-    <form ref={formRef} className={cn("grid gap-2", className)} onSubmit={onSubmit}>
+    <form className={cn("grid gap-2", className)} onSubmit={onSubmit}>
       {label ? <Label htmlFor={id}>{label}</Label> : null}
       <div className="flex items-end gap-3">
         <Textarea
