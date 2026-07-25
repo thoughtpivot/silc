@@ -669,7 +669,11 @@ fn handle_client(
                     fail_pending(&pending, &id, message)?;
                 }
             }
-            Ok(ControlFrame::Shutdown {}) | Err(_) => break,
+            Ok(ControlFrame::Shutdown {}) => break,
+            Err(err) => {
+                eprintln!("silc: worker role={role} frame decode error: {err}");
+                break;
+            }
             Ok(_) => {}
         }
     }

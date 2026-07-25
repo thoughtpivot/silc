@@ -79,11 +79,38 @@ function connectSupervisor(): Promise<void> {
   });
 }
 
+const INGEST_TIMEOUT_MS = 180_000;
+
 function ingest(payload: Record<string, unknown>, requestId: string): Promise<any> {
   if (!supervisor) return Promise.reject(new Error("supervisor socket not connected"));
   return new Promise((resolve, reject) => {
-    ingestWaiters.set(requestId, { resolve, reject });
-    supervisor!.write(encodeFrame({ type: "INGEST", request_id: requestId, ...payload }));
+    const timer = setTimeout(() => {
+      if (ingestWaiters.delete(requestId)) {
+        reject(new Error(`ingest timed out after ${INGEST_TIMEOUT_MS}ms`));
+      }
+    }, INGEST_TIMEOUT_MS);
+    ingestWaiters.set(requestId, {
+      resolve: (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      reject: (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    });
+    // ControlFrame::Ingest requires author + text. Chat payloads also carry
+    // prompt/reply/model for the slot JSON, but text is what the supervisor
+    // maps into the llm.complete record's prompt field.
+    supervisor!.write(
+      encodeFrame({
+        type: "INGEST",
+        request_id: requestId,
+        author: "",
+        text: "",
+        ...payload,
+      })
+    );
   });
 }
 
@@ -175,7 +202,20 @@ async function handleAction(req: Request, pathname: string): Promise<Response | 
   if (pathname === "/complete" && req.method === "POST") {
     const body = await req.json();
     const requestId = crypto.randomUUID();
-    const response = await ingest({ prompt: body.prompt || "", reply: "", model: body.model || "", ...body }, requestId);
+    const prompt = body.prompt || body.text || "";
+    const response = await ingest(
+      {
+        author: "",
+        text: prompt,
+        prompt,
+        reply: "",
+        model: body.model || "",
+      },
+      requestId
+    );
+    if (response.ok === false) {
+      return json({ ok: false, request_id: requestId, error: response.error || "complete failed" }, 500);
+    }
     return json({ ok: true, request_id: requestId, reply: response.reply || response.summary || "", ...response });
   }
   if (pathname === "/history" && req.method === "GET") {
@@ -285,8 +325,15 @@ function startTerminal() {
           } else if (line.startsWith("/chat ")) {
             const prompt = line.slice(6);
             const requestId = crypto.randomUUID();
-            const response = await ingest({ prompt, reply: "", model: "" }, requestId);
-            socket.write((response.reply || response.summary || JSON.stringify(response)) + "\n");
+            const response = await ingest(
+              { author: "", text: prompt, prompt, reply: "", model: "" },
+              requestId
+            );
+            if (response.ok === false) {
+              socket.write(`error: ${response.error || "complete failed"}\n`);
+            } else {
+              socket.write((response.reply || response.summary || JSON.stringify(response)) + "\n");
+            }
           } else if (line === "/history") {
             const rows = db.query(`SELECT payload FROM app_events WHERE kind = 'chat' ORDER BY created_at DESC LIMIT 20`).all() as any[];
             socket.write(rows.map((r) => r.payload).join("\n") + (rows.length ? "\n" : "(empty)\n"));

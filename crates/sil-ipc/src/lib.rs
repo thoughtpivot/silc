@@ -135,7 +135,11 @@ pub enum ControlFrame {
     Shutdown {},
     Ingest {
         request_id: String,
+        /// Optional for llm::complete payloads that only carry a prompt.
+        #[serde(default)]
         author: String,
+        /// Prompt text for llm::complete, or form body for text::score.
+        #[serde(default)]
         text: String,
     },
     Response {
@@ -465,5 +469,25 @@ mod tests {
         write_frame(&mut buf, &frame).unwrap();
         let decoded = read_frame(&mut buf.as_slice()).unwrap();
         assert_eq!(decoded, frame);
+    }
+
+    #[test]
+    fn ingest_defaults_missing_author_and_text() {
+        // Chat clients historically sent only prompt/reply/model. Missing
+        // author/text must deserialize to empty strings, not fail the frame.
+        let json = br#"{"type":"INGEST","request_id":"r1","prompt":"hi","reply":"","model":""}"#;
+        let frame: ControlFrame = serde_json::from_slice(json).expect("deserialize INGEST");
+        match frame {
+            ControlFrame::Ingest {
+                request_id,
+                author,
+                text,
+            } => {
+                assert_eq!(request_id, "r1");
+                assert_eq!(author, "");
+                assert_eq!(text, "");
+            }
+            other => panic!("expected Ingest, got {other:?}"),
+        }
     }
 }

@@ -70,6 +70,10 @@ export function App() {{
 }
 
 fn render_web_component(component: &Component, program: &Program) -> String {
+    let chat_field = find_chat_field(&component.render);
+    let has_chat_ui =
+        chat_field.is_some() || template_has_component(&component.render, "chat_history");
+
     let mut state_decls = String::new();
     for field in &component.state {
         let init = field
@@ -109,6 +113,53 @@ fn render_web_component(component: &Component, program: &Program) -> String {
         ));
     }
 
+    if has_chat_ui {
+        let prompt_field = chat_field.as_deref().unwrap_or("prompt");
+        state_decls.push_str(
+            r#"  const [messages, setMessages] = useState([]);
+  const [thinking, setThinking] = useState(false);
+  useEffect(() => {
+    fetch("/history")
+      .then((r) => r.json())
+      .then((rows) => setMessages(Array.isArray(rows) ? [...rows].reverse() : []))
+      .catch(console.error);
+  }, []);
+"#,
+        );
+        state_decls.push_str(&format!(
+            r#"  async function __chatComplete(promptText) {{
+    const prompt = (promptText ?? {field} ?? "").toString().trim();
+    if (!prompt) return;
+    setThinking(true);
+    try {{
+      const resp = await fetch("/complete", {{
+        method: "POST",
+        headers: {{ "content-type": "application/json" }},
+        body: JSON.stringify({{ prompt }}),
+      }});
+      const data = await resp.json();
+      if (!resp.ok || data.ok === false) {{
+        throw new Error(data.error || "complete failed");
+      }}
+      setMessages((prev) => [
+        ...prev,
+        {{
+          prompt,
+          reply: data.reply || data.summary || "",
+          model: data.model || undefined,
+        }},
+      ]);
+      set{pascal}("");
+    }} finally {{
+      setThinking(false);
+    }}
+  }}
+"#,
+            field = prompt_field,
+            pascal = pascal(prompt_field)
+        ));
+    }
+
     let mut handlers = String::new();
     for handler in &component.handlers {
         let body = handler
@@ -139,6 +190,59 @@ fn render_web_component(component: &Component, program: &Program) -> String {
         handlers = handlers,
         body = body
     )
+}
+
+fn template_has_component(template: &UiTemplate, name: &str) -> bool {
+    match template {
+        UiTemplate::Node(node) => {
+            node.component == name
+                || node
+                    .children
+                    .iter()
+                    .any(|c| template_has_component(c, name))
+        }
+        UiTemplate::When {
+            body, else_body, ..
+        } => {
+            template_has_component(body, name)
+                || else_body
+                    .as_ref()
+                    .map(|b| template_has_component(b, name))
+                    .unwrap_or(false)
+        }
+        UiTemplate::For { body, .. } => template_has_component(body, name),
+        UiTemplate::Block(items) => items.iter().any(|i| template_has_component(i, name)),
+    }
+}
+
+fn find_chat_field(template: &UiTemplate) -> Option<String> {
+    match template {
+        UiTemplate::Node(node) => {
+            if node.component == "chat" {
+                return node
+                    .prop("field")
+                    .and_then(|e| e.as_ident())
+                    .map(|s| s.to_string())
+                    .or_else(|| {
+                        node.prop("value")
+                            .and_then(|e| e.as_ident())
+                            .map(|s| s.to_string())
+                    })
+                    .or_else(|| Some("prompt".into()));
+            }
+            for child in &node.children {
+                if let Some(field) = find_chat_field(child) {
+                    return Some(field);
+                }
+            }
+            None
+        }
+        UiTemplate::When {
+            body, else_body, ..
+        } => find_chat_field(body).or_else(|| else_body.as_ref().and_then(|b| find_chat_field(b))),
+        UiTemplate::For { body, .. } => find_chat_field(body),
+        UiTemplate::Block(items) => items.iter().find_map(find_chat_field),
+    }
 }
 
 fn render_template(template: &UiTemplate, indent: usize) -> String {
@@ -460,10 +564,12 @@ fn render_node(node: &UiNode, indent: usize) -> String {
                 Some(handler) => format!(
                     "async (e) => {{ e.preventDefault(); await {handler}(); }}"
                 ),
-                None => "async (e) => { e.preventDefault(); }".into(),
+                None => format!(
+                    "async (e) => {{ e.preventDefault(); await __chatComplete({value}); }}"
+                ),
             };
             format!(
-                "{pad}<ChatComposer id={{\"{id}\"}} value={{{value}}} onChange={{{setter}}} onSubmit={{{on_submit}}} />",
+                "{pad}<div className=\"flex min-h-0 flex-1 flex-col gap-4\">\n{pad}  <ChatThread messages={{messages}} thinking={{thinking}} />\n{pad}  <ChatComposer id={{\"{id}\"}} value={{{value}}} onChange={{{setter}}} onSubmit={{{on_submit}}} submitting={{thinking}} />\n{pad}</div>",
                 pad = pad,
                 id = field,
                 value = value,
@@ -477,7 +583,7 @@ fn render_node(node: &UiNode, indent: usize) -> String {
             items = node
                 .prop("items")
                 .map(expr_to_js)
-                .unwrap_or_else(|| "[]".into()),
+                .unwrap_or_else(|| "messages".into()),
             title = prop_js(node, "title")
         ),
         "search_input" => format!(
@@ -646,7 +752,9 @@ fn expr_to_js_stmt(expr: &Expr, component: &Component) -> String {
                     );
                 }
                 if field == "complete" {
-                    return "await fetch(\"/complete\", { method: \"POST\", headers: { \"content-type\": \"application/json\" }, body: JSON.stringify({ prompt }) })".into();
+                    let prompt_field =
+                        find_chat_field(&component.render).unwrap_or_else(|| "prompt".into());
+                    return format!("await __chatComplete({prompt_field})");
                 }
                 let method = match field.as_str() {
                     "create" | "add" => "POST",

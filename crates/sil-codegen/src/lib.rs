@@ -1079,7 +1079,21 @@ class FeedbackApi is service {
             !app.contains("onSend="),
             "ChatComposer must not use onSend prop"
         );
+        assert!(
+            app.contains("ChatThread") && app.contains("messages={messages}"),
+            "chat UI must render ChatThread with messages state, got:\n{app}"
+        );
+        assert!(
+            app.contains("setMessages") && app.contains("setThinking"),
+            "chat UI must track messages and thinking state"
+        );
+        assert!(app.contains("/history"), "chat UI must load /history");
+        assert!(
+            app.contains("__chatComplete") && !app.contains("items={[]}"),
+            "chat UI must use __chatComplete and must not hardcode empty history"
+        );
         assert!(app.contains("HistoryPanel") || app.contains("Chat History"));
+        assert!(app.contains("items={messages}"));
         assert!(app.contains("/complete") || app.contains("on_send"));
         assert!(app.contains("AppBar"));
         assert!(app.contains("SidePanel"));
@@ -1088,6 +1102,11 @@ class FeedbackApi is service {
         assert!(ts.contains("/complete"));
         assert!(ts.contains("/history"));
         assert!(ts.contains("llm.complete") || ts.contains("true"));
+        assert!(
+            ts.contains("text: prompt") || ts.contains("text:"),
+            "complete ingest must send ControlFrame::Ingest.text"
+        );
+        assert!(ts.contains("INGEST_TIMEOUT_MS") || ts.contains("180_000"));
         let history_panel =
             fs::read_to_string(output.join("typescript/src/components/ui/history-panel.tsx"))
                 .unwrap();
