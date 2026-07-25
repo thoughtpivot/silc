@@ -23,6 +23,12 @@ pub fn render_web_app(program: &Program, graph: &ExecutableGraph) -> String {
     out.push_str("import { ChatComposer } from \"./components/ui/chat-composer\";\n");
     out.push_str("import { HistoryPanel } from \"./components/ui/history-panel\";\n");
     out.push_str("import { SearchInput } from \"./components/ui/search-input\";\n");
+    out.push_str("import { DataTable } from \"./components/ui/data-table\";\n");
+    out.push_str("\n");
+    // Empty arrays/objects are truthy in JS; Silc `when` treats them as empty.
+    out.push_str(
+        "function __truthy(value) {\n  if (Array.isArray(value)) return value.length > 0;\n  if (value && typeof value === \"object\") return Object.keys(value).length > 0;\n  return Boolean(value);\n}\n",
+    );
     out.push_str("\n");
 
     for component in program.all_components() {
@@ -316,7 +322,7 @@ fn render_web_component(component: &Component, program: &Program) -> String {
         let body = handler
             .body
             .iter()
-            .map(|e| format!("    {};", expr_to_js_stmt(e, component)))
+            .map(|e| format!("    {};", expr_to_js_stmt(e, component, program)))
             .collect::<Vec<_>>()
             .join("\n");
         let params = handler
@@ -461,6 +467,18 @@ fn find_chat_persona_js(template: &UiTemplate) -> Option<String> {
     }
 }
 
+/// Lower a `when` condition with Silc truthiness: empty collections are falsy.
+fn when_condition_js(condition: &Expr) -> String {
+    match condition {
+        Expr::Unary {
+            op: UnaryOp::Not,
+            expr,
+        } => format!("!__truthy({})", expr_to_js(expr)),
+        Expr::BinOp { .. } => expr_to_js(condition),
+        other => format!("__truthy({})", expr_to_js(other)),
+    }
+}
+
 fn render_template(template: &UiTemplate, indent: usize) -> String {
     let pad = " ".repeat(indent);
     match template {
@@ -473,7 +491,7 @@ fn render_template(template: &UiTemplate, indent: usize) -> String {
             let mut s = format!(
                 "{pad}{{({cond}) ? (\n{then}\n{pad}) : (\n{else_}\n{pad})}}",
                 pad = pad,
-                cond = expr_to_js(condition),
+                cond = when_condition_js(condition),
                 then = render_template(body, indent + 2),
                 else_ = else_body
                     .as_ref()
@@ -848,6 +866,32 @@ fn render_node(node: &UiNode, indent: usize) -> String {
             pad = pad,
             children = render_children(&node.children, indent + 2)
         ),
+        "table" => {
+            let mut props = format!(
+                "rows={{{rows}}} columns={{{columns}}}",
+                rows = prop_js(node, "rows"),
+                columns = prop_js(node, "columns")
+            );
+            if let Some(empty) = node.prop("empty_text") {
+                props.push_str(&format!(" emptyText={{{}}}", expr_to_js(empty)));
+            }
+            if let Some(field) = node.prop("filter_field").and_then(|e| e.as_ident()) {
+                props.push_str(&format!(" filterValue={{{field}}}"));
+            }
+            if let Some(column) = node.prop("filter_column") {
+                props.push_str(&format!(" filterColumn={{{}}}", expr_to_js(column)));
+            }
+            if let Some(all) = node.prop("filter_all") {
+                props.push_str(&format!(" filterAll={{{}}}", expr_to_js(all)));
+            }
+            if node.prop("sortable").is_some() {
+                props.push_str(" sortable");
+            }
+            if node.prop("searchable").is_some() {
+                props.push_str(" searchable");
+            }
+            format!("{pad}<DataTable {props} />")
+        }
         "loading" => format!(
             "{pad}<p className=\"opacity-60\">{{{text}}}</p>",
             pad = pad,
@@ -952,7 +996,7 @@ pub fn expr_to_js(expr: &Expr) -> String {
     }
 }
 
-fn expr_to_js_stmt(expr: &Expr, component: &Component) -> String {
+fn expr_to_js_stmt(expr: &Expr, component: &Component, program: &Program) -> String {
     if let Expr::Call { callee, args } = expr {
         if let Expr::Ident(name) = callee.as_ref() {
             if name == "submit" || name.ends_with("submit") {
@@ -974,7 +1018,14 @@ fn expr_to_js_stmt(expr: &Expr, component: &Component) -> String {
         }
         if let Expr::Member { base, field } = callee.as_ref() {
             if let Expr::Ident(resource) = base.as_ref() {
-                let table = snake_case(resource);
+                // The worker registers routes under the resource's declared
+                // table name; falling back to snake_case only for non-resources.
+                let table = program
+                    .resources
+                    .iter()
+                    .find(|r| r.name == *resource)
+                    .map(|r| r.table_name())
+                    .unwrap_or_else(|| snake_case(resource));
                 let arg = args.first().map(expr_to_js).unwrap_or_else(|| "{}".into());
                 if matches!(field.as_str(), "list" | "all") {
                     let qname = component

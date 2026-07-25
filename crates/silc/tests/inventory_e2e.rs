@@ -73,6 +73,37 @@ fn inventory_app_builds_with_chat_context() {
         "assistant chat must declare its inventory persona"
     );
     assert!(app.contains("/admin") && app.contains("/assistant"));
+    assert!(
+        app.contains("<DataTable rows={items}")
+            && app.contains("filterValue={category_filter}")
+            && app.contains("filterColumn={\"category\"}"),
+        "browse page must render the inventory as a filterable data grid"
+    );
+    assert!(
+        app.contains("filterColumn={\"category\"} sortable searchable />"),
+        "browse grid must opt into sorting and fuzzy search"
+    );
+    let data_table =
+        std::fs::read_to_string(root.join("typescript/src/components/ui/data-table.tsx")).unwrap();
+    assert!(
+        data_table.contains("toggleSort")
+            && data_table.contains("compareValues")
+            && data_table.contains("aria-sort")
+            && data_table.contains("sortable = false"),
+        "DataTable must support opt-in per-column sorting"
+    );
+    assert!(
+        data_table.contains("levenshtein")
+            && data_table.contains("fuzzyMatches")
+            && data_table.contains("searchable = false"),
+        "DataTable must support opt-in Levenshtein fuzzy search"
+    );
+    assert!(
+        app.contains("await fetch(\"/api/inventory_items\", { method: \"POST\"")
+            && app.contains("`/api/inventory_items/${")
+            && !app.contains("\"/api/inventory\""),
+        "admin mutations must target the resource's declared table route"
+    );
     let worker = std::fs::read_to_string(root.join("typescript/worker.ts")).unwrap();
     assert!(worker.contains("normalizeContext") && worker.contains("inventory_items"));
     assert!(worker.contains("normalizePersona"));

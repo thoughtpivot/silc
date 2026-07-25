@@ -2,7 +2,7 @@
 
 Standalone Silc 0.2.0 inventory application with:
 
-- **Browse** (`/`) — live catalog with category filters
+- **Browse** (`/`) — live inventory data grid (`ui::table`) with category filters
 - **Admin** (`/admin`) — create and delete inventory items
 - **Assistant** (`/assistant`) — silclm chat grounded on `ui::chat(:context($.items))` with an inventory-assistant `:persona`
 

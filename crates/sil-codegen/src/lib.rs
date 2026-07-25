@@ -46,6 +46,7 @@ const UI_WEB_CHAT_COMPOSER_TSX: &str = include_str!("../templates/ui_web_chat_co
 const UI_WEB_HISTORY_PANEL_TSX: &str = include_str!("../templates/ui_web_history_panel.tsx");
 const UI_WEB_SEARCH_INPUT_TSX: &str = include_str!("../templates/ui_web_search_input.tsx");
 const UI_WEB_PRODUCT_GRID_TSX: &str = include_str!("../templates/ui_web_product_grid.tsx");
+const UI_WEB_DATA_TABLE_TSX: &str = include_str!("../templates/ui_web_data_table.tsx");
 
 /// Compiler-pinned React version for ui::web (must match ui_web_package.json).
 pub const UI_WEB_REACT_VERSION: &str = "18.3.1";
@@ -215,6 +216,7 @@ pub fn emit(
                     "typescript/src/components/ui/history-panel.tsx",
                     "typescript/src/components/ui/search-input.tsx",
                     "typescript/src/components/ui/product-grid.tsx",
+                    "typescript/src/components/ui/data-table.tsx",
                     "typescript/tailwind.config.js",
                     "typescript/index.html",
                     "typescript/package.json",
@@ -452,6 +454,10 @@ fn emit_ui_app(
         (
             root.join("typescript/src/components/ui/product-grid.tsx"),
             UI_WEB_PRODUCT_GRID_TSX.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/ui/data-table.tsx"),
+            UI_WEB_DATA_TABLE_TSX.to_string(),
         ),
         (
             root.join("python/worker.py"),
@@ -1149,8 +1155,12 @@ class FeedbackApi is service {
             "selecting a session must focus the chat composer"
         );
         assert!(
-            app.contains("(active_session) ?"),
-            "string session state must lower as a truthy conditional"
+            app.contains("(__truthy(active_session)) ?"),
+            "when conditions must lower through __truthy so empty collections are falsy"
+        );
+        assert!(
+            app.contains("function __truthy"),
+            "web app must define the shared __truthy helper"
         );
         assert!(app.contains("HistoryPanel") || app.contains("Chat History"));
         assert!(app.contains("items={messages}"));

@@ -148,6 +148,7 @@ and other non-registry ops. Mixing stub-only ops into a runnable graph is a
 ## App-specific notes (inventoryApp)
 
 - Routes: `/` browse, `/admin` CRUD, `/assistant` grounded silclm chat.
+- Browse renders `ui::table(:rows($.items), :columns([...]), :filter_field(category_filter), :filter_column("category"), :sortable, :searchable)` — the compiler-owned DataTable handles filtering, the empty state, opt-in per-column sorting, and opt-in Levenshtein fuzzy search.
 - Resource table: `inventory_items` via `Inventory` (`list` / `create` / `update` / `delete`).
 - Assistant chat uses `ui::chat(:context($.items))` so silclm sees a live inventory snapshot.
 - The chat also sets `:persona(...)` so the assistant identifies as the Inventory Assistant built on silclm; personas ride the ingest frame and are never persisted into chat history.

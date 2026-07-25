@@ -84,35 +84,15 @@ class BrowsePage is component {
                         :label("Category")
                     )
                 ),
-                when $.items {
-                    ui::empty(:text("No inventory items yet. Add some in Admin."))
-                },
-                for $.items -> $item {
-                    when $.category_filter == "All" {
-                        ui::card(
-                            ui::heading(:text($item.name), :level(3)),
-                            ui::text(:text($item.category)),
-                            ui::text(:text($item.location)),
-                            ui::row(
-                                ui::text(:text($item.quantity)),
-                                ui::text(:text($item.reorder_level))
-                            ),
-                            ui::text(:text($item.notes))
-                        )
-                    },
-                    when $.category_filter == $item.category {
-                        ui::card(
-                            ui::heading(:text($item.name), :level(3)),
-                            ui::text(:text($item.category)),
-                            ui::text(:text($item.location)),
-                            ui::row(
-                                ui::text(:text($item.quantity)),
-                                ui::text(:text($item.reorder_level))
-                            ),
-                            ui::text(:text($item.notes))
-                        )
-                    }
-                }
+                ui::table(
+                    :rows($.items),
+                    :columns(["name", "category", "location", "quantity", "reorder_level", "notes"]),
+                    :empty_text("No inventory items yet. Add some in Admin."),
+                    :filter_field(category_filter),
+                    :filter_column("category"),
+                    :sortable,
+                    :searchable
+                )
             )
         )
     }
@@ -153,7 +133,7 @@ class AdminPage is component {
                     )
                 ),
                 ui::heading(:text("Catalog"), :level(2)),
-                when $.items {
+                when !$.items {
                     ui::empty(:text("Catalog is empty."))
                 },
                 for $.items -> $item {

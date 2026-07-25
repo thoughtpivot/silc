@@ -519,6 +519,55 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
         surfaces: BOTH,
     },
     ComponentSpec {
+        name: "table",
+        props: &[
+            PropSpec {
+                name: "rows",
+                kind: PropKind::Expr,
+                required: true,
+            },
+            PropSpec {
+                name: "columns",
+                kind: PropKind::Expr,
+                required: true,
+            },
+            PropSpec {
+                name: "empty_text",
+                kind: PropKind::Expr,
+                required: false,
+            },
+            PropSpec {
+                name: "filter_field",
+                kind: PropKind::Ident,
+                required: false,
+            },
+            PropSpec {
+                name: "filter_column",
+                kind: PropKind::Expr,
+                required: false,
+            },
+            PropSpec {
+                name: "filter_all",
+                kind: PropKind::Expr,
+                required: false,
+            },
+            PropSpec {
+                name: "sortable",
+                kind: PropKind::Flag,
+                required: false,
+            },
+            PropSpec {
+                name: "searchable",
+                kind: PropKind::Flag,
+                required: false,
+            },
+        ],
+        slots: &[],
+        children: ChildPolicy::None,
+        events: &[],
+        surfaces: BOTH,
+    },
+    ComponentSpec {
         name: "loading",
         props: &[PropSpec {
             name: "text",
