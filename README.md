@@ -148,7 +148,7 @@ using disk, CPU, and network for provisioning.
 intent. The compiler emits Bun UI workers, a Python scorer, a Go/SQLite sink,
 IPC slots, and a React bundle under `.runtime/`.
 
-```silc
+```raku
 #!/usr/bin/env silc
 @version("1.0")
 
