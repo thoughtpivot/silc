@@ -34,10 +34,15 @@ Bun is the default because its native TypeScript execution and mmap support fit
 Silc's generated, local-worker model. Node compatibility is not a requirement
 for the primary runtime.
 
-Bun also executes compiler-owned UI substrates: Vue for `ui::web` and, in a
-future runnable path, OpenTUI for `ui::terminal`. Those frameworks are
-implementation details under `.runtime/`; Silc source never names them. See
+Bun also executes compiler-owned UI substrates: React + Tailwind +
+ShadCN-style primitives for `ui::web`, a telnet-compatible TCP adapter for
+remote `ui::terminal` sessions, and in the future OpenTUI for rich local
+terminals. Those substrates are implementation details under `.runtime/`;
+Silc source never names them. See
 [ADR-003-declarative-ui.md](ADR-003-declarative-ui.md).
+
+Engine assignment rationale (why Bun vs CPython vs Go) lives in
+[ADR-004-runtime-strengths.md](ADR-004-runtime-strengths.md).
 
 ### Data plane
 

@@ -1,3 +1,5 @@
+use std::io::{Read, Write};
+use std::net::TcpStream;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::thread;
@@ -17,9 +19,37 @@ fn free_port(port: u16) {
     thread::sleep(Duration::from_millis(200));
 }
 
+fn read_until(stream: &mut TcpStream, needle: &str, timeout: Duration) -> String {
+    stream
+        .set_read_timeout(Some(Duration::from_millis(250)))
+        .unwrap();
+    let start = Instant::now();
+    let mut out = Vec::new();
+    let mut buffer = [0u8; 2048];
+    while start.elapsed() < timeout {
+        match stream.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(n) => {
+                out.extend_from_slice(&buffer[..n]);
+                if String::from_utf8_lossy(&out).contains(needle) {
+                    break;
+                }
+            }
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) => {}
+            Err(error) => panic!("terminal read failed: {error}"),
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 #[test]
 fn feedback_portal_http_sqlite_e2e() {
     free_port(18080);
+    free_port(18023);
     let temp = std::env::temp_dir().join(format!(
         "silc-e2e-home-{}-{}",
         std::process::id(),
@@ -77,7 +107,7 @@ fn feedback_portal_http_sqlite_e2e() {
             let body = resp.into_string().unwrap_or_default();
             if body.contains("\"ok\":true") || body.contains("\"ok\": true") {
                 assert!(
-                    body.contains("vue") || body.contains("web"),
+                    body.contains("react") || body.contains("web"),
                     "health should advertise ui substrate: {body}"
                 );
                 healthy = true;
@@ -100,7 +130,7 @@ fn feedback_portal_http_sqlite_e2e() {
         .unwrap();
     assert!(
         page.contains("id=\"app\"") || page.contains("silc"),
-        "expected Vue shell HTML, got: {page}"
+        "expected React shell HTML, got: {page}"
     );
     assert!(
         page.contains("/assets/app.js") || page.contains("app.js"),
@@ -111,6 +141,22 @@ fn feedback_portal_http_sqlite_e2e() {
         .call()
         .expect("get app.js");
     assert_eq!(asset.status(), 200);
+
+    let mut terminal = TcpStream::connect("127.0.0.1:18023").expect("connect terminal UI");
+    let banner = read_until(&mut terminal, "Author:", Duration::from_secs(5));
+    assert!(
+        banner.contains("Silc Feedback Portal"),
+        "missing terminal banner: {banner:?}"
+    );
+    terminal
+        .write_all(b"terminal-e2e\r\nfeedback through telnet\r\n")
+        .expect("write terminal feedback");
+    let result = read_until(&mut terminal, "\"ok\"", Duration::from_secs(10));
+    assert!(
+        result.contains("\"ok\"") && result.contains("true"),
+        "terminal submission failed: {result:?}"
+    );
+    terminal.write_all(b"/quit\r\n").ok();
 
     let resp = ureq::post("http://127.0.0.1:18080/submit")
         .set("content-type", "application/json")

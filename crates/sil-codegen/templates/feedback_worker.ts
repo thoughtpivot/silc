@@ -5,6 +5,7 @@ import { join } from "node:path";
 const socketPath = process.env.SILC_SOCKET || "__SOCKET_PATH__";
 const port = Number(process.env.SILC_HTTP_PORT || "__PORT__");
 const route = process.env.SILC_HTTP_ROUTE || "__ROUTE__";
+const terminalPort = Number(process.env.SILC_TERMINAL_PORT || "__TERMINAL_PORT__");
 const protocolVersion = 1;
 const abiVersion = 1;
 const root = import.meta.dir;
@@ -135,6 +136,101 @@ async function serveAsset(pathname: string): Promise<Response | null> {
   });
 }
 
+type TerminalPhase = "author" | "feedback" | "waiting";
+type TerminalSession = {
+  phase: TerminalPhase;
+  author: string;
+  buffer: string;
+};
+
+function stripTelnetNegotiation(bytes: Uint8Array): Uint8Array {
+  const plain: number[] = [];
+  for (let i = 0; i < bytes.length; i++) {
+    if (bytes[i] === 255) {
+      // IAC + command + option. Subnegotiation is not needed by this simple
+      // line interface, so discard the control triplet.
+      i += 2;
+      continue;
+    }
+    plain.push(bytes[i]);
+  }
+  return Uint8Array.from(plain);
+}
+
+function terminalBanner(socket: any) {
+  socket.write(
+    "\x1b[2J\x1b[HSilc Feedback Portal\r\n" +
+      "Bun terminal → Silc mmap/UDS → Python → Go/SQLite\r\n" +
+      "Type /quit at any prompt to disconnect.\r\n\r\n" +
+      "Author: ",
+  );
+}
+
+function startTerminalServer() {
+  if (terminalPort <= 0) return;
+  Bun.listen<TerminalSession>({
+    hostname: "127.0.0.1",
+    port: terminalPort,
+    socket: {
+      open(socket) {
+        socket.data = { phase: "author", author: "", buffer: "" };
+        terminalBanner(socket);
+      },
+      data(socket, data) {
+        const session = socket.data;
+        const clean = stripTelnetNegotiation(data);
+        session.buffer += new TextDecoder().decode(clean).replace(/\0/g, "");
+        const lines = session.buffer.split(/\r?\n/);
+        session.buffer = lines.pop() || "";
+        for (const raw of lines) {
+          const line = raw.replace(/[\b\x7f]/g, "").trim();
+          if (line === "/quit" || line === "/exit") {
+            socket.write("\r\nGoodbye.\r\n");
+            socket.end();
+            return;
+          }
+          if (session.phase === "waiting") continue;
+          if (session.phase === "author") {
+            if (!line) {
+              socket.write("Author: ");
+              continue;
+            }
+            session.author = line.slice(0, 120);
+            session.phase = "feedback";
+            socket.write("Feedback: ");
+            continue;
+          }
+          if (!line) {
+            socket.write("Feedback: ");
+            continue;
+          }
+          const text = line.slice(0, 8192);
+          session.phase = "waiting";
+          socket.write("\r\nSaving…\r\n");
+          void ingest(session.author, text, crypto.randomUUID())
+            .then((response) => {
+              socket.write(`${JSON.stringify(response, null, 2)}\r\n\r\n`);
+              session.author = "";
+              session.phase = "author";
+              socket.write("Author: ");
+            })
+            .catch((error) => {
+              socket.write(`Error: ${String(error)}\r\n\r\n`);
+              session.author = "";
+              session.phase = "author";
+              socket.write("Author: ");
+            });
+        }
+      },
+      error(socket, error) {
+        console.error("Silc terminal socket error", error);
+        socket.end();
+      },
+    },
+  });
+  console.log(`SILC_TERMINAL_READY telnet://127.0.0.1:${terminalPort}`);
+}
+
 await connectSupervisor();
 
 Bun.serve({
@@ -158,7 +254,7 @@ Bun.serve({
       return Response.json({
         ok: true,
         ui: "web",
-        substrate: "vue",
+        substrate: "react",
       });
     }
     if (request.method === "POST" && url.pathname === "/submit") {
@@ -182,4 +278,5 @@ Bun.serve({
   },
 });
 
+startTerminalServer();
 console.log(`SILC_READY http://127.0.0.1:${port}${route}`);

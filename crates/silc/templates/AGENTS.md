@@ -18,6 +18,7 @@ UI bundles, and logs — not copies of Bun/CPython/Go.
 
 - Surface syntax: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-002-silc-surface-syntax.md
 - Declarative UI: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-003-declarative-ui.md
+- Runtime strengths: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-004-runtime-strengths.md
 - Architecture: https://github.com/thoughtpivot/silc/blob/main/docs/ARCHITECTURE.md
 - Runtime / IPC: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-001-runtime-and-ipc.md
 - IPC ABI v1: https://github.com/thoughtpivot/silc/blob/main/docs/SILC-IPC-ABI-v1.md
@@ -32,23 +33,30 @@ silc main.silc    # build stubs or run if the program is runnable v1
 silc build main.silc   # compile only
 ```
 
-## Declarative UI (do not write HTML/CSS/Vue/OpenTUI)
+## Declarative UI (do not write HTML/CSS/React/Tailwind/OpenTUI)
 
 Express UI intent in Silc only:
 
-- `ui::web(:port, :route)` — runnable browser UI (compiler lowers to Vue on Bun)
-- `ui::terminal()` — documented stub (future OpenTUI on Bun); not executable in v1
+- `ui::web(:port, :route)` — runnable browser UI (compiler lowers to React +
+  Tailwind + ShadCN primitives on Bun)
+- `ui::terminal(:port)` — runnable loopback TCP/telnet UI on Bun; OpenTUI remains
+  the future rich local-terminal substrate
 
-Never emit HTML, CSS, Vue SFCs, OpenTUI trees, Vite config, or `package.json`.
-Vue and OpenTUI are **implementation substrates**, not authoring APIs.
+Never emit HTML, CSS, React components, Tailwind configs, ShadCN CLI trees,
+OpenTUI trees, Vite config, or `package.json`. React, Tailwind, ShadCN
+primitives, and OpenTUI are **implementation substrates**, not authoring APIs.
 
 Legacy aliases (still runnable): `html::form` + `http::serve` → same web profile.
+
+One `.silc` file can declare a full app (Contract + service + processor + sink).
+Polyglot workers under `.runtime/` are compiler output, not an authoring model.
 
 ## Runnable v1 operations
 
 Executable today (feedback-portal shape):
 
 - `ui::web` (preferred) or `html::form` + `http::serve`
+- optional `ui::terminal(:port)` alongside the web surface
 - `text::score`
 - `ipc::publish`, `store::sqlite`, `store::commit`
 

@@ -10,6 +10,7 @@ use crate::program::Program;
 /// executable compatibility aliases that lower to the same web profile.
 pub const EXECUTABLE_OPS: &[(&str, &str)] = &[
     ("ui", "web"),
+    ("ui", "terminal"),
     ("html", "form"),
     ("http", "serve"),
     ("text", "score"),
@@ -19,7 +20,10 @@ pub const EXECUTABLE_OPS: &[(&str, &str)] = &[
 ];
 
 const SUPPORTED_OPS_HELP: &str =
-    "ui::web (or html::form + http::serve), text::score, ipc::publish, store::sqlite, store::commit";
+    "ui::web (or html::form + http::serve), optional ui::terminal, text::score, ipc::publish, store::sqlite, store::commit";
+
+/// Default TCP port for `ui::terminal` (telnet-friendly; mnemonic for historic 23).
+pub const DEFAULT_TERMINAL_PORT: u16 = 18023;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExecutionMode {
@@ -53,7 +57,7 @@ impl UiSurface {
     }
 
     pub fn substrate(self) -> &'static str {
-        "vue"
+        "react"
     }
 }
 
@@ -67,6 +71,8 @@ pub struct ExecutableGraph {
     pub http_route: String,
     pub sqlite_table: String,
     pub ui_surface: UiSurface,
+    /// When set, Bun also listens for line-oriented telnet/TCP sessions.
+    pub terminal_port: Option<u16>,
 }
 
 pub fn is_executable_op(namespace: &str, name: &str) -> bool {
@@ -100,7 +106,6 @@ fn is_v1_exec_namespace(ns: &str) -> bool {
 pub fn classify_program(program: &Program) -> Result<ExecutionMode, String> {
     let mut saw_exec = false;
     let mut saw_unknown_ns = false;
-    let mut saw_terminal = false;
     for module in &program.modules {
         for method in &module.methods {
             for step in &method.pipeline.steps {
@@ -110,10 +115,7 @@ pub fn classify_program(program: &Program) -> Result<ExecutionMode, String> {
                     ..
                 } = step
                 {
-                    if ns == "ui" && name == "terminal" {
-                        saw_terminal = true;
-                        saw_unknown_ns = true;
-                    } else if is_executable_op(ns, name) {
+                    if is_executable_op(ns, name) {
                         saw_exec = true;
                     } else if is_known_namespace(ns) {
                         // Known namespace but not in the executable v1 set → stub program.
@@ -135,12 +137,6 @@ pub fn classify_program(program: &Program) -> Result<ExecutionMode, String> {
                     } = step
                     {
                         if is_v1_exec_namespace(ns) && !is_executable_op(ns, name) {
-                            if ns == "ui" && name == "terminal" {
-                                return Err(
-                                    "operation `ui::terminal` is not executable in Silc v1 (documented OpenTUI/Bun stub; use ui::web for runnable browser UI)"
-                                        .into(),
-                                );
-                            }
                             return Err(format!(
                                 "operation `{ns}::{name}` is not executable in Silc v1 (supported: {SUPPORTED_OPS_HELP})"
                             ));
@@ -151,12 +147,6 @@ pub fn classify_program(program: &Program) -> Result<ExecutionMode, String> {
         }
         Ok(ExecutionMode::Runnable)
     } else if saw_exec && saw_unknown_ns {
-        if saw_terminal {
-            return Err(
-                "cannot mix executable v1 operations with stub-only `ui::terminal` in one program"
-                    .into(),
-            );
-        }
         Err("cannot mix executable v1 operations with stub-only operations in one program".into())
     } else {
         Ok(ExecutionMode::Stub)
@@ -191,7 +181,9 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
 
             let mut http_port = 8080u16;
             let mut http_route = String::from("/");
+            let mut terminal_port: Option<u16> = None;
             let mut saw_ui_web = false;
+            let mut saw_terminal = false;
             let mut saw_form = false;
             let mut saw_serve = false;
             let mut saw_score = false;
@@ -220,6 +212,17 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
                                     if let Some(route) = args.iter().find(|a| a.name == "route") {
                                         http_route = normalize_route(&route.value);
                                     }
+                                }
+                                ("ui", "terminal") => {
+                                    saw_terminal = true;
+                                    let mut port = DEFAULT_TERMINAL_PORT;
+                                    if let Some(p) = args.iter().find(|a| a.name == "port") {
+                                        port = p
+                                            .value
+                                            .parse()
+                                            .map_err(|_| format!("invalid :port({})", p.value))?;
+                                    }
+                                    terminal_port = Some(port);
                                 }
                                 ("html", "form") => saw_form = true,
                                 ("http", "serve") => {
@@ -259,6 +262,13 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
                 UiSurface::Web
             } else if saw_form && saw_serve {
                 UiSurface::LegacyHtmlHttp
+            } else if saw_terminal {
+                // Terminal alone is not enough for the feedback portal shape —
+                // browser (or legacy HTML) remains required so React/HTTP health stays available.
+                return Err(
+                    "runnable feedback portal requires `ui::web` (or html::form + http::serve); add `ui::terminal` alongside it for telnet"
+                        .into(),
+                );
             } else {
                 return Err(format!(
                     "runnable feedback portal requires {SUPPORTED_OPS_HELP}"
@@ -269,6 +279,14 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
                 return Err(format!(
                     "runnable feedback portal requires {SUPPORTED_OPS_HELP}"
                 ));
+            }
+
+            if let Some(tp) = terminal_port {
+                if tp == http_port {
+                    return Err(format!(
+                        "ui::terminal :port({tp}) must differ from ui::web :port({http_port})"
+                    ));
+                }
             }
 
             let storage_ok = sinks[0]
@@ -288,6 +306,7 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
                 http_route,
                 sqlite_table,
                 ui_surface,
+                terminal_port,
             }))
         }
     }
@@ -497,11 +516,11 @@ mod tests {
         assert_eq!(graph.http_port, 18080);
         assert_eq!(graph.http_route, "/");
         assert_eq!(graph.ui_surface, UiSurface::Web);
-        assert_eq!(graph.ui_surface.substrate(), "vue");
+        assert_eq!(graph.ui_surface.substrate(), "react");
     }
 
     #[test]
-    fn ui_terminal_alone_is_stub() {
+    fn ui_terminal_is_executable_but_requires_runnable_graph() {
         let program = Program {
             version: Some("1.0".into()),
             subsets: vec![],
@@ -525,12 +544,14 @@ mod tests {
                 span: Span::default(),
             }],
         };
-        assert_eq!(classify_program(&program).unwrap(), ExecutionMode::Stub);
-        assert!(infer_graph(&program).unwrap().is_none());
+        assert_eq!(classify_program(&program).unwrap(), ExecutionMode::Runnable);
+        assert!(infer_graph(&program)
+            .unwrap_err()
+            .contains("exactly one service, one processor, and one sink"));
     }
 
     #[test]
-    fn rejects_mixing_ui_web_and_terminal() {
+    fn supports_ui_web_and_terminal_together() {
         let (contracts, modules) = feedback_modules(vec![
             PipelineStep::Call {
                 namespace: Some("ui".into()),
@@ -543,7 +564,10 @@ mod tests {
             PipelineStep::Call {
                 namespace: Some("ui".into()),
                 name: "terminal".into(),
-                args: vec![],
+                args: vec![TraitArg {
+                    name: "port".into(),
+                    value: "18023".into(),
+                }],
             },
         ]);
         let program = Program {
@@ -552,7 +576,9 @@ mod tests {
             contracts,
             modules,
         };
-        let err = classify_program(&program).unwrap_err();
-        assert!(err.contains("ui::terminal"), "{err}");
+        assert_eq!(classify_program(&program).unwrap(), ExecutionMode::Runnable);
+        let graph = infer_graph(&program).unwrap().unwrap();
+        assert_eq!(graph.terminal_port, Some(18023));
+        assert_eq!(graph.http_port, 18080);
     }
 }

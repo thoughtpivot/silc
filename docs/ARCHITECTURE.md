@@ -12,6 +12,8 @@ operation sets still emit inspectable stubs.
 Runtime and IPC direction is fixed by
 [ADR-001](ADR-001-runtime-and-ipc.md): Silc emits TypeScript for Bun and uses a
 ThoughtPivot-owned shared-memory ABI rather than requiring Apache Arrow.
+Engine strength catalogs that justify Go / CPython / Bun routing are in
+[ADR-004](ADR-004-runtime-strengths.md).
 
 Surface syntax is Raku-inspired
 ([ADR-002](ADR-002-silc-surface-syntax.md)): `.silc` is primary and conforming
@@ -131,7 +133,8 @@ router reads `Module`, `Constraint`, and `Pipeline`, then records a
 3. deterministic fallback.
 
 Routing policy stays in `sil-router`; target identity, capabilities, and
-resolved assignment types stay in `sil-core::target`.
+resolved assignment types stay in `sil-core::target`. Provenance strings cite
+the strength catalog in [ADR-004](ADR-004-runtime-strengths.md).
 
 ### Code generation
 
@@ -144,11 +147,13 @@ subject; target-specific rendering belongs to `sil-codegen`.
 ### Declarative UI
 
 UI intent lives in the `ui` namespace (`ui::web`, `ui::terminal`). Authors never
-emit HTML, CSS, Vue, OpenTUI, or package manifests. The compiler lowers
-`ui::web` to a Bun-owned Vue app plus HTTP/API worker under `.runtime/`;
-`ui::terminal` is reserved for a Bun + OpenTUI substrate (stub in v1). See
-[ADR-003-declarative-ui.md](ADR-003-declarative-ui.md). Legacy `html::form` +
-`http::serve` remain compatibility aliases for the same web profile.
+emit HTML, CSS, React, Tailwind, ShadCN, OpenTUI, or package manifests. The
+compiler lowers `ui::web` to a Bun-owned React + Tailwind + ShadCN-primitives
+app plus HTTP/API worker under `.runtime/`; `ui::terminal` adds a Bun-owned
+loopback TCP/telnet interface; a future rich local-terminal adapter uses
+OpenTUI. See [ADR-003-declarative-ui.md](ADR-003-declarative-ui.md). Legacy
+`html::form` + `http::serve` remain compatibility aliases for the same web
+profile.
 
 ### IPC
 
@@ -206,8 +211,8 @@ Bare `init` is the subcommand; `init.silc` still compiles as a path.
 **`.runtime` contract**
 
 - Path: `{workdir}/.runtime/`
-- Contents: generated Go / Python / TypeScript-for-Bun (including Vue UI assets for
-  `ui::web`), IPC slots/run metadata, and application data
+- Contents: generated Go / Python / TypeScript-for-Bun (including React UI assets
+  for `ui::web`), IPC slots/run metadata, and application data
 - First run builds this tree (slower); later runs reuse it when still valid
 - Gitignored; inspectable for debugging; not the authoring surface
 - User programs never emit into this repository’s `runtime/` directory
@@ -234,8 +239,8 @@ Before adding a crate or top-level module, ask:
 - Is it merely reused code? First identify the subject that should own it.
 
 This adapts subject-based thinking to compiler architecture without copying
-Vue file conventions: ownership and cohesion transfer; UI-specific splitting
-does not.
+frontend file conventions: ownership and cohesion transfer; UI-specific
+splitting does not.
 
 ## Future work
 
@@ -243,7 +248,7 @@ does not.
 - Expand the parser beyond the first-pass grammar
 - Add program-level orchestration semantics
 - Generalize executable target adapters beyond the feedback operation set
-- Runnable `ui::terminal` via compiler-owned OpenTUI/Bun (see ADR-003)
+- Rich local `ui::terminal` rendering via compiler-owned OpenTUI/Bun (see ADR-003)
 - Add typed field views atop the implemented mmap/UDS ABI
 - Add program-level crash recovery and deployment bundles
 

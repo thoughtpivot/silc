@@ -84,14 +84,17 @@ pub fn build_go_worker(lock: &RuntimeLock, runtime_root: &Path) -> Result<PathBu
     Ok(out)
 }
 
-/// Install compiler-pinned Vue deps and bundle ui::web assets with Silc-owned Bun.
+/// Install compiler-pinned React/Tailwind deps and bundle ui::web assets with Silc-owned Bun.
 pub fn build_ui_web(lock: &RuntimeLock, runtime_root: &Path) -> Result<(), String> {
     let ts_dir = runtime_root.join("typescript");
     if !ts_dir.join("package.json").is_file() {
         return Err("missing compiler-generated typescript/package.json for ui::web".into());
     }
-    if !ts_dir.join("src/main.ts").is_file() {
-        return Err("missing compiler-generated typescript/src/main.ts for ui::web".into());
+    if !ts_dir.join("src/main.tsx").is_file() {
+        return Err("missing compiler-generated typescript/src/main.tsx for ui::web".into());
+    }
+    if !ts_dir.join("tailwind.config.js").is_file() {
+        return Err("missing compiler-generated typescript/tailwind.config.js for ui::web".into());
     }
 
     let install = Command::new(&lock.bun_bin)
@@ -112,22 +115,40 @@ pub fn build_ui_web(lock: &RuntimeLock, runtime_root: &Path) -> Result<(), Strin
     let dist = ts_dir.join("dist");
     fs::create_dir_all(&dist).map_err(|e| format!("create dist: {e}"))?;
 
-    // Bundle JS only; CSS is published as a separate compiler-owned asset.
-    // Use a cwd-relative outfile — Bun 1.2.x mishandles absolute --outfile paths.
+    // Compile Tailwind utilities into the published theme asset.
+    let css = Command::new(&lock.bun_bin)
+        .current_dir(&ts_dir)
+        .args([
+            "x",
+            "--bun",
+            "tailwindcss",
+            "-i",
+            "./src/theme.css",
+            "-o",
+            "./dist/theme.css",
+            "--minify",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| format!("failed to compile ui::web Tailwind CSS with Silc Bun: {e}"))?;
+    if !css.status.success() {
+        return Err(format!(
+            "Silc Bun ui::web Tailwind compile failed:\n{}\n{}",
+            String::from_utf8_lossy(&css.stdout),
+            String::from_utf8_lossy(&css.stderr)
+        ));
+    }
+
+    // Bundle React SPA. Use a cwd-relative outfile — Bun 1.2.x mishandles absolute --outfile paths.
     let build = Command::new(&lock.bun_bin)
         .current_dir(&ts_dir)
         .args([
             "build",
-            "./src/main.ts",
+            "./src/main.tsx",
             "--outfile=dist/app.js",
             "--target=browser",
             "--minify",
-            "--define",
-            "__VUE_OPTIONS_API__=true",
-            "--define",
-            "__VUE_PROD_DEVTOOLS__=false",
-            "--define",
-            "__VUE_PROD_HYDRATION_MISMATCH_DETAILS__=false",
         ])
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -141,14 +162,15 @@ pub fn build_ui_web(lock: &RuntimeLock, runtime_root: &Path) -> Result<(), Strin
         ));
     }
 
-    // Always publish the compiler HTML shell and theme under dist/assets paths.
+    // Always publish the compiler HTML shell under dist/.
     fs::copy(ts_dir.join("index.html"), dist.join("index.html"))
         .map_err(|e| format!("copy ui::web index.html: {e}"))?;
-    fs::copy(ts_dir.join("src/theme.css"), dist.join("theme.css"))
-        .map_err(|e| format!("copy ui::web theme.css: {e}"))?;
 
     if !dist.join("app.js").is_file() {
         return Err("Silc ui::web bundle did not produce dist/app.js".into());
+    }
+    if !dist.join("theme.css").is_file() {
+        return Err("Silc ui::web Tailwind compile did not produce dist/theme.css".into());
     }
     Ok(())
 }
@@ -161,6 +183,9 @@ pub fn run_feedback(output: &EmitResult, lock: &RuntimeLock) -> Result<(), Strin
     // Fail before spawning any workers. Previously Bun could report READY over
     // UDS and then fail its HTTP bind, leaving the supervisor claiming success.
     ensure_http_port_available(graph.http_port)?;
+    if let Some(port) = graph.terminal_port {
+        ensure_terminal_port_available(port)?;
+    }
     let ipc_dir = output.root.join("ipc");
     let data_dir = output.root.join("data");
     fs::create_dir_all(&ipc_dir).map_err(|e| e.to_string())?;
@@ -179,6 +204,7 @@ pub fn run_feedback(output: &EmitResult, lock: &RuntimeLock) -> Result<(), Strin
         serde_json::to_string_pretty(&serde_json::json!({
             "socket": socket_path,
             "http_port": graph.http_port,
+            "terminal_port": graph.terminal_port,
             "ipc_dir": ipc_dir,
             "db": data_dir.join("feedback.db"),
         }))
@@ -226,6 +252,10 @@ pub fn run_feedback(output: &EmitResult, lock: &RuntimeLock) -> Result<(), Strin
         .env("SILC_SOCKET", &socket_path)
         .env("SILC_HTTP_PORT", graph.http_port.to_string())
         .env("SILC_HTTP_ROUTE", &graph.http_route)
+        .env(
+            "SILC_TERMINAL_PORT",
+            graph.terminal_port.unwrap_or_default().to_string(),
+        )
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()
@@ -239,6 +269,10 @@ pub fn run_feedback(output: &EmitResult, lock: &RuntimeLock) -> Result<(), Strin
         graph.http_port,
         graph.http_route
     );
+    if let Some(port) = graph.terminal_port {
+        println!("silc: ui::terminal listening at telnet://127.0.0.1:{port}");
+        println!("silc: connect with `telnet 127.0.0.1 {port}`");
+    }
     println!("silc: press Ctrl-C to stop");
 
     wait_for_ctrl_c();
@@ -268,6 +302,16 @@ fn ensure_http_port_available(port: u16) -> Result<(), String> {
     let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|error| {
         format!(
             "ui::web cannot listen on http://127.0.0.1:{port}: {error} (choose another :port or stop the existing process)"
+        )
+    })?;
+    drop(listener);
+    Ok(())
+}
+
+fn ensure_terminal_port_available(port: u16) -> Result<(), String> {
+    let listener = TcpListener::bind(("127.0.0.1", port)).map_err(|error| {
+        format!(
+            "ui::terminal cannot listen on telnet://127.0.0.1:{port}: {error} (choose another :port or stop the existing process)"
         )
     })?;
     drop(listener);

@@ -45,14 +45,15 @@ pub fn route_module(module: &Module) -> RouteDecision {
         .iter()
         .any(|t| t.name == "storage" && t.value.eq_ignore_ascii_case("SQLite"));
 
+    // Provenance cites ADR-004 runtime strength catalogs.
     let (target, provenance) = if module.kind == ModuleKind::Sink && (low_latency || sqlite_storage)
     {
         (
             Target::Go,
             if sqlite_storage {
-                "tier1: sink with storage(SQLite) requires Go".to_string()
+                "tier1: sink+SQLite → Go (durable low-latency storage)".to_string()
             } else {
-                "tier1: sink with latency <= 10ms requires Go".to_string()
+                "tier1: sink+latency≤10ms → Go (predictable low-latency systems path)".to_string()
             },
         )
     } else if module.kind == ModuleKind::Processor
@@ -60,18 +61,18 @@ pub fn route_module(module: &Module) -> RouteDecision {
     {
         (
             Target::Python,
-            "tier1: processor with data/ML/text evidence requires Python".to_string(),
+            "tier1: processor+data/ML/text → Python (scientific/ML and text scoring)".to_string(),
         )
     } else if module.kind == ModuleKind::Service {
         (
             Target::Bun,
-            "tier1: service prefers Bun for async I/O".to_string(),
+            "tier1: service → Bun (async I/O and web protocols)".to_string(),
         )
     } else if has(&["http", "html", "ws", "ui"]) {
         (
             Target::Bun,
             format!(
-                "tier2: namespace evidence [{}] selects Bun",
+                "tier2: namespaces [{}] → Bun (async I/O / UI ingress)",
                 namespaces.join(", ")
             ),
         )
@@ -79,7 +80,7 @@ pub fn route_module(module: &Module) -> RouteDecision {
         (
             Target::Python,
             format!(
-                "tier2: namespace evidence [{}] selects Python",
+                "tier2: namespaces [{}] → Python (scientific/ML and text)",
                 namespaces.join(", ")
             ),
         )
@@ -87,7 +88,7 @@ pub fn route_module(module: &Module) -> RouteDecision {
         (
             Target::Go,
             format!(
-                "tier2: namespace evidence [{}] selects Go",
+                "tier2: namespaces [{}] → Go (systems IPC and storage)",
                 namespaces.join(", ")
             ),
         )
@@ -95,10 +96,16 @@ pub fn route_module(module: &Module) -> RouteDecision {
         match module.kind {
             ModuleKind::Processor => (
                 Target::Python,
-                "fallback: processor defaults to Python".to_string(),
+                "fallback: processor → Python (domain analysis glue)".to_string(),
             ),
-            ModuleKind::Sink => (Target::Go, "fallback: sink defaults to Go".to_string()),
-            _ => (Target::Bun, "fallback: module defaults to Bun".to_string()),
+            ModuleKind::Sink => (
+                Target::Go,
+                "fallback: sink → Go (systems and storage paths)".to_string(),
+            ),
+            _ => (
+                Target::Bun,
+                "fallback: module → Bun (async I/O default)".to_string(),
+            ),
         }
     };
 

@@ -16,13 +16,20 @@ const FEEDBACK_GOMOD: &str = include_str!("../templates/go.mod");
 const UI_WEB_PACKAGE_JSON: &str = include_str!("../templates/ui_web_package.json");
 const UI_WEB_BUN_LOCK: &str = include_str!("../templates/ui_web_bun.lock");
 const UI_WEB_INDEX_HTML: &str = include_str!("../templates/ui_web_index.html");
-const UI_WEB_MAIN_TS: &str = include_str!("../templates/ui_web_main.ts");
-const UI_WEB_APP_TS: &str = include_str!("../templates/ui_web_app.ts");
+const UI_WEB_TAILWIND_CONFIG: &str = include_str!("../templates/ui_web_tailwind.config.js");
+const UI_WEB_MAIN_TSX: &str = include_str!("../templates/ui_web_main.tsx");
+const UI_WEB_APP_TSX: &str = include_str!("../templates/ui_web_app.tsx");
 const UI_WEB_THEME_CSS: &str = include_str!("../templates/ui_web_theme.css");
+const UI_WEB_UTILS_TS: &str = include_str!("../templates/ui_web_utils.ts");
+const UI_WEB_BUTTON_TSX: &str = include_str!("../templates/ui_web_button.tsx");
+const UI_WEB_INPUT_TSX: &str = include_str!("../templates/ui_web_input.tsx");
+const UI_WEB_LABEL_TSX: &str = include_str!("../templates/ui_web_label.tsx");
+const UI_WEB_TEXTAREA_TSX: &str = include_str!("../templates/ui_web_textarea.tsx");
 
-/// Compiler-pinned Vue version for ui::web (must match ui_web_package.json).
-pub const UI_WEB_VUE_VERSION: &str = "3.5.13";
-pub const UI_WEB_SUBSTRATE: &str = "vue";
+/// Compiler-pinned React version for ui::web (must match ui_web_package.json).
+pub const UI_WEB_REACT_VERSION: &str = "18.3.1";
+pub const UI_WEB_TAILWIND_VERSION: &str = "3.4.17";
+pub const UI_WEB_SUBSTRATE: &str = "react";
 
 #[derive(Debug, Clone)]
 pub struct EmitResult {
@@ -123,16 +130,25 @@ pub fn emit(
         });
         manifest["http_port"] = serde_json::json!(g.http_port);
         manifest["http_route"] = serde_json::json!(g.http_route);
+        manifest["terminal_port"] = serde_json::json!(g.terminal_port);
         manifest["sqlite_table"] = serde_json::json!(g.sqlite_table);
         manifest["ui"] = serde_json::json!({
             "profile": "web",
             "surface": g.ui_surface.as_str(),
             "substrate": UI_WEB_SUBSTRATE,
-            "vue_version": UI_WEB_VUE_VERSION,
+            "terminal_substrate": if g.terminal_port.is_some() { "bun-tcp-telnet" } else { "disabled" },
+            "react_version": UI_WEB_REACT_VERSION,
+            "tailwind_version": UI_WEB_TAILWIND_VERSION,
             "assets": [
-                "typescript/src/main.ts",
-                "typescript/src/App.ts",
+                "typescript/src/main.tsx",
+                "typescript/src/App.tsx",
                 "typescript/src/theme.css",
+                "typescript/src/lib/utils.ts",
+                "typescript/src/components/ui/button.tsx",
+                "typescript/src/components/ui/input.tsx",
+                "typescript/src/components/ui/label.tsx",
+                "typescript/src/components/ui/textarea.tsx",
+                "typescript/tailwind.config.js",
                 "typescript/index.html",
                 "typescript/package.json",
                 "typescript/bun.lock",
@@ -141,16 +157,20 @@ pub fn emit(
                 "typescript/dist/theme.css",
             ],
             "dependencies": {
-                "vue": UI_WEB_VUE_VERSION,
+                "react": UI_WEB_REACT_VERSION,
+                "react-dom": UI_WEB_REACT_VERSION,
+                "tailwindcss": UI_WEB_TAILWIND_VERSION,
+                "clsx": "2.1.1",
+                "tailwind-merge": "2.6.0",
             },
-            "provenance": "compiler-owned ui::web → Vue/Bun (ADR-003)",
+            "provenance": "compiler-owned ui::web → React/Tailwind/ShadCN/Bun (ADR-003)",
         });
         manifest["entrypoints"] = serde_json::json!({
             "bun": "typescript/worker.ts",
             "python": "python/worker.py",
             "go_source": "go/worker.go",
             "go_binary": "go/worker",
-            "ui_web_entry": "typescript/src/main.ts",
+            "ui_web_entry": "typescript/src/main.tsx",
             "supervisor_socket": SUPERVISOR_SOCKET,
         });
         manifest["engines"] = serde_json::json!({
@@ -185,14 +205,20 @@ fn emit_runnable(
     // Drop prior package members so `go build .` cannot see stale sources
     // (e.g. an older feedback_worker.go next to worker.go).
     clear_dir_sources(&root.join("go"), &["go"])?;
-    clear_dir_sources(&root.join("typescript"), &["ts"])?;
+    clear_dir_sources(&root.join("typescript"), &["ts", "tsx", "js"])?;
     clear_dir_sources(&root.join("python"), &["py"])?;
     let ts_src = root.join("typescript/src");
     let ts_dist = root.join("typescript/dist");
-    fs::create_dir_all(&ts_src).map_err(|error| format!("create {}: {error}", ts_src.display()))?;
+    if ts_src.is_dir() {
+        fs::remove_dir_all(&ts_src)
+            .map_err(|error| format!("clear {}: {error}", ts_src.display()))?;
+    }
+    fs::create_dir_all(ts_src.join("components/ui"))
+        .map_err(|error| format!("create {}: {error}", ts_src.display()))?;
+    fs::create_dir_all(ts_src.join("lib"))
+        .map_err(|error| format!("create {}: {error}", ts_src.display()))?;
     fs::create_dir_all(&ts_dist)
         .map_err(|error| format!("create {}: {error}", ts_dist.display()))?;
-    clear_dir_sources(&ts_src, &["ts", "css"])?;
     clear_dir_sources(&ts_dist, &["js", "css", "html", "map"])?;
 
     let files = [
@@ -209,20 +235,44 @@ fn emit_runnable(
             UI_WEB_BUN_LOCK.to_string(),
         ),
         (
+            root.join("typescript/tailwind.config.js"),
+            UI_WEB_TAILWIND_CONFIG.to_string(),
+        ),
+        (
             root.join("typescript/index.html"),
             UI_WEB_INDEX_HTML.to_string(),
         ),
         (
-            root.join("typescript/src/main.ts"),
-            UI_WEB_MAIN_TS.to_string(),
+            root.join("typescript/src/main.tsx"),
+            UI_WEB_MAIN_TSX.to_string(),
         ),
         (
-            root.join("typescript/src/App.ts"),
-            UI_WEB_APP_TS.to_string(),
+            root.join("typescript/src/App.tsx"),
+            UI_WEB_APP_TSX.to_string(),
         ),
         (
             root.join("typescript/src/theme.css"),
             UI_WEB_THEME_CSS.to_string(),
+        ),
+        (
+            root.join("typescript/src/lib/utils.ts"),
+            UI_WEB_UTILS_TS.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/ui/button.tsx"),
+            UI_WEB_BUTTON_TSX.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/ui/input.tsx"),
+            UI_WEB_INPUT_TSX.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/ui/label.tsx"),
+            UI_WEB_LABEL_TSX.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/ui/textarea.tsx"),
+            UI_WEB_TEXTAREA_TSX.to_string(),
         ),
         (
             root.join("python/worker.py"),
@@ -270,6 +320,10 @@ fn render_template(template: &str, graph: &ExecutableGraph, schema_id: u32) -> S
     template
         .replace("__PORT__", &graph.http_port.to_string())
         .replace("__ROUTE__", &graph.http_route)
+        .replace(
+            "__TERMINAL_PORT__",
+            &graph.terminal_port.unwrap_or_default().to_string(),
+        )
         .replace("__TABLE__", &graph.sqlite_table)
         .replace("__SCHEMA_ID__", &schema_id.to_string())
         .replace("__SOCKET_PATH__", SUPERVISOR_SOCKET)
@@ -458,7 +512,9 @@ mod tests {
         let ts = fs::read_to_string(output.join("typescript/worker.ts")).unwrap();
         let py = fs::read_to_string(output.join("python/worker.py")).unwrap();
         let go = fs::read_to_string(output.join("go/worker.go")).unwrap();
-        let app = fs::read_to_string(output.join("typescript/src/App.ts")).unwrap();
+        let app = fs::read_to_string(output.join("typescript/src/App.tsx")).unwrap();
+        let button =
+            fs::read_to_string(output.join("typescript/src/components/ui/button.tsx")).unwrap();
         let theme = fs::read_to_string(output.join("typescript/src/theme.css")).unwrap();
         let pkg = fs::read_to_string(output.join("typescript/package.json")).unwrap();
         let lock = fs::read_to_string(output.join("typescript/bun.lock")).unwrap();
@@ -475,11 +531,18 @@ mod tests {
         assert!(ts.contains("/submit"));
         assert!(ts.contains(r#"type: "INGEST""#));
         assert!(ts.contains("dist"));
-        assert!(app.contains("defineComponent"));
+        assert!(ts.contains("Bun.listen"));
+        assert!(ts.contains("SILC_TERMINAL_READY"));
+        assert!(app.contains("function App"));
         assert!(app.contains("/submit"));
+        assert!(app.contains("components/ui/button"));
+        assert!(button.contains("ShadCN-style Button"));
+        assert!(theme.contains("@tailwind"));
         assert!(theme.contains("--silc-accent"));
-        assert!(pkg.contains(UI_WEB_VUE_VERSION));
-        assert!(lock.contains(&format!("vue@{UI_WEB_VUE_VERSION}")));
+        assert!(pkg.contains(UI_WEB_REACT_VERSION));
+        assert!(pkg.contains(UI_WEB_TAILWIND_VERSION));
+        assert!(lock.contains(&format!("react@{UI_WEB_REACT_VERSION}")));
+        assert!(lock.contains(&format!("tailwindcss@{UI_WEB_TAILWIND_VERSION}")));
         assert!(lock.contains("sha512-"));
         assert!(py.contains(r#""role": "python""#));
         assert!(py.contains(r#"!= "python""#));
@@ -498,8 +561,10 @@ mod tests {
         assert!(manifest.contains("\"TextAnalyzer\""));
         assert!(manifest.contains("\"FeedbackDb\""));
         assert!(manifest.contains("\"engines\""));
-        assert!(manifest.contains("\"substrate\": \"vue\""));
+        assert!(manifest.contains("\"substrate\": \"react\""));
         assert!(manifest.contains("\"profile\": \"web\""));
+        assert!(manifest.contains("\"terminal_port\": 18023"));
+        assert!(manifest.contains("\"terminal_substrate\": \"bun-tcp-telnet\""));
         assert!(manifest.contains("ui::web"));
         fs::remove_dir_all(output).ok();
     }

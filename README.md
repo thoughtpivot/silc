@@ -240,8 +240,10 @@ A key innovation of the ThoughtPivot compiler is its ability to route Silc modul
 * **Tier 3:** a future local classifier, deferred until deterministic routing is proven.
 
 Declarative UI ops (`ui::web`, `ui::terminal`) keep HTML/CSS/frameworks out of
-Silc source. The compiler owns Vue (web) and reserves OpenTUI (terminal). See
-[ADR-003](docs/ADR-003-declarative-ui.md).
+Silc source. The compiler owns React + Tailwind + ShadCN primitives (web), a
+telnet adapter (remote terminal), and reserves OpenTUI for rich local
+terminals. See [ADR-003](docs/ADR-003-declarative-ui.md). Engine routing
+rationale is in [ADR-004](docs/ADR-004-runtime-strengths.md).
 
 ---
 
@@ -299,15 +301,23 @@ runnable build transparently provisions pinned engines into
 ```bash
 silc build main.silc          # compile only
 silc main.silc                # compile; run if program is runnable v1
-silc examples/feedback_portal.silc   # ui::web (Vue/Bun) + SQLite feedback portal
+silc examples/feedback_portal.silc   # ui::web (React/Bun) + SQLite feedback portal
 ```
 
 Runnable v1 programs use `ui::web` (or legacy `html::form` + `http::serve`),
 `text::score`, `ipc::publish`, `store::sqlite`, and `store::commit`.
-`ui::terminal` is a documented Bun/OpenTUI stub (not executable yet). Other
-examples still parse/route and emit inspectable stubs. Authors never write
-HTML, CSS, Vue, or package manifests — those are compiler-owned under
-`.runtime/`.
+`ui::terminal(:port)` adds a loopback TCP interface reachable with telnet; a
+future rich local-terminal adapter will use OpenTUI. Other examples still
+parse/route and emit inspectable stubs. Authors never write
+HTML, CSS, React, Tailwind, or package manifests — those are compiler-owned
+under `.runtime/`.
+
+The feedback portal exposes both surfaces by default:
+
+```bash
+silc examples/feedback_portal.silc
+telnet 127.0.0.1 18023
+```
 
 ```
 myapp/

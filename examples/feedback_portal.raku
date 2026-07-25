@@ -1,5 +1,5 @@
 #!/usr/bin/env silc
-# Feedback portal — ui::web (Vue/Bun), Python text score, Go SQLite (runnable Silc v1)
+# Feedback portal — ui::web (React/Bun), Python text score, Go SQLite (runnable Silc v1)
 @version("1.0")
 
 subset NonEmpty of Str where { .chars > 0 }
@@ -16,6 +16,11 @@ class WebPortal is service {
     method listen(:$port = 18080) {
         FeedbackRecord
             ==> ui::web(:port(18080), :route("/"))
+    }
+
+    method terminal(:$port = 18023) {
+        FeedbackRecord
+            ==> ui::terminal(:port(18023))
     }
 }
 
