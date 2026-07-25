@@ -4,7 +4,7 @@ Standalone Silc 0.2.0 inventory application with:
 
 - **Browse** (`/`) — live catalog with category filters
 - **Admin** (`/admin`) — create and delete inventory items
-- **Assistant** (`/assistant`) — silclm chat grounded on `ui::chat(:context($.items))`
+- **Assistant** (`/assistant`) — silclm chat grounded on `ui::chat(:context($.items))` with an inventory-assistant `:persona`
 
 ## Authored files
 
@@ -31,5 +31,6 @@ silc main.silc
 - API: `http://127.0.0.1:18096/api/inventory_items`
 
 The assistant receives a bounded JSON snapshot of the current inventory as
-application context. Ask questions like “which Electronics items are in stock?”
-or “what is below reorder level?”.
+application context, plus a `:persona` telling it that it is the Inventory
+Assistant built on silclm. Ask questions like “which Electronics items are in
+stock?”, “what is below reorder level?”, or “who are you?”.

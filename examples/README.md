@@ -27,7 +27,7 @@ examples/<appName>/
 1. Author only `.silc` (and project docs). Never patch `.runtime/`.
 2. Every UI app declares **both** `ui::web` and `ui::terminal`.
 3. Prefer the default model: call `llm::complete()` with no `:model` (resolves to **silclm**).
-4. Chat that must reason over live data uses `ui::chat(:context($.items), …)`.
+4. Chat that must reason over live data uses `ui::chat(:context($.items), …)`; give the assistant an identity with `:persona("You are …, built on silclm.")`.
 5. Rebuild with the current `silc` after compiler upgrades — generated workers refresh automatically.
 6. Future training corpora will come from these apps; they are not a dataset yet.
 

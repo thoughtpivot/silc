@@ -415,6 +415,11 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
                 kind: PropKind::Expr,
                 required: false,
             },
+            PropSpec {
+                name: "persona",
+                kind: PropKind::Expr,
+                required: false,
+            },
         ],
         slots: &[],
         children: ChildPolicy::None,

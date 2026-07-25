@@ -147,6 +147,9 @@ pub enum ControlFrame {
         /// Optional JSON / text application context for grounded llm::complete.
         #[serde(default)]
         context: String,
+        /// Optional assistant identity/instructions for llm::complete.
+        #[serde(default)]
+        persona: String,
     },
     Response {
         request_id: String,
@@ -490,12 +493,14 @@ mod tests {
                 text,
                 session_id,
                 context,
+                persona,
             } => {
                 assert_eq!(request_id, "r1");
                 assert_eq!(author, "");
                 assert_eq!(text, "");
                 assert_eq!(session_id, "");
                 assert_eq!(context, "");
+                assert_eq!(persona, "");
             }
             other => panic!("expected Ingest, got {other:?}"),
         }
@@ -509,6 +514,7 @@ mod tests {
             text: "how many widgets?".into(),
             session_id: "s1".into(),
             context: r#"[{"name":"widget","quantity":3}]"#.into(),
+            persona: "You are the Inventory Assistant, built on silclm.".into(),
         };
         let mut buf = Vec::new();
         write_frame(&mut buf, &frame).unwrap();

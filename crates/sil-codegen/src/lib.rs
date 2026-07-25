@@ -908,6 +908,7 @@ class ChatPage is component {
                 :value($.prompt),
                 :session($.active_session),
                 :context($.prompt),
+                :persona("You are the test assistant, built on silclm."),
                 :on(send(on_send))
             )
         )
@@ -1048,6 +1049,12 @@ class FeedbackApi is service {
         assert!(app.contains("function FeedbackPage"));
         assert!(app.contains("function App"));
         assert!(app.contains("AppBar"));
+        let nav_item =
+            fs::read_to_string(output.join("typescript/src/components/ui/nav-item.tsx")).unwrap();
+        assert!(
+            nav_item.contains("onClick") && nav_item.contains("onClick={onClick}"),
+            "NavItem must accept and wire the onClick prop so side-panel routing works"
+        );
         assert!(app.contains("/submit"));
         assert!(app.contains("setAuthor"));
         assert!(
@@ -1164,8 +1171,20 @@ class FeedbackApi is service {
             "silclm worker must ground prompts on context and strip it before persist"
         );
         assert!(
+            py.contains("SILCLM_IDENTITY") && py.contains("record.pop(\"persona\""),
+            "silclm worker must layer persona over the silclm identity and strip it before persist"
+        );
+        assert!(
+            py.contains("context_is_empty") && py.contains("NO records"),
+            "silclm worker must tell the model when the application context is empty"
+        );
+        assert!(
             app.contains("context: prompt") || app.contains("context:"),
             "chat :context must be included in /complete body"
+        );
+        assert!(
+            app.contains("persona: \"You are the test assistant, built on silclm.\""),
+            "chat :persona must be included in /complete body"
         );
         let ts = fs::read_to_string(output.join("typescript/worker.ts")).unwrap();
         assert!(ts.contains("/complete"));
@@ -1178,6 +1197,10 @@ class FeedbackApi is service {
         assert!(
             ts.contains("normalizeContext") && ts.contains("MAX_CONTEXT_CHARS"),
             "worker must bound chat context before INGEST"
+        );
+        assert!(
+            ts.contains("normalizePersona") && ts.contains("MAX_PERSONA_CHARS"),
+            "worker must bound chat persona before INGEST"
         );
         assert!(ts.contains("INGEST_TIMEOUT_MS") || ts.contains("180_000"));
         assert!(

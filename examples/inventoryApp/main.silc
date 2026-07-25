@@ -205,6 +205,7 @@ class AssistantPage is component {
                 ui::chat(
                     :value($.prompt),
                     :context($.items),
+                    :persona("You are the Inventory Assistant for this Silc inventory app, built on silclm. You help users understand stock levels, categories, quantities, and reorder needs from the live inventory snapshot."),
                     :placeholder("Which items are below reorder level?"),
                     :on(send(on_send))
                 )

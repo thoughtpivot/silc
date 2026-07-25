@@ -150,6 +150,7 @@ and other non-registry ops. Mixing stub-only ops into a runnable graph is a
 - Routes: `/` browse, `/admin` CRUD, `/assistant` grounded silclm chat.
 - Resource table: `inventory_items` via `Inventory` (`list` / `create` / `update` / `delete`).
 - Assistant chat uses `ui::chat(:context($.items))` so silclm sees a live inventory snapshot.
+- The chat also sets `:persona(...)` so the assistant identifies as the Inventory Assistant built on silclm; personas ride the ingest frame and are never persisted into chat history.
 - Default model: `llm::complete()` with no `:model` (silclm).
 - Ports: web `18096`, terminal `18097`.
 - Never hand-edit `.runtime/` or invent Ollama/OpenAI paths.

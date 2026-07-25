@@ -82,14 +82,24 @@ function connectSupervisor(): Promise<void> {
 const INGEST_TIMEOUT_MS = 180_000;
 // Keep application context well under DEFAULT_PAYLOAD_CAPACITY (16 KiB).
 const MAX_CONTEXT_CHARS = 8_192;
+// Personas are short identity/instruction blurbs, not data dumps.
+const MAX_PERSONA_CHARS = 2_048;
 
-function normalizeContext(raw: unknown): string {
+function boundedText(raw: unknown, limit: number): string {
   if (raw === undefined || raw === null || raw === "") return "";
   let text = typeof raw === "string" ? raw : JSON.stringify(raw);
-  if (text.length > MAX_CONTEXT_CHARS) {
-    text = text.slice(0, MAX_CONTEXT_CHARS) + "…[truncated]";
+  if (text.length > limit) {
+    text = text.slice(0, limit) + "…[truncated]";
   }
   return text;
+}
+
+function normalizeContext(raw: unknown): string {
+  return boundedText(raw, MAX_CONTEXT_CHARS);
+}
+
+function normalizePersona(raw: unknown): string {
+  return boundedText(raw, MAX_PERSONA_CHARS);
 }
 
 function ingest(payload: Record<string, unknown>, requestId: string): Promise<any> {
@@ -215,6 +225,7 @@ async function handleAction(req: Request, pathname: string): Promise<Response | 
     const requestId = crypto.randomUUID();
     const prompt = body.prompt || body.text || "";
     const context = normalizeContext(body.context);
+    const persona = normalizePersona(body.persona);
     const response = await ingest(
       {
         author: "",
@@ -224,6 +235,7 @@ async function handleAction(req: Request, pathname: string): Promise<Response | 
         model: body.model || "",
         session_id: body.session_id || "",
         context,
+        persona,
       },
       requestId
     );

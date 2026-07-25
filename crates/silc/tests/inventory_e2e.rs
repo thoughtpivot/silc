@@ -68,11 +68,20 @@ fn inventory_app_builds_with_chat_context() {
         app.contains("context: items"),
         "assistant chat must send live inventory as context"
     );
+    assert!(
+        app.contains("persona: \"You are the Inventory Assistant"),
+        "assistant chat must declare its inventory persona"
+    );
     assert!(app.contains("/admin") && app.contains("/assistant"));
     let worker = std::fs::read_to_string(root.join("typescript/worker.ts")).unwrap();
     assert!(worker.contains("normalizeContext") && worker.contains("inventory_items"));
+    assert!(worker.contains("normalizePersona"));
     let py = std::fs::read_to_string(root.join("python/worker.py")).unwrap();
     assert!(py.contains("compose_llm_prompt") && py.contains("APPLICATION CONTEXT"));
+    assert!(
+        py.contains("SILCLM_IDENTITY") && py.contains("ASSISTANT ROLE"),
+        "silclm worker must compose persona over the fixed silclm identity"
+    );
     let manifest = std::fs::read_to_string(root.join("manifest.json")).unwrap();
     assert!(manifest.contains("silclm"));
     assert!(manifest.contains("inventory_items"));

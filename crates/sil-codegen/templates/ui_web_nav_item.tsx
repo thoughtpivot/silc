@@ -5,18 +5,21 @@ import { cn } from "../../lib/utils";
 export function NavItem({
   label,
   active = false,
+  onClick,
   className,
 }: {
   label: string;
   active?: boolean;
+  onClick?: () => void;
   className?: string;
 }) {
   return (
-    <div
-      role="link"
+    <button
+      type="button"
       aria-current={active ? "page" : undefined}
+      onClick={onClick}
       className={cn(
-        "rounded-lg px-3 py-2 text-sm font-medium transition",
+        "w-full cursor-pointer rounded-lg px-3 py-2 text-left text-sm font-medium transition",
         active
           ? "bg-primary/20 text-foreground"
           : "text-muted-foreground hover:bg-background/60 hover:text-foreground",
@@ -24,6 +27,6 @@ export function NavItem({
       )}
     >
       {label}
-    </div>
+    </button>
   );
 }
