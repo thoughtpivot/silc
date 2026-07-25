@@ -98,7 +98,7 @@ in app source. There is no separate component-source stdlib or resolver.
 
 ### Component state and events
 
-```silc
+```raku
 class HomePage is component {
     has state Str $.author = "";
     has state Str $.text = "";
@@ -120,7 +120,7 @@ class HomePage is component {
 
 ### App routes and dual-surface serve
 
-```silc
+```raku
 class MyApp is app {
     route "/" => HomePage;
 
@@ -133,7 +133,7 @@ class MyApp is app {
 
 ### Resources, collections, and navigation
 
-```silc
+```raku
 class Products is resource {
     has Str $.table = "products";
     query list() -> [Product] {
