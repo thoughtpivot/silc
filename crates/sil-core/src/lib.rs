@@ -36,6 +36,7 @@ pub use module::{Method, Module, ModuleKind, Param};
 pub use operation::{
     classify_program, infer_graph, is_executable_op, ApiRoute, ExecutableGraph, ExecutionMode,
     ProcessorOp, UiCapabilities, DEFAULT_API_PORT, DEFAULT_TERMINAL_PORT, DEFAULT_WEB_PORT,
+    EXECUTABLE_OPS,
 };
 pub use pipeline::{Pipeline, PipelineStep};
 pub use program::Program;
@@ -43,8 +44,9 @@ pub use resource::{ActionDef, Resource, ResourceKind, ResourceMethod};
 pub use target::Target;
 pub use types::{Span, TypeExpr};
 pub use ui::{
-    catalog_component_names, lookup_component, validate_builtin_node, validate_template,
-    ComponentSpec, PropKind, PropSpec, Surface, UI_COMPONENT_CATALOG,
+    catalog_component_names, format_component_catalog_line, lookup_component,
+    validate_builtin_node, validate_template, ChildPolicy, ComponentSpec, EventSpec, PropKind,
+    PropSpec, SlotSpec, Surface, UI_COMPONENT_CATALOG,
 };
 
 #[cfg(test)]

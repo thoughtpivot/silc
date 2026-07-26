@@ -8,12 +8,21 @@ the same shape `silc init` creates for end users.
 ```text
 examples/<appName>/
   main.silc      # authored program (only .silc source that matters)
-  AGENTS.md      # agent guidance (snapshot of the compiler template + optional notes)
+  AGENTS.md      # compiler AGENTS template + app-specific notes
   README.md      # how to build/run this app
   .gitignore     # ignores .runtime/ and .silc/
   .runtime/      # compiler-owned (never commit, never hand-edit)
   .silc/         # runtime lock (never commit, never hand-edit)
 ```
+
+## AGENTS.md sync rule
+
+The shared block between `<!-- BEGIN SILC_AGENTS_TEMPLATE -->` and
+`<!-- END SILC_AGENTS_TEMPLATE -->` **must** match
+[`crates/silc/templates/AGENTS.md`](../crates/silc/templates/AGENTS.md)
+byte-for-byte. App-specific notes go **after** the end marker only.
+
+Tracked examples today: `chatApp` and `inventoryApp` only.
 
 ## Current apps
 
@@ -25,7 +34,7 @@ examples/<appName>/
 ## Conventions
 
 1. Author only `.silc` (and project docs). Never patch `.runtime/`.
-2. Every UI app declares **both** `ui::web` and `ui::terminal`.
+2. Every UI app declares **both** `ui::web` and `ui::terminal` (OpenTUI primary; TCP telnet fallback).
 3. Prefer the default model: call `llm::complete()` with no `:model` (resolves to **silclm**).
 4. Chat that must reason over live data uses `ui::chat(:context($.items), …)`; give the assistant an identity with `:persona("You are …, built on silclm.")`.
 5. Rebuild with the current `silc` after compiler upgrades — generated workers refresh automatically.
@@ -38,5 +47,5 @@ cargo install --path crates/silc --force   # once, from the compiler repo
 
 cd examples/chatApp
 silc build main.silc
-silc main.silc
+silc main.silc   # OpenTUI attaches in a real TTY; web at the app port
 ```

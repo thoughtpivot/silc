@@ -57,11 +57,31 @@ to `silclm` (including a one-time cache migration from
 - Dependency: compiler-pinned `llama-cpp-python`
 - Worker count: one Python process per app, so weights load once
 - Context: 8,192 tokens by default (`SILC_LLM_N_CTX` overrides); response cap: 256 tokens
-- UI: compiler-owned React/Bun prompt form
-- Optional grounding: `ui::chat(:context($.items))` sends a bounded JSON/text
-  snapshot with `/complete`; silclm is instructed to treat it as untrusted
-  reference data. Context is stripped before chat-history persistence.
-- Persistence: compiler-owned Go/SQLite `chat_turns` sink
+- UI: compiler-owned dual-surface `ui::chat` (React/Bun web + OpenTUI terminal)
+- Persistence: compiler-owned Go/SQLite chat sink (`ipc::publish ==> store::sqlite ==> store::commit`)
+
+### `ui::chat` session / context / persona
+
+| Prop | Role | Persistence |
+| --- | --- | --- |
+| `:session(expr)` | Selects which conversation history the chat UI loads/appends | Session identity and turns persist via the chat resource/sink |
+| `:context(expr)` | Bounded live grounding snapshot (e.g. inventory rows) sent with `/complete` | **Not** persisted into chat history; treated as untrusted reference data |
+| `:persona(Str)` | Assistant identity/system framing (e.g. “built on silclm”) | **Not** persisted into chat history; rides the ingest frame only |
+
+Example:
+
+```silc
+ui::chat(
+    :value($.prompt),
+    :session($.active_session),
+    :context($.items),
+    :persona("You are the inventory assistant, built on silclm."),
+    :on(send(on_send))
+)
+```
+
+Prefer `llm::complete()` with no `:model` (or `:model("silclm")`). Do not invent
+Ollama, OpenAI, or ad-hoc GGUF paths in `.silc`.
 
 `silc build` creates an isolated Python environment under the generated
 runtime, installs the pinned binding, downloads/verifies the model, and builds

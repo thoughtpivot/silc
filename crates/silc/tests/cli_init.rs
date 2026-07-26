@@ -42,9 +42,23 @@ fn init_scaffolds_runnable_dual_surface_app() {
     assert!(!main.contains("PortalKind"));
 
     let agents = fs::read_to_string(root.join("AGENTS.md")).unwrap();
+    let template = include_str!("../templates/AGENTS.md");
+    assert_eq!(
+        agents, template,
+        "silc init must copy the complete AGENTS.md API contract template"
+    );
+    assert!(agents.contains("<!-- BEGIN SILC_AGENTS_TEMPLATE -->"));
+    assert!(agents.contains("<!-- END SILC_AGENTS_TEMPLATE -->"));
     assert!(agents.contains("is component"));
-    assert!(agents.contains("is resource") || agents.contains("resource"));
+    assert!(agents.contains("is resource"));
+    assert!(agents.contains("is app"));
     assert!(agents.contains("ui::web") && agents.contains("ui::terminal"));
+    assert!(agents.contains("Complete UI primitive catalog (38)"));
+    assert!(agents.contains("`ui::page`") && agents.contains("`ui::button`"));
+    assert!(agents.contains("`ui::chat`") && agents.contains("`ui::table`"));
+    assert!(agents.contains("resource::list") && agents.contains("llm::complete"));
+    assert!(agents.contains("primary") && agents.contains("destructive"));
+    assert!(agents.contains("OpenTUI"));
     assert!(
         agents.contains("Do not create a `stdlib/`")
             || agents.to_lowercase().contains("no separate"),

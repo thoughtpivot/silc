@@ -896,10 +896,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
         ],
         slots: &[],
         children: ChildPolicy::Any,
-        events: &[
-            EventSpec { name: "confirm" },
-            EventSpec { name: "cancel" },
-        ],
+        events: &[EventSpec { name: "confirm" }, EventSpec { name: "cancel" }],
         surfaces: BOTH,
     },
     ComponentSpec {
@@ -936,15 +933,68 @@ pub fn catalog_component_names() -> Vec<&'static str> {
     UI_COMPONENT_CATALOG.iter().map(|c| c.name).collect()
 }
 
+/// Canonical one-line API reference for docs / AGENTS.md (kept in sync by tests).
+pub fn format_component_catalog_line(spec: &ComponentSpec) -> String {
+    let props = if spec.props.is_empty() {
+        "none".to_string()
+    } else {
+        spec.props
+            .iter()
+            .map(|prop| {
+                let mut item = if prop.required {
+                    format!("`{}` (required)", prop.name)
+                } else {
+                    format!("`{}?`", prop.name)
+                };
+                if matches!(prop.kind, PropKind::Flag) {
+                    item.push_str(" (flag)");
+                }
+                item
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let events = if spec.events.is_empty() {
+        "none".to_string()
+    } else {
+        spec.events
+            .iter()
+            .map(|event| format!("`{}`", event.name))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let slots = if spec.slots.is_empty() {
+        "none".to_string()
+    } else {
+        spec.slots
+            .iter()
+            .map(|slot| format!("`{}`→`{}`", slot.name, slot.component))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let children = match spec.children {
+        ChildPolicy::None => "none".to_string(),
+        ChildPolicy::Any => "any".to_string(),
+        ChildPolicy::AnyOf(names) => format!(
+            "anyOf({})",
+            names
+                .iter()
+                .map(|name| format!("`{name}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+    };
+    format!(
+        "- `ui::{}` — props: {}; events: {}; slots: {}; children: {}; surfaces: web+terminal",
+        spec.name, props, events, slots, children
+    )
+}
+
 const VARIANT_VALUES: &[&str] = &["primary", "secondary", "destructive", "ghost"];
 const TONE_VALUES: &[&str] = &["default", "muted", "info", "success", "warning", "danger"];
 const SIZE_VALUES: &[&str] = &["sm", "md", "lg"];
 
-fn validate_closed_ident_prop(
-    node: &UiNode,
-    prop: &str,
-    allowed: &[&str],
-) -> Result<(), String> {
+fn validate_closed_ident_prop(node: &UiNode, prop: &str, allowed: &[&str]) -> Result<(), String> {
     let Some(expr) = node.prop(prop) else {
         return Ok(());
     };
@@ -1116,6 +1166,21 @@ mod tests {
         assert!(validate_builtin_node(&bad_size)
             .unwrap_err()
             .contains("invalid `:size(xl)`"));
+    }
+
+    #[test]
+    fn catalog_doc_lines_are_stable() {
+        let button = lookup_component("button").unwrap();
+        assert_eq!(
+            format_component_catalog_line(button),
+            "- `ui::button` — props: `label` (required), `variant?`, `size?`, `submit?` (flag), `active?`, `disabled?` (flag); events: `click`; slots: none; children: none; surfaces: web+terminal"
+        );
+        assert_eq!(UI_COMPONENT_CATALOG.len(), 38);
+        for spec in UI_COMPONENT_CATALOG {
+            let line = format_component_catalog_line(spec);
+            assert!(line.starts_with(&format!("- `ui::{}` — ", spec.name)));
+            assert!(line.contains("surfaces: web+terminal"));
+        }
     }
 
     #[test]

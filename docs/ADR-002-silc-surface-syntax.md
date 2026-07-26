@@ -50,6 +50,77 @@ constraints, and operation namespaces.
 Silc does not adopt full Raku OO, junctions, hyperoperators, topicalizers,
 runtime `EVAL`, or multiple synonymous forms for the same intent.
 
+## Component / resource / app surface (0.2.0)
+
+### Components
+
+```silc
+class ItemCard is component {
+    has Item $.item;                 # prop
+    has state Str $.draft = "";      # local state
+    slot actions;                    # named slot (optional)
+    emit remove(Item);               # emitted event
+    query $.items = Inventory.list(); # resource query binding
+
+    method render() {
+        ui::card(
+            ui::heading(:text($.item.name)),
+            ui::button(:label("Delete"), :on(click(on_remove)))
+        )
+    }
+
+    method on_remove() { emit remove($.item); }
+}
+```
+
+Template / handler control flow:
+
+- Assignment: `$.field = expr;`
+- Conditionals: `when expr { … } else { … }`
+- Iteration: `for expr -> $item { … }`
+- Navigation: `navigate("/path")`
+- Async: `await expr`
+- Event wiring: `:on(click(handler))`, `:on(submit(handler))`,
+  `:on(remove => on_delete)` (forward author events)
+
+### Resources
+
+```silc
+class Inventory is resource {
+    has Str $.table = "inventory_items";
+    query list() -> [InventoryItem] {
+        InventoryItem ==> resource::list(:table(inventory_items))
+    }
+    mutation create(InventoryItem $item) {
+        $item ==> resource::create(:table(inventory_items))
+    }
+}
+```
+
+CRUD ops: `resource::list|get|create|update|delete`. Derived HTTP:
+`GET/POST /api/{table}`, `GET/PUT/DELETE /api/{table}/:id`.
+
+### Apps
+
+```silc
+class MyApp is app {
+    route "/" => HomePage;
+    route "/admin" => AdminPage;
+
+    method serve() {
+        ui::web(:root(MyApp), :port(18080), :route("/"))
+            ==> ui::terminal(:port(18023))
+    }
+}
+```
+
+UI apps require both surfaces with distinct ports. Optional backend modules use
+`is service` / `is processor` / `is sink` with `==>` pipelines.
+
+The exhaustive agent-facing contract (types, ops, 38-primitive UI catalog) lives
+in [`crates/silc/templates/AGENTS.md`](../crates/silc/templates/AGENTS.md) and is
+mirrored in the root [README](../README.md).
+
 ## Consequences
 
 - Raku highlighters provide a useful editing baseline.

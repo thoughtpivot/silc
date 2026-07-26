@@ -19,6 +19,13 @@ Surface syntax is Raku-inspired
 ([ADR-002](ADR-002-silc-surface-syntax.md)): `.silc` is primary and conforming
 `.raku` files are accepted. `.sil` is not supported.
 
+The exhaustive 0.2.0 authoring and UI API contract (language constructs,
+executable operations, and the 38-primitive dual-surface catalog) lives in
+[`crates/silc/templates/AGENTS.md`](../crates/silc/templates/AGENTS.md) and is
+mirrored in the root [README](../README.md). Compiler sources
+(`UI_COMPONENT_CATALOG`, `EXECUTABLE_OPS`) remain authoritative; documentation
+conformance tests fail on drift.
+
 ## The subject boundary
 
 A Silc subject is a durable semantic concept that has shared types, owns
@@ -166,11 +173,12 @@ components and its `serve()` method declares both `ui::web(:root(App), …)` and
 Codegen consumes one component graph and emits equal web and terminal adapters.
 Web lowers to compiler-owned React/Tailwind templates. Terminal lowers to a
 compiler-owned **OpenTUI** app that renders the same routes, state, events, and
-primitives; a TCP telnet CLI remains a remote/headless fallback. Every catalog
-primitive declares both surfaces. There is no separate component-source standard
-library or resolver; out-of-box capability lives in the compiler catalog and
-templates, while author components stay in application source. See
-[ADR-003-declarative-ui.md](ADR-003-declarative-ui.md).
+primitives — OpenTUI is the primary terminal surface when a TTY is available.
+A TCP telnet CLI remains a remote/headless fallback only; it is not the main
+terminal UI. Every catalog primitive declares both surfaces. There is no
+separate component-source standard library or resolver; out-of-box capability
+lives in the compiler catalog and templates, while author components stay in
+application source. See [ADR-003-declarative-ui.md](ADR-003-declarative-ui.md).
 
 ### IPC
 
