@@ -1,10 +1,16 @@
 # ADR-001: Bun Runtime and Silc-Owned Shared-Memory IPC
 
-- **Status:** Accepted (v1 partial implementation)
+- **Status:** Accepted (v1)
 - **Date:** 2026-07-25
-- **Implemented:** Silc-owned Bun + CPython + Go cache (`~/.silc/runtimes/`),
-  file-backed mmap slots, framed UDS control plane, feedback-portal supervisor.
-  See [SILC-IPC-ABI-v1.md](SILC-IPC-ABI-v1.md).
+- **Updated:** 2026-07-27
+- **Related:** [SILC-IPC-ABI-v1.md](SILC-IPC-ABI-v1.md),
+  [ADR-003](ADR-003-declarative-ui.md),
+  [ADR-004](ADR-004-runtime-strengths.md),
+  [ADR-009](ADR-009-compiler-synthesized-runtime.md),
+  [ADR-010](ADR-010-tensor-minilm-pipeline.md),
+  [ARCHITECTURE.md](ARCHITECTURE.md)
+- **Canonical:** [`crates/sil-ipc`](../crates/sil-ipc/src/lib.rs),
+  [SILC-IPC-ABI-v1.md](SILC-IPC-ABI-v1.md)
 
 ## Context
 
@@ -35,11 +41,12 @@ Silc's generated, local-worker model. Node compatibility is not a requirement
 for the primary runtime.
 
 Bun also executes compiler-owned UI substrates: React + Tailwind +
-ShadCN-style primitives for `ui::web`, OpenTUI for the primary local
-`ui::terminal` surface, and a telnet-compatible TCP adapter as a remote /
+ShadCN-style primitives for the web surface, OpenTUI for the primary local
+terminal surface, and a telnet-compatible TCP adapter as a remote /
 headless fallback. Those substrates are implementation details under
-`.runtime/`; Silc source never names them. See
-[ADR-003-declarative-ui.md](ADR-003-declarative-ui.md).
+`.runtime/`; Silc source never names them. Dual-surface serving is synthesized
+from `app` routes ([ADR-009](ADR-009-compiler-synthesized-runtime.md)); see
+also [ADR-003](ADR-003-declarative-ui.md).
 
 Engine assignment rationale (why Bun vs CPython vs Go) lives in
 [ADR-004-runtime-strengths.md](ADR-004-runtime-strengths.md).
@@ -53,7 +60,15 @@ Bun ingress is copied once into the supervisor-owned slot. ABI v1 carries a
 schema-tagged JSON payload; deterministic typed contract views are the next ABI
 layer rather than a claim of the current implementation.
 
-The ABI will define, at minimum:
+**Default pool (general apps):** 512 slots × 16 KiB payload capacity
+(`DEFAULT_SLOT_COUNT` / `DEFAULT_PAYLOAD_CAPACITY` in `sil-ipc`).
+
+**Pipeline-only override:** tensor / scrape ingestion pipelines use the same
+slot count with **64 KiB** payload capacity so larger page bodies fit without
+changing ABI/protocol versioning. See
+[ADR-010](ADR-010-tensor-minilm-pipeline.md).
+
+The ABI defines, at minimum:
 
 - magic bytes, ABI version, byte order, and alignment;
 - contract/schema identifier;
@@ -61,9 +76,10 @@ The ABI will define, at minimum:
 - field offsets and typed data regions;
 - ownership, lifetime, and producer/consumer state.
 
-Payloads stay in shared memory between processor and sink. JSON parsing still
-occurs within the mapped buffer in v1; the transport does not send payload
-bytes through an HTTP or UDS message between those workers.
+Payloads stay in shared memory between processor and the
+compiler-synthesized persistence stage ([ADR-009](ADR-009-compiler-synthesized-runtime.md)).
+JSON parsing still occurs within the mapped buffer in v1; the transport does
+not send payload bytes through an HTTP or UDS message between those workers.
 
 ### Control plane
 
@@ -114,7 +130,7 @@ workers.
 ## Non-goals for ABI v1
 
 - Typed zero-copy contract field views
-- General execution lowering beyond the feedback operation set
+- General execution lowering beyond the registered operation set
 - Per-worker crash recovery (v1 restarts the runtime)
 - Linux-specific `shm_open` optimization
 - Self-contained deployment bundles

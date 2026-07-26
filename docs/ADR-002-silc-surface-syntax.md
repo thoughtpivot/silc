@@ -2,7 +2,15 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-25
-- **Updated:** 2026-07-26
+- **Updated:** 2026-07-27
+- **Related:** [ADR-007](ADR-007-pipeline-feeds.md),
+  [ADR-009](ADR-009-compiler-synthesized-runtime.md),
+  [intent-vs-subjects.md](intent-vs-subjects.md),
+  [subject-first-decision.md](subject-first-decision.md),
+  [ARCHITECTURE.md](ARCHITECTURE.md)
+- **Superseded by (partial):** [ADR-009](ADR-009-compiler-synthesized-runtime.md)
+  for author `serve()` / `sink` / IPC-store resource pipeline examples from
+  0.2.0–0.3.0.
 
 ## Context
 
@@ -24,32 +32,48 @@ implementing the Raku language or Rakudo runtime.
 
 ### Surface mapping
 
-| Surface form | Silc subject |
+| Surface form | Compiler concept (internal) |
 | --- | --- |
-| `subset` / `where`, `class` / `has` | Contract |
-| `class … is service|processor|sink` | Module |
-| `class … is component` | Component (props, state, slots, emit, render) |
-| `class … is resource` | Resource (query / mutation) |
-| `class … is app` | App (routes + serve) |
+| `subset` / `where`, `contract` / `has` | Contract |
+| `service …` / `processor …` / `task …` | Module |
+| `component …` | Component (props, state, slots, emit, render) |
+| `resource … for …` | Resource (capability query / mutation) |
+| `app …` | App (routes; dual-surface serving synthesized) |
 | traits, units, colon-pair adverbials | Constraint |
 | `==>` feeds | Pipeline (see [ADR-007](ADR-007-pipeline-feeds.md)) |
-| `ui::…` / author components in `render()` | UiTemplate / UiNode |
+| `ui::…` catalog nodes in `render()` | UiTemplate / UiNode (template vocabulary) |
 | inferred Go / Python / Bun assignment | Target |
 
-`is view` was removed in 0.2.0.
+### Direct declarations (policy)
+
+`is view` was removed in 0.2.0. Legacy `class … is …` declarators were removed
+in 0.3.0 in favor of direct declaration keywords (`contract`, `component`,
+`resource`, `app`, `service`, `processor`, `task`). That product choice is an
+**owner override** of the July 2026 familiarity benchmark no-go; measured
+evidence remains in
+[subject-first-decision.md](subject-first-decision.md) (historical appendix).
+
+From 0.4.0, author-facing docs prefer **direct declarations** /
+**declaration-based surface**. The word *subject* names the compiler-internal
+ownership model — see [intent-vs-subjects.md](intent-vs-subjects.md).
+
+Author `sink`, `method serve()`, and IPC/store/resource pipelines were removed
+in 0.4.0 — see [ADR-009](ADR-009-compiler-synthesized-runtime.md).
 
 `@domain` is not part of the grammar. Routing derives from module kinds, hard
-constraints, and operation namespaces.
+constraints, and operation namespaces. Source must declare exact
+`@version("0.4.0")` matching the compiler package version.
 
 ## Selected Raku ideas (retained)
 
 Silc keeps these compact, model-friendly forms:
 
 - `subset` + closed `where` predicates for semantic types
-- `class` + `has` for schemas
-- `is` traits for module kinds and constraints
+- `contract` + `has` for schemas
+- `is` traits for module constraints such as `storage(SQLite)` (compiler use;
+  authors do not declare sinks)
 - `method` signatures with unit literals
-- colon-pair options such as `:batch(64)` and `:prefer<CUDA>`
+- colon-pair options such as `:batch(64)` and `:prefer(CPU)`
 - `$name` / `$.field` sigils where they distinguish bindings
 - `==>` for dataflow (Silc Pipeline IR — not Rakudo call-threading)
 - `when` / `for` in UI templates
@@ -82,12 +106,12 @@ v1 (base must resolve to `Str`):
 Predicates are enforced at compile time for known string literals and at
 resource/API ingress for subset-typed `Str` fields.
 
-## Component / resource / app surface (0.2.0)
+## Component / resource / app surface (0.4.0)
 
 ### Components
 
 ```silc
-class ItemCard is component {
+component ItemCard {
     has Item $.item;                 # prop
     has state Str $.draft = "";      # local state
     slot actions;                    # named slot (optional)
@@ -118,36 +142,35 @@ Template / handler control flow:
 ### Resources
 
 ```silc
-class Inventory is resource {
-    has Str $.table = "inventory_items";
-    query list() -> [InventoryItem] {
-        InventoryItem ==> resource::list(:table(inventory_items))
-    }
-    mutation create(InventoryItem $item) {
-        $item ==> resource::create(:table(inventory_items))
-    }
+resource InventoryItems for InventoryItem {
+    query list;
+    mutation create;
 }
 ```
 
-CRUD ops: `resource::list|get|create|update|delete`. Derived HTTP:
-`GET/POST /api/{table}`, `GET/PUT/DELETE /api/{table}/:id`.
+Capability declarations expand to conventional CRUD signatures. Derived HTTP:
+`GET/POST /api/{table}`, `GET/PUT/DELETE /api/{table}/:id` (table from the
+resource name).
 
 ### Apps
 
 ```silc
-class MyApp is app {
+app MyApp {
     route "/" => HomePage;
     route "/admin" => AdminPage;
-
-    method serve() {
-        ui::web(:root(MyApp), :port(18080), :route("/"))
-            ==> ui::terminal(:port(18023))
-    }
 }
 ```
 
-UI apps require both surfaces with distinct ports. Optional backend modules use
-`is service` / `is processor` / `is sink` with `==>` pipelines.
+UI apps synthesize both web and terminal surfaces ([ADR-009](ADR-009-compiler-synthesized-runtime.md)).
+Override ports with `SILC_HTTP_PORT` / `SILC_TERMINAL_PORT`. Optional workflow
+modules use `service` / `processor` / `task` with `==>` pipelines; persistence
+is synthesized for processor programs.
+
+### Historical (0.3.0)
+
+Pre-0.4.0 programs authored `method serve() { ui::web … ==> ui::terminal … }`,
+`sink` modules, and `resource::*` / `ipc::*` / `store::*` pipelines. Those
+forms are rejected by the 0.4.0 parser; see ADR-009.
 
 The exhaustive agent-facing contract (types, ops, 38-primitive UI catalog) lives
 in [`crates/silc/templates/AGENTS.md`](../crates/silc/templates/AGENTS.md) and is
@@ -163,3 +186,5 @@ Pipeline feed semantics: [ADR-007](ADR-007-pipeline-feeds.md).
 - The lexer/parser stay deliberately smaller than Rakudo.
 - A syntactically valid Raku program is almost always outside the Silc grammar.
 - Diagnostics must say when a Raku-looking construct is unsupported.
+- Direct declarations are the product surface despite the historical benchmark
+  no-go; model training should use the preserved evidence appendix.

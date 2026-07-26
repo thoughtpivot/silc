@@ -2,8 +2,14 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-25
+- **Updated:** 2026-07-27
 - **Related:** [ADR-001](ADR-001-runtime-and-ipc.md),
-  [ADR-003](ADR-003-declarative-ui.md), [ARCHITECTURE.md](ARCHITECTURE.md)
+  [ADR-003](ADR-003-declarative-ui.md),
+  [ADR-005](ADR-005-local-llm-complete.md),
+  [ADR-006](ADR-006-scrape-namespace.md),
+  [ADR-009](ADR-009-compiler-synthesized-runtime.md),
+  [ADR-010](ADR-010-tensor-minilm-pipeline.md),
+  [ARCHITECTURE.md](ARCHITECTURE.md)
 
 ## Context
 
@@ -12,7 +18,7 @@ agents never choose engines. Routing must stay explainable: every `Target`
 decision cites why that engine is the right tool for the job.
 
 Personal preference is irrelevant. Silc picks engines from complementary
-strengths—the same principle that blesses React for `ui::web` (ecosystem
+strengths—the same principle that blesses React for the web surface (ecosystem
 default) rather than exposing a framework picker.
 
 ## Decision
@@ -21,6 +27,8 @@ default) rather than exposing a framework picker.
 
 **Authors express intent; Silc chooses implementation.** Routing provenance,
 codegen substrates, and supervisor roles all follow the catalogs below.
+Persistence sinks and dual-surface UI workers are compiler-synthesized
+([ADR-009](ADR-009-compiler-synthesized-runtime.md)).
 
 ### Bun (executes TypeScript)
 
@@ -32,7 +40,7 @@ codegen substrates, and supervisor roles all follow the catalogs below.
 
 **Typical assignment:** `service` modules; namespaces `http`, `html`, `ws`,
 `ui`; static `scrape::page` / `scrape::select` (ADR-006 adapter
-`bun-fetch-v1`).
+`bun-fetch-v1`); pipeline ingress helper for tensor programs (ADR-010).
 
 ### CPython
 
@@ -44,37 +52,40 @@ codegen substrates, and supervisor roles all follow the catalogs below.
 6. First-class browser automation for JS-heavy scrape targets (Playwright)
 
 **Typical assignment:** `processor` modules; namespaces `tensor`, `numpy`,
-`pandas`, `text`, `llm`; `:prefer<CUDA>`. `llm::complete` uses a
-compiler-pinned llama.cpp binding and local GGUF catalog (ADR-005).
+`pandas`, `text`, `llm`. `llm::complete` uses a compiler-pinned llama.cpp
+binding and local GGUF catalog (ADR-005). `tensor::tokenize` / `tensor::infer`
+use CPU-only ONNX MiniLM ([ADR-010](ADR-010-tensor-minilm-pipeline.md));
+`:prefer(CUDA)` is rejected for the 0.4.0 tensor path.
 `scrape::render`, `scrape::extract`, and `:js(true|auto)` escalation use
 Playwright (ADR-006 adapter `python-playwright-v1`).
 
 ### Go
 
 1. Low-latency systems and storage paths
-2. Cheap concurrency for sinks and stream consumers
+2. Cheap concurrency for synthesized sinks and stream consumers
 3. Rock-solid stdlib networking / UDS / file IPC
 4. Simple durable storage (SQLite) with one binary artifact
 5. Predictable performance under tight `latency(...)` constraints
 6. High-concurrency site crawls (`scrape::site` via Colly)
 
-**Typical assignment:** `sink` modules with `storage(SQLite)` or
-`latency ≤ 10ms`; namespaces `store`, `ipc`, `sys`; `scrape::site` crawl
-workers (ADR-006 adapter `go-colly-v1`).
+**Typical assignment:** compiler-synthesized SQLite persistence
+(`storage(SQLite)`); namespaces `store`, `ipc`, `sys` as runtime-owned stages;
+`scrape::site` crawl workers (ADR-006 adapter `go-colly-v1`). Authors do not
+declare `sink` modules in 0.4.0.
 
 ### Single-file north star
 
-One `.silc` file can declare a full app—Contract, service UI, processor, sink,
-ports, storage. Polyglot workers under `.runtime/` are compiler *output*, not
-an authoring model. Authors never scaffold per-language projects or write
+One `.silc` file can declare a full app—Contract, UI routes, processor,
+ports, storage intent. Polyglot workers under `.runtime/` are compiler *output*,
+not an authoring model. Authors never scaffold per-language projects or write
 `package.json`.
 
 ### Provenance
 
 `sil-router` records Tier 1 / Tier 2 decisions with provenance strings that
 cite these strengths (for example,
-`tier1: sink+SQLite → Go (durable low-latency storage)`). Manifests and agent
-logs teach the same story as this ADR.
+`tier1: sink+SQLite → Go (durable low-latency storage)` for synthesized
+persistence). Manifests and agent logs teach the same story as this ADR.
 
 ## Non-goals
 
@@ -82,6 +93,7 @@ logs teach the same story as this ADR.
 - Bond, Node, or other alternate TypeScript hosts as primary engines
 - Changing Tier 1 / Tier 2 rules solely to match marketing language (rules
   already align with this catalog)
+- CUDA tensor execution in 0.4.0 (ADR-010)
 
 ## Consequences
 
@@ -89,7 +101,8 @@ logs teach the same story as this ADR.
 
 - Routing is auditable and teachable.
 - Strength catalogs justify why Silc owns three engines instead of one VM.
-- Future Tier 3 (ONNX) can extend provenance without inventing a new philosophy.
+- Future Tier 3 (ONNX beyond MiniLM) can extend provenance without inventing a
+  new philosophy.
 
 ### Costs and risks
 

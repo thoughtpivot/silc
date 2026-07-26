@@ -2,9 +2,16 @@
 
 - **Status:** Accepted (v1)
 - **Date:** 2026-07-25
+- **Updated:** 2026-07-27
 - **Related:** [ADR-001](ADR-001-runtime-and-ipc.md),
   [ADR-003](ADR-003-declarative-ui.md),
-  [ADR-004](ADR-004-runtime-strengths.md)
+  [ADR-004](ADR-004-runtime-strengths.md),
+  [ADR-008](ADR-008-recursive-silclm-assist.md),
+  [ADR-009](ADR-009-compiler-synthesized-runtime.md)
+- **Superseded by (partial):** [ADR-009](ADR-009-compiler-synthesized-runtime.md)
+  for author-written `ipc::publish ==> store::sqlite ==> store::commit` sink
+  chains.
+- **Canonical:** [`MODEL_CATALOG`](../crates/sil-core/src/model_catalog.rs)
 
 ## Context
 
@@ -24,7 +31,7 @@ fine-tunes — not a claim that the base weights are proprietary.
 The first runnable capability is:
 
 ```silc
-class LocalLlm is processor {
+processor LocalLlm {
     has Str $.model_ref = "silclm";
 
     method complete(ChatTurn $turn) {
@@ -36,13 +43,19 @@ class LocalLlm is processor {
 `llm::complete` routes the processor to CPython. Silc generates and owns a
 `llama-cpp-python` worker, provisions one pinned GGUF artifact, and passes its
 absolute path through supervisor-owned environment variables. Authors select a
-catalog id, never an adapter or file path.
+catalog id, never an adapter or file path. SQLite chat persistence is
+**synthesized** — authors do not declare `sink`, `ipc::*`, or `store::*`
+([ADR-009](ADR-009-compiler-synthesized-runtime.md)).
 
 ### v1 catalog
 
-| ID | Artifact | Size |
+Full table (SHA-256, URL, size) lives in `MODEL_CATALOG`
+([`crates/sil-core/src/model_catalog.rs`](../crates/sil-core/src/model_catalog.rs)).
+Summary:
+
+| ID | Artifact | Approx. size |
 | --- | --- | --- |
-| `silclm` | Llama 3.2 1B Instruct Q4_K_M GGUF (silclm v0) | 807,694,464 bytes |
+| `silclm` | Llama 3.2 1B Instruct Q4_K_M GGUF (silclm v0) | ~808 MB |
 
 The artifact is downloaded from the compiler-pinned Hugging Face URL into
 `~/.silc/models/silclm/` and verified against its pinned SHA-256 digest.
@@ -57,8 +70,8 @@ to `silclm` (including a one-time cache migration from
 - Dependency: compiler-pinned `llama-cpp-python`
 - Worker count: one Python process per app, so weights load once
 - Context: 8,192 tokens by default (`SILC_LLM_N_CTX` overrides); response cap: 256 tokens
-- UI: compiler-owned dual-surface `ui::chat` (React/Bun web + OpenTUI terminal)
-- Persistence: compiler-owned Go/SQLite chat sink (`ipc::publish ==> store::sqlite ==> store::commit`)
+- UI: compiler-synthesized dual-surface `ui::chat` (React/Bun web + OpenTUI terminal)
+- Persistence: compiler-synthesized Go/SQLite chat sink (authors declare the processor only)
 
 ### `ui::chat` session / context / persona
 

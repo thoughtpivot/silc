@@ -109,8 +109,58 @@ fn closed_enums_and_dual_surface_invariant_documented() {
             "docs must mention both surfaces"
         );
         assert!(
-            doc.contains("must") && doc.contains("both"),
-            "docs must state dual-surface requirement"
+            doc.contains("synthesiz") && doc.contains("both"),
+            "docs must state dual-surface serving is synthesized for both surfaces"
+        );
+        assert!(
+            !doc.contains("declare both surfaces in `serve()`")
+                && !doc.contains("must declare both `ui::web`"),
+            "docs must not require author-declared serve()/ui surface ops"
+        );
+    }
+}
+
+#[test]
+fn removed_author_ops_not_listed_as_runnable() {
+    let template = read_workspace("crates/silc/templates/AGENTS.md");
+    let readme = read_workspace("README.md");
+
+    for (label, doc) in [("AGENTS", &template), ("README", &readme)] {
+        let start = doc
+            .find("Runnable operations (0.4.0)")
+            .or_else(|| doc.find("### Executable operations"))
+            .unwrap_or_else(|| panic!("{label}: missing runnable ops section"));
+        let section = &doc[start..];
+        // Author-facing list only — stop before the "Compiler-synthesized" note
+        // (AGENTS) or stub-only / generated sections (README).
+        let end = section
+            .find("Compiler-synthesized")
+            .or_else(|| section.find("Stub-only"))
+            .or_else(|| section.find("### Generated"))
+            .unwrap_or(section.len().min(1200));
+        let author_ops = &section[..end];
+
+        for forbidden in [
+            "`ui::web`",
+            "`ui::terminal`",
+            "`ipc::publish`",
+            "`store::sqlite`",
+            "`store::commit`",
+            "`resource::list`",
+            "`resource::get`",
+            "`resource::create`",
+            "`resource::update`",
+            "`resource::delete`",
+        ] {
+            assert!(
+                !author_ops.contains(forbidden),
+                "{label} author-facing runnable list must not include synthesized op {forbidden}"
+            );
+        }
+
+        assert!(
+            author_ops.contains("tensor::tokenize") && author_ops.contains("tensor::infer"),
+            "{label} author-facing runnable list must include tensor ops"
         );
     }
 }
@@ -120,7 +170,7 @@ fn tracked_example_agents_embed_template_common_block() {
     let template = read_workspace("crates/silc/templates/AGENTS.md");
     let expected = template_common_block(&template);
 
-    for app in ["chatApp", "inventoryApp"] {
+    for app in ["chatApp", "inventoryApp", "scraperApp", "pipelineApp"] {
         let agents = read_workspace(&format!("examples/{app}/AGENTS.md"));
         let actual = template_common_block(&agents);
         assert_eq!(

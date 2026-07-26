@@ -1,7 +1,7 @@
 <!-- BEGIN SILC_AGENTS_TEMPLATE -->
 # Silc project guidance for AI tools
 
-This directory is a **Silc 0.2.0** project. Silc (said like “silk”) is an
+This directory is a **Silc 0.4.0** project. Silc (said like “silk”) is an
 independent intent language with a Raku-inspired surface and a local Rust
 compiler. Edit `.silc` source only (not `.raku` / `.sil`).
 
@@ -19,11 +19,14 @@ application code.
 
 ## Authoritative docs
 
+- ADR index: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-INDEX.md
 - Surface syntax: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-002-silc-surface-syntax.md
 - Pipeline feeds (`==>`): https://github.com/thoughtpivot/silc/blob/main/docs/ADR-007-pipeline-feeds.md
 - Declarative UI: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-003-declarative-ui.md
+- Synthesized runtime (0.4.0): https://github.com/thoughtpivot/silc/blob/main/docs/ADR-009-compiler-synthesized-runtime.md
 - Local LLM: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-005-local-llm-complete.md
 - Scrape: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-006-scrape-namespace.md
+- Tensor / MiniLM: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-010-tensor-minilm-pipeline.md
 - Architecture: https://github.com/thoughtpivot/silc/blob/main/docs/ARCHITECTURE.md
 - Examples: https://github.com/thoughtpivot/silc/tree/main/examples
 
@@ -39,17 +42,17 @@ silc main.silc                # build and run when mode is runnable
 Treat compiler diagnostics as authoritative. Prefer `silc build` after each
 meaningful edit. Stop and report limits instead of inventing substrates.
 
-## Silc 0.2.0 authoring model
+## Silc 0.4.0 authoring model
 
 | Construct | Role |
 | --- | --- |
-| `@version("0.2.0")` | Optional program version annotation |
+| `@version("0.4.0")` | Required exact source-version annotation |
 | `subset Name of Base where { … }` | Semantic type alias; v1 `where` predicates (Str): `.contains` / `.starts-with` / `.ends-with` (ADR-002) |
-| `class X { has T $.f; }` | **Contract** — typed data schema |
-| `class X is component` | **Component** — props, `has state`, slots, `emit`, handlers, `render()` |
-| `class X is resource` | **Resource** — `query` / `mutation` data layer (CRUD over SQLite) |
-| `class X is app` | **App** — `route` table + `method serve()` |
-| `class X is service\|processor\|sink` | Optional backend modules |
+| `contract X { has T $.f; }` | **Contract** — typed data schema |
+| `component X` | **Component** — props, `has state`, slots, `emit`, handlers, `render()` |
+| `resource X for Contract` | **Resource** — capability CRUD (`query list;`, `mutation create;`, …) |
+| `app X` | **App** — `route` table (dual-surface serving is synthesized) |
+| `service X` / `processor X` / `task X` | Optional workflow modules |
 | `==>` | Pipeline feed between values and `ns::op(...)` calls |
 
 Removed in 0.2.0 (do not use):
@@ -88,9 +91,11 @@ Authors write **one** semantic component tree. The compiler lowers it to:
 - `ui::web` → React/Tailwind (compiler-owned)
 - `ui::terminal` → OpenTUI (compiler-owned); TCP telnet CLI is a remote fallback
 
-Every UI app **must** declare both surfaces in `serve()` with distinct ports.
+Every UI `app` synthesizes both surfaces automatically (web + terminal).
+Authors declare routes only — never `method serve()`, `ui::web`, or `ui::terminal`.
 No component may be web-only or terminal-only. Never write HTML, CSS, React,
 Tailwind, OpenTUI, ShadCN trees, or bundler config in Silc source.
+Override ports at runtime with `SILC_HTTP_PORT` / `SILC_TERMINAL_PORT` if needed.
 
 ### Shared prop vocabulary
 
@@ -172,7 +177,7 @@ API contract (props / events / slots / children).
 ### Component with state and events
 
 ```silc
-class HomePage is component {
+component HomePage {
     has state Str $.text = "";
     method render() {
         ui::page(
@@ -190,7 +195,7 @@ class HomePage is component {
 ### Author component composition + emit forwarding
 
 ```silc
-class ItemCard is component {
+component ItemCard {
     has Item $.item;
     emit remove(Item);
     method render() {
@@ -209,8 +214,8 @@ ItemCard(:item($item), :on(remove => on_delete))
 ### Resource queries on a component
 
 ```silc
-class BrowsePage is component {
-    query $.items = Inventory.list();
+component BrowsePage {
+    query $.items = InventoryItems.list();
     method render() {
         ui::table(
             :rows($.items),
@@ -222,39 +227,24 @@ class BrowsePage is component {
 }
 ```
 
-### App with routes and dual-surface serve
+### App with routes (dual-surface synthesized)
 
 ```silc
-class MyApp is app {
+app MyApp {
     route "/" => HomePage;
     route "/admin" => AdminPage;
-    method serve() {
-        ui::web(:root(MyApp), :port(18080), :route("/"))
-            ==> ui::terminal(:port(18023))
-    }
 }
 ```
 
 ### Resource CRUD
 
 ```silc
-class Products is resource {
-    has Str $.table = "products";
-    query list() -> [Product] {
-        Product ==> resource::list(:table(products))
-    }
-    query get(Product $item) -> Product {
-        $item ==> resource::get(:table(products))
-    }
-    mutation create(Product $item) {
-        $item ==> resource::create(:table(products))
-    }
-    mutation update(Product $item) {
-        $item ==> resource::update(:table(products))
-    }
-    mutation delete(Product $item) {
-        $item ==> resource::delete(:table(products))
-    }
+resource Products for Product {
+    query list;
+    query get;
+    mutation create;
+    mutation update;
+    mutation delete;
 }
 ```
 
@@ -276,51 +266,47 @@ ui::chat(
 `:context` and `:persona` ride the `/complete` ingest frame and are **not**
 persisted into chat history.
 
-### Processor + sink (score or LLM)
+### Processor (score or LLM)
 
 ```silc
-class Assistant is processor {
+processor Assistant {
     method complete(ChatRecord $record) {
         $record.prompt ==> llm::complete()
-    }
-}
-class ChatDb is sink is storage(SQLite) {
-    method persist(ChatRecord $record) {
-        $record ==> ipc::publish() ==> store::sqlite(:table(chats)) ==> store::commit()
     }
 }
 ```
 
 `text::score` and `llm::complete` cannot both appear in one program. Each needs
-exactly one processor and one `is storage(SQLite)` sink with the
-`ipc::publish ==> store::sqlite ==> store::commit` chain.
+exactly one processor. SQLite persistence is synthesized by the compiler — do
+**not** declare `sink`, `ipc::*`, or `store::*`.
 
 ### API-only service
 
 ```silc
-class Api is service {
+service Api {
     method create(Note $note) {
         $note ==> service::http(:port(8080), :route("/notes"), :method(POST))
     }
 }
 ```
 
-API-only programs must not declare processor/sink modules.
+API-only programs must not declare processor modules.
 
 Wire handlers with `:on(click(handler))`, `:on(submit(handler))`, navigation
 with `ui::nav_item(:to("/path"))`, collections with `for $.items -> $item { … }`,
 and conditionals with `when expr { … }`.
 
-## Runnable operations (0.2.0)
+## Runnable operations (0.4.0)
 
-Executable today (registry in `sil-core`):
+Author-facing executable ops today (registry in `sil-core`):
 
-`ui::web`, `ui::terminal`, `service::http`, `text::score`, `llm::complete`,
-`ipc::publish`, `store::sqlite`, `store::commit`,
-`resource::list`, `resource::get`, `resource::create`, `resource::update`,
-`resource::delete`,
+`service::http`, `text::score`, `llm::complete`,
 `scrape::page`, `scrape::site`, `scrape::select`, `scrape::render`,
-`scrape::extract`.
+`scrape::extract`, `tensor::tokenize`, `tensor::infer`.
+
+Compiler-synthesized (do **not** write in `.silc`): dual-surface `ui::web` /
+`ui::terminal` serving, `resource::*` CRUD pipelines, and `ipc`/`store` sink
+persistence.
 
 Local LLM chat uses **silclm** (default catalog id). Prefer
 `llm::complete(:model("silclm"))` or omit `:model`. Do not invent Ollama,
@@ -332,7 +318,14 @@ Playwright. Prefer `scrape::site` for crawls and `scrape::page` /
 `scrape::select` for single pages. Do **not** use stub `http::get` /
 `html::extract_body` in runnable programs — migrate to `scrape::*`.
 
-Stub-only namespaces (parse/route/emit, do not run): `http`, `html`, `tensor`,
+Pipeline-only programs use `scrape::page ==> scrape::extract`, then
+`tensor::tokenize(:model("minilm-l6-v2")) ==> tensor::infer(:prefer(CPU))`.
+Persistence is synthesized. Their contract must carry `raw_content` and
+`vector_embedding: Emb384`, where `subset Emb384 of Vec[num32; 384]`. Run them
+with `silc run main.silc --input-json '{"url":"https://…"}'`. CUDA and
+arbitrary tensor models/shapes are not executable in 0.4.0.
+
+Stub-only namespaces (parse/route/emit, do not run): `http`, `html`,
 `numpy`, `pandas`, `ws`, `sys`, `schema`, `payload`, `json`, plus non-registry
 ops under runnable namespaces. Mixing stub-only ops into a runnable graph is a
 **compile error**.
@@ -350,8 +343,8 @@ Compiler-owned (do not invent alternatives):
 
 ## Validation constraints agents must respect
 
-1. UI apps require `is app`, non-empty `route`s, `serve()` with both
-   `ui::web(:root(...))` and `ui::terminal(:port(...))`, distinct ports.
+1. UI apps require an `app` declaration with non-empty `route`s; dual-surface
+   web/terminal serving is synthesized (default ports 18088 / 18023).
 2. Every builtin UI node must use catalog props/events; unknown props/events fail.
 3. Closed enums (`:variant`, `:tone`, `:size`) reject unknown tokens.
 4. Resource `query` bindings must reference real resource query methods.
@@ -359,17 +352,29 @@ Compiler-owned (do not invent alternatives):
 6. Do not mix `scrape::*` with `text::score`. Scrape pipelines may use
    `llm::complete` for grounded SilcLM summaries.
 7. Do not mix executable and stub-only ops in one runnable graph.
-8. Default fallback ports if omitted: web `18088`, terminal `18023`, API `8080`
-   (examples often pick explicit ports instead).
+8. Default ports: web `18088`, terminal `18023`, API `8080`. Override with
+   `SILC_HTTP_PORT` / `SILC_TERMINAL_PORT` / service `:port` as needed.
+9. Tensor pipelines require MiniLM, CPU, and exactly 384 normalized `num32`
+   values in `vector_embedding`.
 
 ## Rules for agents
 
 1. Edit only `.silc` source (`.raku` / `.sil` are not accepted).
-2. Prefer author-defined `is component` + `is app` over inventing profiles.
-3. Always serve UI with **both** `ui::web` and `ui::terminal`.
-4. Use Contracts + resources for persistence; do not hard-code seeded product DBs.
+2. Prefer author-defined `component` + `app` declarations over inventing profiles.
+3. Do not write `method serve()`, `ui::web`, `ui::terminal`, `sink`, `ipc::*`,
+   `store::*`, or `resource::*` pipelines — the compiler owns those mechanics.
+4. Use Contracts + `resource Name for Contract` capabilities for persistence.
 5. Do not create a `stdlib/` directory or escape into React/OpenTUI/CSS.
 6. Do not invent new compiler portal kinds to make an app run.
 7. Stay inside the UI catalog and runnable op set above.
 8. Validate with `silc build`; report errors instead of patching `.runtime/`.
 <!-- END SILC_AGENTS_TEMPLATE -->
+
+## App-specific notes (chatApp)
+
+- Multi-session chat: `ChatSessions for ChatSession` capabilities + `ui::chat(:session($.active_session))`.
+- Author component `SessionItem` emits `select(ChatSession)`; parent wires `:on(select => on_select)`.
+- Processor: `Assistant.complete()` → `llm::complete()`; SQLite persistence is synthesized.
+- Dual-surface UI is synthesized from `app ChatApp` routes (default ports; override via env).
+- Local completions use default **silclm** — call `llm::complete()` with no `:model`.
+- Do not invent Ollama/OpenAI paths or hand-edit `.runtime/`.

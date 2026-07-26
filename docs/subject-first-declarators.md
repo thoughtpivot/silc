@@ -1,11 +1,26 @@
-# Subject-first declarators — evaluation only
+# Subject-first declarators
 
-Silc 0.2.0 keeps `class X is resource|component|app|…`. A subject-first surface
-(`resource X`, `component X`, `app X`, `contract X`, …) may reduce false OO
-implications and tokens, but it is a breaking change.
+- **Evidence class:** Harness / reproducibility
+- **Date:** 2026-07
+- **Updated:** 2026-07-27
+- **Related:** [subject-first-decision.md](subject-first-decision.md),
+  [ADR-002](ADR-002-silc-surface-syntax.md),
+  [intent-vs-subjects.md](intent-vs-subjects.md)
 
-**This workstream does not migrate syntax.** It only provides a reproducible
-benchmark so a later 0.x decision can be evidence-based.
+> **Historical vocabulary.** “Subject-first” named the 0.3.0 declarator
+> migration. From 0.4.0, author-facing docs use *direct declarations*;
+> *subjects* are compiler-internal. See
+> [intent-vs-subjects.md](intent-vs-subjects.md).
+
+Silc ships direct declarations: `resource X`, `component X`, `app X`,
+`contract X`, `service X`, `processor X`, and `task X`. Author `sink` was
+present in 0.3.0 and removed in 0.4.0
+([ADR-009](ADR-009-compiler-synthesized-runtime.md)).
+
+The benchmark remains reproducible as historical migration evidence. Its
+measured no-go result was subsequently superseded by an explicit repository
+owner override; see
+[subject-first-decision.md](subject-first-decision.md).
 
 ## Harness
 
@@ -19,12 +34,31 @@ cargo run -p sil-training -- subject-first-bench \
 The report includes:
 
 - Paired prompts (`class-is` vs `subject-first` guidance) for each task seed
-- Baseline trials: current fixtures must compile; subject-first sketches are
-  recorded as expected compile failures until the grammar exists
+- Current fixture baselines retained under both historical report labels
 - Token estimates, first-pass success, repair turns (when agent trials are scored)
+- Per-task-family summaries and a programmatic `insufficient_data`, `go`, or
+  `no_go` decision
 
-Score live agent runs by appending `TrialInput` rows (see
-`sil_training::subject_first`) and re-summarizing.
+Score live agent runs by supplying one or more JSONL files:
+
+```bash
+cargo run -p sil-training -- subject-first-bench \
+  --agents crates/silc/templates/AGENTS.md \
+  --tasks training/tasks \
+  --trials training/out/subject-first-ui.jsonl \
+  --trials training/out/subject-first-api.jsonl \
+  --out training/out/subject_first_bench.json
+```
+
+Each line is a `TrialInput`:
+
+```json
+{"task_id":"components","variant":"subject-first","completion":"component Page { … }","repair_turns":0}
+```
+
+Both variants are sent directly to the current parser. Subject-first /
+direct-declaration programs can pass; historical class-is programs receive an
+actionable migration diagnostic.
 
 ## Go / no-go
 
@@ -37,4 +71,11 @@ Migrate only when:
    15 points.
 4. Both variants have **≥20 scored trials** per task family.
 
-Until those numbers exist, keep `class … is …`.
+These criteria explain the historical benchmark decision; they no longer gate
+the shipped declaration-based surface.
+
+## Decision
+
+The July 2026 benchmark met the sample floor and returned **no-go**. The result
+is preserved, while the owner override adopts direct declarations from 0.3.0
+onward. Product policy lives in [ADR-002](ADR-002-silc-surface-syntax.md).

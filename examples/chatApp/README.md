@@ -1,10 +1,10 @@
 # chatApp
 
-Standalone Silc 0.2.0 multi-session chat assistant.
+Standalone Silc 0.4.0 multi-session chat assistant.
 
 ## Authored files
 
-- `main.silc` — contracts, session resource, chat UI, processor + SQLite sink
+- `main.silc` — contracts, session resource, chat UI, processor (SQLite persistence synthesized)
 - `AGENTS.md` — agent guidance
 - `.gitignore` — ignores compiler-owned `.runtime/` and `.silc/`
 

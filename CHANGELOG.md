@@ -3,15 +3,48 @@
 All notable changes to Silc are documented here.
 Silc remains pre-1.0; this project follows SemVer 0.x with Conventional Commits.
 
-## [Unreleased]
+## [0.4.0] - 2026-07-27
+
+### Breaking
+
+- Reframed Silc as an intent-oriented, declaration-based authoring surface.
+  Compiler subjects remain an internal `sil-core` architecture, not product
+  identity.
+- Removed author `method serve()`, `ui::web`, `ui::terminal`, `sink`,
+  `ipc::*`, `store::*`, and `resource::*` pipelines from `.silc` source.
+  Dual-surface serving and SQLite persistence are synthesized by the compiler.
+- Resources require `resource Name for Contract` with capability declarations
+  (`query list;`, `mutation create;`, …).
+- Require exact `@version("0.4.0")` declarations in compiled source.
 
 ### Added
 
+- Implicit dual-surface UI from `app` routes (default ports; override via
+  `SILC_HTTP_PORT` / `SILC_TERMINAL_PORT`).
+- Auto-synthesized Go/SQLite sink for processor programs
+  (`text::score`, `llm::complete`, `tensor::infer`).
+- Closed MiniLM embedding pipeline (`tensor::tokenize` / `tensor::infer`,
+  `examples/pipelineApp`).
 - Experimental `silc assist "<task>"` closed-tool recursive authoring scaffold
   (`sil-rlm`, ADR-008): explores embedded AGENTS/examples/fixtures, validates
   with `check_source`, depth-1 `llm_query` via silclm. Fine-tuned
   `silclm-assist` weights are not shipped yet.
+- Decision records for the 0.4.0 surface:
+  [ADR-009](docs/ADR-009-compiler-synthesized-runtime.md) (synthesized runtime)
+  and [ADR-010](docs/ADR-010-tensor-minilm-pipeline.md) (tensor / MiniLM);
+  plus [ADR-INDEX.md](docs/ADR-INDEX.md).
 
+## [0.3.0] - 2026-07-26
+
+### Breaking
+
+- Established Silc as an independent `.silc`-only intent language; `.raku` and
+  `.sil` source inputs are rejected.
+- Require exact `@version("0.3.0")` declarations in compiled source.
+- Replaced legacy `class Name is kind` declarations with direct
+  `contract`, `component`, `resource`, `app`, `service`, `processor`, `sink`,
+  and `task` declarations. This is an explicit owner override of the benchmark
+  no-go, whose evidence remains documented.
 
 ## [0.2.0] - 2026-07-25
 

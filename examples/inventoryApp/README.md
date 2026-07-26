@@ -1,6 +1,6 @@
 # inventoryApp
 
-Standalone Silc 0.2.0 inventory application with:
+Standalone Silc 0.4.0 inventory application with:
 
 - **Browse** (`/`) — live inventory data grid (`ui::table`) with category filters
 - **Admin** (`/admin`) — create and delete inventory items
@@ -17,7 +17,8 @@ Standalone Silc 0.2.0 inventory application with:
 ## Data model
 
 `InventoryItem`: name, category, location, quantity, reorder_level, notes  
-Persisted in SQLite table `inventory_items` through the `Inventory` resource.
+Persisted in SQLite table `inventory_items` through the
+`InventoryItems for InventoryItem` resource capabilities.
 
 ## Run
 

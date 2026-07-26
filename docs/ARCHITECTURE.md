@@ -1,14 +1,18 @@
 # ThoughtPivot Silc Architecture
 
-This repository uses **subject-based architecture** for the compiler's semantic
-core. Code is organized around durable language concepts instead of allowing
-compiler phases to become the owners of the model.
+Silc's **authoring surface is intent-oriented** (see
+[intent-vs-subjects.md](intent-vs-subjects.md)). This repository uses
+**subject-based architecture** for the compiler's semantic core. Code is
+organized around durable language concepts instead of allowing compiler phases
+to become the owners of the model.
 
-Silc 0.2.0 implements subjects, lexing, parsing, deterministic routing,
+Silc 0.4.0 implements subjects, lexing, parsing, deterministic routing,
 runnable Bun/Python/Go codegen, supervisor-owned mmap + UDS IPC, generic
-SQLite resources, dual-surface component applications, and fused `scrape::*`
-workers (Bun fetch, Go Colly, CPython Playwright — ADR-006). Broader operation
-sets still emit inspectable stubs.
+SQLite resources, dual-surface component applications synthesized from `app`
+routes ([ADR-009](ADR-009-compiler-synthesized-runtime.md)), fused `scrape::*`
+workers (Bun fetch, Go Colly, CPython Playwright — ADR-006), and a closed
+MiniLM embedding pipeline ([ADR-010](ADR-010-tensor-minilm-pipeline.md)).
+Broader stub namespaces still emit inspectable stubs.
 
 Runtime and IPC direction is fixed by
 [ADR-001](ADR-001-runtime-and-ipc.md): Silc emits TypeScript for Bun and uses a
@@ -22,8 +26,9 @@ language; `.silc` is the only accepted extension. `.raku` and `.sil` are not
 supported. Pipeline feeds: [ADR-007](ADR-007-pipeline-feeds.md). Local LLM
 chat: [ADR-005](ADR-005-local-llm-complete.md). Recursive authoring assist
 (`silc assist` / `sil-rlm`): [ADR-008](ADR-008-recursive-silclm-assist.md).
+Decision index: [ADR-INDEX.md](ADR-INDEX.md).
 
-The exhaustive 0.2.0 authoring and UI API contract (language constructs,
+The exhaustive 0.4.0 authoring and UI API contract (language constructs,
 executable operations, and the 38-primitive dual-surface catalog) lives in
 [`crates/silc/templates/AGENTS.md`](../crates/silc/templates/AGENTS.md) and is
 mirrored in the root [README](../README.md). Compiler sources
@@ -79,7 +84,7 @@ when it transforms or coordinates subjects without owning their definitions:
 | `sil-codegen` | Project validated subjects into target source |
 | `sil-ipc` | Implement the cross-runtime transport boundary |
 | `sil-training` | Prompt banking and compiler-backed candidate validation |
-| `sil-rlm` | Closed-tool recursive assist loop (ADR-008); not a language subject |
+| `sil-rlm` | Closed-tool recursive assist loop ([ADR-008](ADR-008-recursive-silclm-assist.md)); not a language subject |
 | `silc` | Keep CLI composition thin and orchestrate the workflow |
 
 This distinction prevents phase-owned duplicate models such as parser
@@ -169,12 +174,13 @@ subject; target-specific rendering belongs to `sil-codegen`.
 
 ### Declarative UI
 
-UI intent lives in `class … is component` render templates and the `ui`
+UI intent lives in `component …` render templates and the `ui`
 primitive catalog. Authors never emit HTML, CSS, React, Tailwind, OpenTUI, or
 package manifests. Components own typed props, local state, slots, emitted
-events, handlers, and resource query bindings. `class … is app` maps routes to
-components and its `serve()` method declares both `ui::web(:root(App), …)` and
-`ui::terminal(…)`.
+events, handlers, and resource query bindings. `app …` maps routes to
+components; dual-surface web and terminal serving is **synthesized** by the
+compiler ([ADR-009](ADR-009-compiler-synthesized-runtime.md)). Authors do not
+write `method serve()`, `ui::web`, or `ui::terminal` as program operations.
 
 Codegen consumes one component graph and emits equal web and terminal adapters.
 Web lowers to compiler-owned React/Tailwind templates. Terminal lowers to a
@@ -211,11 +217,13 @@ Silc buffers as Arrow for external analytical tools.
 | `sil-router` | Target-resolution service |
 | `sil-codegen` | Go/Python/Bun-TypeScript output adapters |
 | `sil-ipc` | Silc shared-memory ABI and UDS runtime boundary |
+| `sil-rlm` | Recursive assist loop for `silc assist` |
+| `sil-training` | Training / benchmark harness |
 
 ## Project layout and execution
 
 `silc` is the compile-and-run entrypoint (CLI or shebang
-`#!/usr/bin/env silc`). Runnable 0.2.0 programs execute under the Rust supervisor;
+`#!/usr/bin/env silc`). Runnable 0.4.0 programs execute under the Rust supervisor;
 other programs emit inspectable stubs.
 
 | Concept | Meaning |
@@ -229,7 +237,10 @@ other programs emit inspectable stubs.
 - `silc init` / `silc init <path>` — scaffold project files, provision Silc-owned
   Bun/CPython/Go into `~/.silc/runtimes/`, and write `.silc/runtimes.lock.json`
 - `silc build <entry>` — compile only
-- `silc <entry>` — compile; run when the program is runnable in 0.2.0
+- `silc <entry>` — compile; run when the program is runnable in 0.4.0
+- `silc run <entry> --input-json '<json>'` / `--input <file.json>` — execute a
+  one-shot pipeline-only program (ADR-010)
+- `silc assist "<task>"` — experimental recursive authoring help (ADR-008)
 - shebang `#!/usr/bin/env silc` still works
 
 The first runnable build provisions checksum-verified Bun/CPython/Go into
@@ -256,7 +267,14 @@ Bare `init` is the subcommand; `init.silc` still compiles as a path.
 | `runtime/{go,python,typescript}/` in this repo | Future **compiler-shipped harness templates**; `typescript` is executed by Bun |
 | `{workdir}/.runtime/` | Per-program **generated codegen** produced when `silc` runs |
 
-`models/` holds the future embedded ONNX intent classifier used by the router.
+Compiler-owned embedding bundles live under
+`~/.silc/models/<catalog-id>/`. The 0.4.0 MiniLM pipeline adapter
+([ADR-010](ADR-010-tensor-minilm-pipeline.md)) verifies pinned ONNX/tokenizer
+artifacts, runs CPU-only attention-mask mean pooling and L2 normalization in
+CPython, and persists the generic JSON record through a synthesized Go sink
+([ADR-009](ADR-009-compiler-synthesized-runtime.md)). Default IPC pools are
+512 × 16 KiB; pipeline-only graphs use 64 KiB payload slots while retaining
+ABI/protocol v1 ([SILC-IPC-ABI-v1.md](SILC-IPC-ABI-v1.md)).
 
 ## Growth test
 
@@ -275,7 +293,7 @@ splitting does not.
 
 ## Future work
 
-- Expand expression and subject type inference beyond the 0.2.0 grammar
+- Expand expression and subject type inference beyond the 0.4.0 grammar
 - Generalize executable target adapters beyond the current operation registry
 - Deepen OpenTUI terminal fidelity (dialogs, dense tables, chat polish) while preserving surface parity
 - Add typed field views atop the implemented mmap/UDS ABI
@@ -284,5 +302,5 @@ splitting does not.
   depend on temporary Raku TextMate association for `*.silc`
 
 See [`examples/README.md`](../examples/README.md) for standalone example apps
-(`chatApp`, `inventoryApp`). Stub routing fixtures used by compiler tests live
-under `crates/*/tests/fixtures/`.
+(`chatApp`, `inventoryApp`, `scraperApp`, `pipelineApp`). Stub routing fixtures
+used by compiler tests live under `crates/*/tests/fixtures/`.

@@ -370,11 +370,9 @@ Compiler-owned (do not invent alternatives):
 8. Validate with `silc build`; report errors instead of patching `.runtime/`.
 <!-- END SILC_AGENTS_TEMPLATE -->
 
-## App-specific notes (inventoryApp)
+## App-specific notes (pipelineApp)
 
-- Routes: `/` browse, `/admin` CRUD, `/assistant` grounded silclm chat.
-- Resource: `InventoryItems for InventoryItem` capability CRUD → `/api/inventory_items`.
-- Assistant: `ui::chat(:context($.items), :persona(...))`; processor only — no author sink.
-- Dual-surface UI is synthesized from `app InventoryApp` routes.
-- Default model: `llm::complete()` with no `:model` (silclm).
-- Never hand-edit `.runtime/` or invent Ollama/OpenAI paths.
+- Pipeline-only: `scrape::page` → `scrape::extract` → `tensor::tokenize` → `tensor::infer`.
+- No UI `app`; run with `silc run main.silc --input-json '{"url":"https://…"}'`.
+- Persistence is synthesized from the `ArticlePayload` processor parameter.
+- Never hand-edit `.runtime/` or invent CUDA/arbitrary ONNX models.

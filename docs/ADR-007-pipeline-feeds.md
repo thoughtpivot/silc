@@ -2,8 +2,14 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-26
+- **Updated:** 2026-07-27
 - **Related:** [ADR-002](ADR-002-silc-surface-syntax.md),
+  [ADR-009](ADR-009-compiler-synthesized-runtime.md),
+  [ADR-010](ADR-010-tensor-minilm-pipeline.md),
   [ARCHITECTURE.md](ARCHITECTURE.md)
+- **Superseded by (partial):** [ADR-009](ADR-009-compiler-synthesized-runtime.md)
+  for examples that treated `resource::*` / `ipc::*` / `store::*` as
+  author-facing feed steps.
 
 ## Context
 
@@ -16,6 +22,16 @@ codegen lower into Bun / CPython / Go workers and IPC stages.
 ## Decision
 
 Silc `==>` constructs **Pipeline IR**. It is not Rakudo call-threading.
+
+### Author steps vs synthesized steps
+
+| Kind | Appears in `.silc`? | Examples |
+| --- | --- | --- |
+| Author domain ops | Yes | `service::http`, `text::score`, `llm::complete`, `scrape::*`, `tensor::*` |
+| Synthesized runtime stages | No | dual-surface serving, `resource::*` CRUD, `ipc::*` / `store::*` persistence |
+
+Authors write domain feeds only. The compiler inserts IPC/store/resource stages
+([ADR-009](ADR-009-compiler-synthesized-runtime.md)).
 
 ### Value and type per step
 
@@ -33,10 +49,11 @@ errors.
 ### Argument position
 
 - The left-hand value is the **primary input** to the next step.
-- Colon-pair arguments (`:table(products)`, `:port(8080)`) are **named options**
-  on the call, not positional Raku feed targets.
-- Example: `Product ==> resource::list(:table(products))` feeds `Product` as the
-  primary schema/input; `:table` is an option.
+- Colon-pair arguments (`:port(8080)`, `:model("minilm-l6-v2")`) are **named
+  options** on the call, not positional Raku feed targets.
+- Example (author-facing): `$turn.prompt ==> llm::complete(:model("silclm"))`.
+- Example (tensor pipeline, ADR-010):
+  `$article.raw_content ==> tensor::tokenize(:model("minilm-l6-v2")) ==> tensor::infer(:prefer(CPU))`.
 
 ### Synchronous vs asynchronous execution
 
@@ -47,6 +64,7 @@ errors.
 | Across workers | Supervisor stages (e.g. Bun ingest → Python → Go) are asynchronous over UDS + mmap slots |
 
 Authors do not schedule threads. The compiler and supervisor own staging.
+Workers for UI, persistence, and resource HTTP are synthesized (ADR-009).
 
 ### Error propagation
 
@@ -60,7 +78,8 @@ Authors do not schedule threads. The compiler and supervisor own staging.
 
 - A Contract name on the left establishes the logical schema for following ops.
 - Ops may read, attach, or replace fields according to their registry semantics
-  (e.g. `llm::complete` attaches a reply; `store::sqlite` persists the record).
+  (e.g. `llm::complete` attaches a reply; synthesized `store::sqlite` persists
+  the record).
 - Subset-typed `Str` fields are validated at ingress when predicates are declared
   (ADR-002 v1).
 

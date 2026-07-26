@@ -2,9 +2,14 @@
 
 - **Status:** Accepted (Phase 1 scaffold)
 - **Date:** 2026-07-27
+- **Updated:** 2026-07-27
 - **Related:** [ADR-005](ADR-005-local-llm-complete.md),
   [ADR-002](ADR-002-silc-surface-syntax.md),
+  [ADR-009](ADR-009-compiler-synthesized-runtime.md),
+  [ADR-INDEX.md](ADR-INDEX.md),
   training harness under `training/`
+- **Canonical:** [`crates/sil-rlm/`](../crates/sil-rlm/),
+  [`crates/silc/src/assist.rs`](../crates/silc/src/assist.rs)
 
 ## Context
 

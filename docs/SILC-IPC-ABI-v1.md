@@ -1,6 +1,12 @@
 # Silc IPC ABI v1
 
-Status: Implemented for the feedback-portal vertical slice.
+- **Status:** Implemented
+- **Date:** 2026-07-25
+- **Updated:** 2026-07-27
+- **Related:** [ADR-001](ADR-001-runtime-and-ipc.md),
+  [ADR-009](ADR-009-compiler-synthesized-runtime.md),
+  [ADR-010](ADR-010-tensor-minilm-pipeline.md)
+- **Canonical:** [`crates/sil-ipc/src/lib.rs`](../crates/sil-ipc/src/lib.rs)
 
 ## Goals
 
@@ -32,7 +38,11 @@ Each slot is a file `slot_NNNN.sbuf` with:
 
 States: `EMPTY=0`, `WRITING=1`, `READY=2`, `READING=3`, `RETIRED=4`.
 
-Default pool: 64 slots × 64 KiB payload.
+**Default pool:** 512 slots × 16 KiB payload
+(`DEFAULT_SLOT_COUNT` / `DEFAULT_PAYLOAD_CAPACITY`).
+
+**Pipeline-only override:** 512 slots × 64 KiB payload for scrape/tensor
+ingestion graphs (supervisor selects capacity; ABI/protocol version unchanged).
 
 ## Control plane (UDS)
 
@@ -60,7 +70,7 @@ Socket paths may be shortened under the OS temp directory when the macOS path le
 | Slot files | Rust supervisor (`silc`) via `sil-ipc` |
 | Layout / schema id | Silc compiler (manifest) |
 | Engines (Bun / CPython / Go) | Global `~/.silc/runtimes/` — never copied into `.runtime/` |
-| SQLite DB | `.runtime/<program>/data/feedback.db` |
+| SQLite DB | `.runtime/<program>/data/*.db` (synthesized persistence; ADR-009) |
 
 ## Non-goals (v1)
 

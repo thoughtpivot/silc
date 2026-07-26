@@ -45,7 +45,7 @@ provisioning). Pass `--no-emit` to stop after classify (faster; tier 2).
   "task_id": "scored_form",
   "category": "form",
   "task": "…",
-  "agents_md_version": "0.2.0",
+  "agents_md_version": "0.3.0",
   "prompt": "You are silclm…",
   "prompt_sha256": "…",
   "target_model": "silclm"
@@ -59,7 +59,7 @@ provisioning). Pass `--no-emit` to stop after classify (faster; tier 2).
   "prompt_id": "prompt-scored_form",
   "prompt": "optional full prompt text",
   "task": "optional task text",
-  "completion": "```silc\n@version(\"0.2.0\")\n…\n```",
+  "completion": "```silc\n@version(\"0.3.0\")\n…\n```",
   "model": "optional-generator-id",
   "category": "form"
 }
@@ -73,15 +73,31 @@ Accepted rows include `program`, `program_sha256`, `execution_mode`,
 
 ## Subject-first declarator benchmark
 
-Evaluate `class X is resource` vs hypothetical `resource X` **without migrating
-syntax**. See [docs/subject-first-declarators.md](../docs/subject-first-declarators.md).
+Reproduce the historical class-is vs subject-first comparison. Silc 0.4.0
+teaches subject-first syntax; the harness still scores both variants through
+the product parser. See
+[docs/subject-first-declarators.md](../docs/subject-first-declarators.md) and
+[docs/subject-first-decision.md](../docs/subject-first-decision.md).
 
 ```bash
 cargo run -p sil-training -- subject-first-bench \
   --agents crates/silc/templates/AGENTS.md \
   --tasks training/tasks \
+  --trials training/out/subject-first-ui.jsonl \
+  --trials training/out/subject-first-api.jsonl \
   --out training/out/subject_first_bench.json
 ```
+
+Repeat `--trials` for each JSONL input. Each row uses:
+
+```json
+{"task_id":"components","variant":"subject-first","completion":"@version(\"0.3.0\")\n…","repair_turns":0}
+```
+
+The command reports overall and task-family first-pass rates, repair turns,
+token estimates, and an automatic `insufficient_data` / `go` / `no_go`
+decision. Both variants call `check_source` directly; legacy class-is inputs
+receive migration diagnostics.
 
 ## Product note
 
@@ -90,7 +106,7 @@ it (`llm::complete` / omit `:model`). This bank is the path to a fine-tuned
 silclm for in-app chat and cheap local authoring help.
 See [docs/ADR-005-local-llm-complete.md](../docs/ADR-005-local-llm-complete.md).
 
-## Future: RLM trajectories (ADR-008)
+## Future: RLM trajectories ([ADR-008](../docs/ADR-008-recursive-silclm-assist.md))
 
 [`silc assist`](../docs/ADR-008-recursive-silclm-assist.md) explores AGENTS +
 examples via a closed-tool recursive loop and validates drafts with

@@ -13,22 +13,31 @@ React, Python, Go, manifests, or glue.
 
 ---
 
-## Status (0.2.0)
+## Status (0.4.0)
 
-Silc is **pre-1.0**. Release 0.2.0 replaces profile-selected portals with
-author-defined components, resources, apps, and mandatory dual-surface UI
-(web + terminal from one semantic tree).
+Silc is **pre-1.0**. Release 0.4.0 makes runtime mechanics
+compiler-synthesized: authors declare intent (`app` routes, resource
+capabilities, processors, domain ops); the compiler owns dual-surface UI,
+SQLite persistence, and IPC/store staging ([ADR-009](docs/ADR-009-compiler-synthesized-runtime.md)).
 
 **Shipped today**
 
 - Parse → validate → deterministic Tier 1/2 route → codegen
-- `is component` / `is resource` / `is app` (props, state, slots, events, queries, routes)
-- Dual-surface UI: the same component graph lowers to **web** and **terminal**
+- Declaration-based `component` / `resource Name for Contract` / `app` routes
+- Dual-surface UI synthesized from `app` (web + terminal; no author `serve()`)
 - Generic resource CRUD over SQLite; optional `text::score` / `llm::complete`
-- `service::http` API-only programs (Go/Gin)
-- Runnable `silc init` scaffold (component + app + both surfaces)
+- Runnable `scrape::*` and closed MiniLM `tensor::*` pipeline
+  ([ADR-006](docs/ADR-006-scrape-namespace.md),
+  [ADR-010](docs/ADR-010-tensor-minilm-pipeline.md))
+- `service::http` API-only programs
+- Runnable `silc init` scaffold; experimental `silc assist` ([ADR-008](docs/ADR-008-recursive-silclm-assist.md))
 - Compiler-owned Bun 1.2.18, CPython 3.12.12, and Go 1.23.6 under `~/.silc/runtimes/`
 - Semantic release automation (release-plz); SemVer 0.x with Conventional Commits
+
+**Removed in 0.4.0 (author source)**
+
+- `method serve()`, author `ui::web` / `ui::terminal` ops, `sink` modules
+- `ipc::*`, `store::*`, and `resource::*` pipelines
 
 **Removed in 0.2.0**
 
@@ -38,8 +47,8 @@ author-defined components, resources, apps, and mandatory dual-surface UI
 
 **Stub-only today**
 
-- Broader pipeline ops (`http::get`, `tensor::`, `pandas::`, …) parse, route,
-  and emit inspectable stubs; they do not execute
+- Broader pipeline ops (`http::get`, `html::*`, `numpy::*`, `pandas::*`, …)
+  parse, route, and emit inspectable stubs; they do not execute
 
 ---
 
@@ -53,16 +62,14 @@ cd myapp
 silc build main.silc   # runnable dual-surface app
 silc main.silc         # run it (OpenTUI attaches in a real TTY)
 
-# web:      http://127.0.0.1:18080
+# web:      http://127.0.0.1:18088  (override SILC_HTTP_PORT)
 # terminal: OpenTUI on the local TTY (primary)
-# fallback: telnet 127.0.0.1 18023  (remote TCP CLI)
+# fallback: telnet 127.0.0.1 18023  (remote TCP CLI; SILC_TERMINAL_PORT)
 ```
 
 `silc init` writes `main.silc`, `AGENTS.md`, `.gitignore`, and a runtime lock.
-The scaffold is a small note-form app with an author-defined component, an
-`is app` route table, and both `ui::web` and `ui::terminal`.
-
-OpenTUI is the **primary** terminal surface when stdin/stdout are a TTY (or
+The scaffold is a small note-form app with an author-defined component and an
+`app` route table; dual-surface web/terminal serving is synthesized.
 
 Experimental authoring help (ADR-008) explores Silc examples via a closed-tool
 recursive loop around **silclm**:
@@ -71,12 +78,13 @@ recursive loop around **silclm**:
 silc assist "dual-surface notes app with submit" --out notes.silc
 ```
 
+OpenTUI is the **primary** terminal surface when stdin/stdout are a TTY (or
 `SILC_FORCE_OPENTUI=1`). The TCP telnet CLI on the terminal port remains a
 remote fallback for non-TTY sessions.
 
 ---
 
-## How Silc 0.2.0 works
+## How Silc 0.4.0 works
 
 ```text
 Contracts + Components + Resources + App routes
@@ -94,13 +102,13 @@ Contracts + Components + Resources + App routes
 Authors express intent in Silc. The compiler owns substrates (React, Bun,
 CPython, Go, IPC). Agents and humans edit `.silc` only — never `.runtime/`.
 
-| Subject | Purpose |
+| Construct | Purpose |
 | --- | --- |
-| Contract | Typed record schema (`class Note { has Str $.text; }`) |
+| Contract | Typed record schema (`contract Note { has Str $.text; }`) |
 | Component | Reusable UI: props, `has state`, slots, `emit`, handlers, `render()` |
 | Resource | `query` / `mutation` data layer → SQLite CRUD HTTP |
-| App | `route "/path" => Page;` + `serve()` with **both** surfaces |
-| Module | Optional `service` / `processor` / `sink` pipelines |
+| App | `route "/path" => Page;` — dual-surface serving is synthesized |
+| Module | Optional `service` / `processor` / `task` pipelines |
 
 Built-in primitives (`ui::page`, `ui::button`, `ui::form`, …) are compiler-owned
 catalog entries with web and terminal contracts. Author-defined components live
@@ -108,7 +116,7 @@ in app source. There is no separate component-source stdlib or resolver.
 
 ---
 
-## Authoring API (0.2.0)
+## Authoring API (0.4.0)
 
 This section is the human-facing mirror of the canonical agent contract in
 [`crates/silc/templates/AGENTS.md`](crates/silc/templates/AGENTS.md). Detailed
@@ -118,13 +126,13 @@ semantics live in the ADRs after the API is visible here.
 
 | Construct | Role |
 | --- | --- |
-| `@version("0.2.0")` | Optional program version annotation |
+| `@version("0.4.0")` | Required exact source-version annotation |
 | `subset Name of Base where { … }` | Semantic type alias; v1 `where` predicates (Str): `.contains` / `.starts-with` / `.ends-with` (ADR-002) |
-| `class X { has T $.f; }` | **Contract** — typed data schema |
-| `class X is component` | **Component** — props, `has state`, slots, `emit`, handlers, `render()` |
-| `class X is resource` | **Resource** — `query` / `mutation` data layer (CRUD over SQLite) |
-| `class X is app` | **App** — `route` table + `method serve()` |
-| `class X is service` / `processor` / `sink` | Optional backend modules |
+| `contract X { has T $.f; }` | **Contract** — typed data schema |
+| `component X` | **Component** — props, `has state`, slots, `emit`, handlers, `render()` |
+| `resource X for Contract` | **Resource** — capability CRUD (`query list;`, `mutation create;`, …) |
+| `app X` | **App** — `route` table (dual-surface serving synthesized) |
+| `service X` / `processor X` / `task X` | Optional workflow modules |
 | `==>` | Pipeline feed between values and `ns::op(...)` calls |
 
 ### Types
@@ -153,8 +161,10 @@ Authors write **one** semantic component tree. The compiler lowers it to:
 - `ui::web` → React/Tailwind (compiler-owned)
 - `ui::terminal` → OpenTUI (compiler-owned); TCP telnet CLI is a remote fallback
 
-Every UI app **must** declare both surfaces in `serve()` with distinct ports.
-No component may be web-only or terminal-only.
+Every UI `app` synthesizes both surfaces automatically (web + terminal).
+Authors never write `method serve()`, `ui::web`, or `ui::terminal` as program
+operations. No component may be web-only or terminal-only. Override ports with
+`SILC_HTTP_PORT` / `SILC_TERMINAL_PORT` if needed.
 
 ### Shared prop vocabulary
 
@@ -234,7 +244,7 @@ API contract (props / events / slots / children).
 ### Component / resource / app patterns
 
 ```silc
-class HomePage is component {
+component HomePage {
     has state Str $.text = "";
     method render() {
         ui::page(
@@ -248,22 +258,13 @@ class HomePage is component {
     method on_submit() { submit(); }
 }
 
-class Products is resource {
-    has Str $.table = "products";
-    query list() -> [Product] {
-        Product ==> resource::list(:table(products))
-    }
-    mutation create(Product $item) {
-        $item ==> resource::create(:table(products))
-    }
+resource Products for Product {
+    query list;
+    mutation create;
 }
 
-class MyApp is app {
+app MyApp {
     route "/" => HomePage;
-    method serve() {
-        ui::web(:root(MyApp), :port(18080), :route("/"))
-            ==> ui::terminal(:port(18023))
-    }
 }
 ```
 
@@ -279,14 +280,17 @@ no `:model` (or `:model("silclm")`).
 
 Executable today (registry in [`crates/sil-core/src/operation.rs`](crates/sil-core/src/operation.rs)):
 
-`ui::web`, `ui::terminal`, `service::http`, `text::score`, `llm::complete`,
-`ipc::publish`, `store::sqlite`, `store::commit`,
-`resource::list`, `resource::get`, `resource::create`, `resource::update`,
-`resource::delete`,
+`service::http`, `text::score`, `llm::complete`,
 `scrape::page`, `scrape::site`, `scrape::select`, `scrape::render`,
-`scrape::extract`.
+`scrape::extract`, `tensor::tokenize`, `tensor::infer`.
 
-Stub-only namespaces (parse/route/emit, do not run): `http`, `html`, `tensor`,
+Pipeline-only programs run a closed
+`scrape::page` → `scrape::extract` → `tensor::tokenize` →
+`tensor::infer(:prefer(CPU))` → SQLite path. Their output is a normalized
+`Vec[num32; 384]` using compiler-pinned `minilm-l6-v2`; run with
+`silc run main.silc --input-json '{"url":"https://…"}'`.
+
+Stub-only namespaces (parse/route/emit, do not run): `http`, `html`,
 `numpy`, `pandas`, `ws`, `sys`, `schema`, `payload`, `json`, plus non-registry
 ops under runnable namespaces. Mixing stub-only ops into a runnable graph is a
 **compile error**. Prefer `scrape::*` over stub `http::get` / `html::*`
@@ -294,14 +298,16 @@ ops under runnable namespaces. Mixing stub-only ops into a runnable graph is a
 
 Graph constraints:
 
-1. UI apps require `is app`, non-empty `route`s, `serve()` with both
-   `ui::web(:root(...))` and `ui::terminal(:port(...))`, distinct ports.
+1. UI apps require an `app` with non-empty `route`s; dual-surface web/terminal
+   serving is synthesized by the compiler.
 2. `text::score` and `llm::complete` cannot both appear in one program.
-3. Score/LLM paths need exactly one processor and one `is storage(SQLite)` sink
-   with `ipc::publish ==> store::sqlite ==> store::commit`.
-4. API-only `service::http` programs must not declare processor/sink modules.
+3. Score/LLM/tensor paths need exactly one processor; SQLite persistence is
+   synthesized (do not declare `sink` / `ipc::*` / `store::*`).
+4. API-only `service::http` programs must not declare processor modules.
 5. `scrape::*` cannot mix with `text::score`; it may feed scraped content into
    `llm::complete` for grounded SilcLM summaries.
+6. Tensor pipelines are CPU-only, require MiniLM, and emit exactly 384
+   normalized `num32` values.
 
 ### Generated runtime surfaces
 
@@ -326,6 +332,7 @@ Examples are **standalone Silc projects** (same shape as `silc init`). See
 | [`examples/chatApp/`](examples/chatApp/) | Multi-session local chat via **silclm** |
 | [`examples/inventoryApp/`](examples/inventoryApp/) | Inventory CRUD + browse/admin + grounded silclm assistant |
 | [`examples/scraperApp/`](examples/scraperApp/) | URL + depth form; `scrape::site` crawl; results table |
+| [`examples/pipelineApp/`](examples/pipelineApp/) | One-shot scrape → MiniLM/ONNX → SQLite ([ADR-010](docs/ADR-010-tensor-minilm-pipeline.md)) |
 
 Each example `AGENTS.md` embeds the compiler template common block byte-for-byte
 and appends app-specific notes after `<!-- END SILC_AGENTS_TEMPLATE -->`.
@@ -357,8 +364,8 @@ Silc source (.silc)
 ```
 
 Workspace crates: `sil-core`, `sil-lexer`, `sil-parser`, `sil-router`,
-`sil-codegen`, `sil-ipc`, `silc` (CLI + supervisor), `sil-training`
-(provider-neutral silclm dataset harness).
+`sil-codegen`, `sil-ipc`, `silc` (CLI + supervisor), `sil-rlm` (assist loop),
+`sil-training` (provider-neutral silclm dataset harness).
 
 Per-app output lands in `{workdir}/.runtime/{program}/` (gitignored). Engines
 stay in `~/.silc/runtimes/`. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
@@ -372,7 +379,7 @@ into the project. That file is the operational contract:
 
 - Edit Silc source only; never patch `.runtime/`
 - Prefer components + apps + resources over inventing portal profiles
-- Always declare both `ui::web` and `ui::terminal`
+- Declare `app` routes; dual-surface web/terminal serving is synthesized
 - Stay inside the compiler-owned UI catalog and runnable op set
 - Validate with `silc build`; report limits instead of escaping to React/OpenTUI
 
@@ -408,15 +415,21 @@ concurrent `/submit` POSTs with SQLite checks.
 
 | Doc | Topic |
 | --- | --- |
+| [docs/ADR-INDEX.md](docs/ADR-INDEX.md) | ADR index (decisions, specs, appendices) |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Subject model and crate layout |
+| [docs/intent-vs-subjects.md](docs/intent-vs-subjects.md) | Intent authoring vs subject architecture |
 | [docs/ADR-001-runtime-and-ipc.md](docs/ADR-001-runtime-and-ipc.md) | Engines and IPC |
 | [docs/ADR-002-silc-surface-syntax.md](docs/ADR-002-silc-surface-syntax.md) | Language surface (Raku-inspired, not Raku-compatible) |
-| [docs/ADR-007-pipeline-feeds.md](docs/ADR-007-pipeline-feeds.md) | `==>` pipeline feed semantics |
-| [docs/subject-first-declarators.md](docs/subject-first-declarators.md) | Subject-first syntax evaluation (no migration yet) |
-| [docs/ADR-003-declarative-ui.md](docs/ADR-003-declarative-ui.md) | Dual-surface UI |
+| [docs/ADR-003-declarative-ui.md](docs/ADR-003-declarative-ui.md) | Dual-surface UI policy |
 | [docs/ADR-004-runtime-strengths.md](docs/ADR-004-runtime-strengths.md) | Why Bun / CPython / Go |
 | [docs/ADR-005-local-llm-complete.md](docs/ADR-005-local-llm-complete.md) | Local LLM completions |
+| [docs/ADR-006-scrape-namespace.md](docs/ADR-006-scrape-namespace.md) | `scrape::*` namespace |
+| [docs/ADR-007-pipeline-feeds.md](docs/ADR-007-pipeline-feeds.md) | `==>` pipeline feed semantics |
 | [docs/ADR-008-recursive-silclm-assist.md](docs/ADR-008-recursive-silclm-assist.md) | Recursive `silc assist` / silclm RLM |
+| [docs/ADR-009-compiler-synthesized-runtime.md](docs/ADR-009-compiler-synthesized-runtime.md) | Compiler-synthesized UI / persistence |
+| [docs/ADR-010-tensor-minilm-pipeline.md](docs/ADR-010-tensor-minilm-pipeline.md) | MiniLM embedding pipeline |
+| [docs/subject-first-decision.md](docs/subject-first-decision.md) | Historical benchmark evidence (appendix) |
+| [docs/subject-first-declarators.md](docs/subject-first-declarators.md) | Benchmark harness (appendix) |
 | [docs/SILC-IPC-ABI-v1.md](docs/SILC-IPC-ABI-v1.md) | Shared buffer ABI |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
 
