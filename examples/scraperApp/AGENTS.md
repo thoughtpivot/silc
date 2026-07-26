@@ -370,3 +370,11 @@ Compiler-owned (do not invent alternatives):
 7. Stay inside the UI catalog and runnable op set above.
 8. Validate with `silc build`; report errors instead of patching `.runtime/`.
 <!-- END SILC_AGENTS_TEMPLATE -->
+
+## App-specific notes (scraperApp)
+
+- Dual-surface UI: URL + crawl depth form, results `ui::table` on `scraped_pages`.
+- Pipeline: `scrape::site(:depth(...), :same_host(true), :js(auto))` + `scrape::select`.
+- Submit posts `{url, depth}` to `/submit`; Bun orchestrates Go Colly crawl and optional Playwright escalation; rows replace `scraped_pages`.
+- Ports: web `18110`, terminal `18111`.
+- Never hand-edit `.runtime/` or name Colly/Playwright in `.silc`.

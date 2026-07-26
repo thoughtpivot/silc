@@ -1,0 +1,96 @@
+# ADR-006: Scrape Namespace (`scrape::*`) and scraperApp
+
+- **Status:** Accepted
+- **Date:** 2026-07-26
+- **Related:** [ADR-001](ADR-001-runtime-and-ipc.md),
+  [ADR-003](ADR-003-declarative-ui.md),
+  [ADR-004](ADR-004-runtime-strengths.md),
+  [ARCHITECTURE.md](ARCHITECTURE.md)
+
+## Context
+
+Silc needs first-class web scraping without exposing Bun, Go/Colly, or
+CPython/Playwright on the authoring surface. Authors express scrape intent;
+the compiler chooses substrates from the ADR-004 strength catalog.
+
+The north-star product is **`examples/scraperApp`**: a dual-surface UI where
+users enter a URL and crawl depth, Silc crawls the site, and results appear
+in a resource-backed table.
+
+Legacy stubs `http::get` and `html::extract_body` remain parse/route/emit-only.
+Runnable programs must use `scrape::*`.
+
+## Decision
+
+### Author catalog
+
+| Op | Intent | Props |
+| --- | --- | --- |
+| `scrape::page` | Fetch one URL | `:js(false\|auto\|true)`, `:timeout_ms?` |
+| `scrape::site` | Crawl from a seed URL | `:depth`, `:same_host`, `:link_css?`, `:js?` |
+| `scrape::select` | CSS projection | `:css` (required), `:as?` |
+| `scrape::render` | Explicit browser render | `:timeout_ms?`, `:wait_for?` |
+| `scrape::extract` | Schema-shaped extract | `:into(Contract)` |
+
+Authors never write `:engine`, Colly, Cheerio, or Playwright.
+
+### Substrate policy
+
+| Signal | Engine | Adapter id |
+| --- | --- | --- |
+| `page` + `:js(false)` / static success | Bun | `bun-fetch-v1` |
+| `select` (CSS parse) | Bun (or Go after crawl) | `bun-fetch-v1` / in-crawl |
+| `site` | Go (Colly) | `go-colly-v1` |
+| `render`, `:js(true)`, `:js(auto)` escalate | CPython (Playwright) | `python-playwright-v1` |
+| `extract` | CPython | `python-playwright-v1` |
+
+`:js(auto)` tries static fetch first; if the body is empty or a trivial JS
+shell, Silc escalates to Playwright. Provenance is recorded in the manifest.
+
+### Supervisor roles
+
+- `bun` — UI ingress + static scrape helper
+- `go-crawl` — Colly site crawl
+- `python-browser` — Playwright (distinct from score/llm `python` pool)
+- `go` — SQLite sink / resource persistence
+
+### scraperApp
+
+UI: URL field, depth select (1–5), submit, results `ui::table` on resource
+`scraped_pages`. Dual-surface `ui::web` + `ui::terminal` required.
+
+Pipeline intent:
+
+```silc
+$job.url
+    ==> scrape::site(:depth($job.depth), :same_host(true), :js(auto))
+    ==> scrape::select(:css("title"), :as(title))
+```
+
+On each new crawl, prior rows for that run are replaced (clear-then-insert
+into `scraped_pages`).
+
+### Ship table
+
+| Slice | Executable ops | scraperApp behavior |
+| --- | --- | --- |
+| A | `page`, `select` | Seed URL only (depth ignored / clamped) |
+| B | + `site` | User depth drives Colly crawl; table fills |
+| C | + `render`, `extract`; full `:js` | JS escalation / schema extract |
+
+All five ops are documented from day one; only shipped ops appear in
+`EXECUTABLE_OPS`.
+
+## Non-goals
+
+- Author-selectable engines or library names
+- Playwright under Bun
+- Making `http::get` / `html::extract_body` executable
+- Camoufox / stealth anti-bot product beyond vanilla Playwright
+- Scrapy as a substrate
+
+## Consequences
+
+- Routing and manifests cite this ADR for scrape provenance.
+- `docs_conformance` keeps AGENTS.md / README aligned with `EXECUTABLE_OPS`.
+- scraperApp is the integration test for the fused scrape graph.

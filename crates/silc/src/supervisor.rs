@@ -253,6 +253,102 @@ pub fn build_llm_python(lock: &RuntimeLock, runtime_root: &Path) -> Result<PathB
     Ok(python)
 }
 
+/// Build the compiler-owned Colly crawl binary for `scrape::site` (ADR-006).
+pub fn build_scrape_crawl(lock: &RuntimeLock, runtime_root: &Path) -> Result<PathBuf, String> {
+    let crawl_dir = runtime_root.join("go/crawl");
+    if !crawl_dir.join("worker.go").is_file() {
+        return Err("missing compiler-generated go/crawl/worker.go for scrape::site".into());
+    }
+    if !crawl_dir.join("go.mod").is_file() {
+        return Err("missing compiler-generated go/crawl/go.mod for scrape::site".into());
+    }
+    let out = crawl_dir.join("worker");
+    let tidy = Command::new(&lock.go_bin)
+        .current_dir(&crawl_dir)
+        .args(["mod", "tidy"])
+        .env("GOTOOLCHAIN", "local")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| format!("failed to tidy scrape crawl module with Silc Go: {e}"))?;
+    if !tidy.status.success() {
+        return Err(format!(
+            "Silc scrape crawl `go mod tidy` failed:\n{}\n{}",
+            String::from_utf8_lossy(&tidy.stdout),
+            String::from_utf8_lossy(&tidy.stderr)
+        ));
+    }
+    let status = Command::new(&lock.go_bin)
+        .current_dir(&crawl_dir)
+        .args(["build", "-o", "worker", "."])
+        .env("GOTOOLCHAIN", "local")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| format!("failed to build scrape crawl worker with Silc Go: {e}"))?;
+    if !status.status.success() || !out.is_file() {
+        return Err(format!(
+            "Silc scrape crawl worker build failed:\n{}\n{}",
+            String::from_utf8_lossy(&status.stdout),
+            String::from_utf8_lossy(&status.stderr)
+        ));
+    }
+    Ok(out)
+}
+
+/// Install Playwright for `scrape::render` / `:js(auto|true)` (ADR-006).
+pub fn build_scrape_python(lock: &RuntimeLock, runtime_root: &Path) -> Result<PathBuf, String> {
+    let python_dir = runtime_root.join("python");
+    let requirements = python_dir.join("scrape_requirements.txt");
+    if !requirements.is_file() {
+        return Err(
+            "missing compiler-generated python/scrape_requirements.txt for scrape browser".into(),
+        );
+    }
+    if !python_dir.join("browser_worker.py").is_file() {
+        return Err("missing compiler-generated python/browser_worker.py for scrape browser".into());
+    }
+    // Prefer a scrape-specific venv so llm and browser deps stay isolated.
+    let venv = python_dir.join(".venv-scrape");
+    let python = venv.join("bin/python");
+    if !python.is_file() {
+        let output = Command::new(&lock.python_bin)
+            .args(["-m", "venv"])
+            .arg(&venv)
+            .output()
+            .map_err(|e| format!("failed to create scrape Python environment: {e}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "Silc scrape Python environment creation failed:\n{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+    }
+    let status = Command::new(&python)
+        .args(["-m", "pip", "install", "--disable-pip-version-check", "-r"])
+        .arg(&requirements)
+        .status()
+        .map_err(|e| format!("failed to install scrape Playwright dependency: {e}"))?;
+    if !status.success() {
+        return Err("Silc install of compiler-pinned playwright failed".into());
+    }
+    let browsers = Command::new(&python)
+        .args(["-m", "playwright", "install", "chromium"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| format!("failed to install Playwright Chromium: {e}"))?;
+    if !browsers.status.success() {
+        return Err(format!(
+            "Silc Playwright Chromium install failed:\n{}\n{}",
+            String::from_utf8_lossy(&browsers.stdout),
+            String::from_utf8_lossy(&browsers.stderr)
+        ));
+    }
+    Ok(python)
+}
+
 /// Run an API-only `service::http` program (Go/Gin, no Bun UI).
 pub fn run_api(output: &EmitResult, _lock: &RuntimeLock) -> Result<(), String> {
     let graph = output
@@ -446,7 +542,8 @@ pub fn run_app(output: &EmitResult, lock: &RuntimeLock) -> Result<(), String> {
         wait_for_http_health(api_port, Duration::from_secs(30))?;
     }
 
-    let bun_child = Command::new(&lock.bun_bin)
+    let mut bun_cmd = Command::new(&lock.bun_bin);
+    bun_cmd
         .arg(output.root.join("typescript/worker.ts"))
         .env("SILC_SOCKET", &socket_path)
         .env("SILC_DB_PATH", &db_path)
@@ -458,7 +555,26 @@ pub fn run_app(output: &EmitResult, lock: &RuntimeLock) -> Result<(), String> {
             graph.terminal_port.unwrap_or_default().to_string(),
         )
         .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    if graph.has_scrape() {
+        if graph.needs_scrape_crawl() {
+            bun_cmd.env(
+                "SILC_SCRAPE_CRAWL_BIN",
+                output.root.join("go/crawl/worker"),
+            );
+        }
+        if graph.needs_scrape_browser() {
+            bun_cmd.env(
+                "SILC_SCRAPE_BROWSER_PY",
+                output.root.join("python/browser_worker.py"),
+            );
+            bun_cmd.env(
+                "SILC_SCRAPE_PYTHON_BIN",
+                output.root.join("python/.venv-scrape/bin/python"),
+            );
+        }
+    }
+    let bun_child = bun_cmd
         .spawn()
         .map_err(|e| format!("failed to spawn Silc Bun worker: {e}"))?;
     children.push(bun_child);

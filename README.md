@@ -273,12 +273,15 @@ Executable today (registry in [`crates/sil-core/src/operation.rs`](crates/sil-co
 `ui::web`, `ui::terminal`, `service::http`, `text::score`, `llm::complete`,
 `ipc::publish`, `store::sqlite`, `store::commit`,
 `resource::list`, `resource::get`, `resource::create`, `resource::update`,
-`resource::delete`.
+`resource::delete`,
+`scrape::page`, `scrape::site`, `scrape::select`, `scrape::render`,
+`scrape::extract`.
 
 Stub-only namespaces (parse/route/emit, do not run): `http`, `html`, `tensor`,
 `numpy`, `pandas`, `ws`, `sys`, `schema`, `payload`, `json`, plus non-registry
 ops under runnable namespaces. Mixing stub-only ops into a runnable graph is a
-**compile error**.
+**compile error**. Prefer `scrape::*` over stub `http::get` / `html::*`
+([ADR-006](docs/ADR-006-scrape-namespace.md)).
 
 Graph constraints:
 
@@ -288,10 +291,12 @@ Graph constraints:
 3. Score/LLM paths need exactly one processor and one `is storage(SQLite)` sink
    with `ipc::publish ==> store::sqlite ==> store::commit`.
 4. API-only `service::http` programs must not declare processor/sink modules.
+5. `scrape::*` cannot mix with `text::score` or `llm::complete`.
 
 ### Generated runtime surfaces
 
-- `POST /submit` — form `submit()` handlers
+- `POST /submit` — form `submit()` handlers (scrape jobs when `scrape::*` present)
+- `POST /scrape` — scrape ingest when `scrape::*` present
 - `POST /complete` — chat / `*.complete()` processors
 - `GET|POST|PUT|DELETE /api/{table}` — resource queries/mutations
 - Web: React app served by Bun
@@ -310,6 +315,7 @@ Examples are **standalone Silc projects** (same shape as `silc init`). See
 | --- | --- |
 | [`examples/chatApp/`](examples/chatApp/) | Multi-session local chat via **silclm** |
 | [`examples/inventoryApp/`](examples/inventoryApp/) | Inventory CRUD + browse/admin + grounded silclm assistant |
+| [`examples/scraperApp/`](examples/scraperApp/) | URL + depth form; `scrape::site` crawl; results table |
 
 Each example `AGENTS.md` embeds the compiler template common block byte-for-byte
 and appends app-specific notes after `<!-- END SILC_AGENTS_TEMPLATE -->`.
@@ -334,9 +340,9 @@ Silc source (.silc)
    sil-codegen  stub emit  or  runnable workers + dual-surface UI lowering
         ▼
    silc supervisor
-        ├── Bun  (web + terminal + resource HTTP)
-        ├── CPython (scoring / local LLM)
-        ├── Go (SQLite persistence / HTTP API)
+        ├── Bun  (web + terminal + resource HTTP + static scrape)
+        ├── CPython (scoring / local LLM / Playwright scrape)
+        ├── Go (SQLite persistence / HTTP API / Colly crawl)
         └── sil-ipc mmap slots + UDS
 ```
 

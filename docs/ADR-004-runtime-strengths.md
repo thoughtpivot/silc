@@ -31,7 +31,8 @@ codegen substrates, and supervisor roles all follow the catalogs below.
 5. Web-native JSON / fetch / Buffer ergonomics for edge/protocol code
 
 **Typical assignment:** `service` modules; namespaces `http`, `html`, `ws`,
-`ui`.
+`ui`; static `scrape::page` / `scrape::select` (ADR-006 adapter
+`bun-fetch-v1`).
 
 ### CPython
 
@@ -40,10 +41,13 @@ codegen substrates, and supervisor roles all follow the catalogs below.
 3. Rapid domain glue for analysis pipelines
 4. Mature `mmap` / buffer protocols for shared-memory workers
 5. Replica-friendly CPU-bound work (Silc spawns many Python scorers)
+6. First-class browser automation for JS-heavy scrape targets (Playwright)
 
 **Typical assignment:** `processor` modules; namespaces `tensor`, `numpy`,
 `pandas`, `text`, `llm`; `:prefer<CUDA>`. `llm::complete` uses a
 compiler-pinned llama.cpp binding and local GGUF catalog (ADR-005).
+`scrape::render`, `scrape::extract`, and `:js(true|auto)` escalation use
+Playwright (ADR-006 adapter `python-playwright-v1`).
 
 ### Go
 
@@ -52,9 +56,11 @@ compiler-pinned llama.cpp binding and local GGUF catalog (ADR-005).
 3. Rock-solid stdlib networking / UDS / file IPC
 4. Simple durable storage (SQLite) with one binary artifact
 5. Predictable performance under tight `latency(...)` constraints
+6. High-concurrency site crawls (`scrape::site` via Colly)
 
 **Typical assignment:** `sink` modules with `storage(SQLite)` or
-`latency ≤ 10ms`; namespaces `store`, `ipc`, `sys`.
+`latency ≤ 10ms`; namespaces `store`, `ipc`, `sys`; `scrape::site` crawl
+workers (ADR-006 adapter `go-colly-v1`).
 
 ### Single-file north star
 

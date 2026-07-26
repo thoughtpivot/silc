@@ -6,7 +6,8 @@ compiler phases to become the owners of the model.
 
 Silc 0.2.0 implements subjects, lexing, parsing, deterministic routing,
 runnable Bun/Python/Go codegen, supervisor-owned mmap + UDS IPC, generic
-SQLite resources, and dual-surface component applications. Broader operation
+SQLite resources, dual-surface component applications, and fused `scrape::*`
+workers (Bun fetch, Go Colly, CPython Playwright — ADR-006). Broader operation
 sets still emit inspectable stubs.
 
 Runtime and IPC direction is fixed by

@@ -1,0 +1,101 @@
+#!/usr/bin/env silc
+# scraperApp — enter a URL and crawl depth; Silc scrapes the site and shows results.
+@version("0.2.0")
+
+class ScrapedPage {
+    has Str $.id;
+    has Str $.url;
+    has Str $.title;
+    has Str $.snippet;
+    has Str $.depth;
+    has Str $.status;
+}
+
+class Pages is resource {
+    has Str $.table = "scraped_pages";
+
+    query list() -> [ScrapedPage] {
+        ScrapedPage ==> resource::list(:table(scraped_pages))
+    }
+
+    mutation create(ScrapedPage $item) {
+        $item ==> resource::create(:table(scraped_pages))
+    }
+
+    mutation delete(ScrapedPage $item) {
+        $item ==> resource::delete(:table(scraped_pages))
+    }
+}
+
+class ScraperHome is component {
+    has state Str $.url = "";
+    has state Str $.depth = "2";
+    has state Str $.status = "";
+    query $.pages = Pages.list();
+
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("Scraper"))),
+            ui::stack(
+                ui::section(
+                    :title("Scrape a site"),
+                    :description("Enter a website URL and how deep to crawl. Results appear below.")
+                ),
+                ui::form(:on(submit(on_submit)),
+                    ui::text_input(
+                        :field(url),
+                        :label("Website URL"),
+                        :placeholder("https://example.com")
+                    ),
+                    ui::select(
+                        :field(depth),
+                        :label("Crawl depth"),
+                        :options(["1", "2", "3", "4", "5"])
+                    ),
+                    ui::toolbar(
+                        ui::button(:label("Scrape"), :variant(primary), :submit)
+                    )
+                ),
+                when $.status {
+                    ui::alert(:tone(info), :text($.status))
+                },
+                ui::section(
+                    :title("Results"),
+                    :description("Pages discovered within the requested depth (same host)."),
+                    ui::table(
+                        :rows($.pages),
+                        :columns(["title", "url", "depth", "status", "snippet"]),
+                        :empty_text("No pages yet. Enter a URL and scrape."),
+                        :sortable,
+                        :searchable
+                    )
+                )
+            )
+        )
+    }
+
+    method on_submit() {
+        $.status = "Scraping…";
+        submit();
+        Pages.list();
+        $.status = "Done.";
+    }
+}
+
+class ScraperApp is app {
+    route "/" => ScraperHome;
+
+    method serve() {
+        ui::web(:root(ScraperApp), :port(18110), :route("/"))
+            ==> ui::terminal(:port(18111))
+    }
+}
+
+class Crawler is service {
+    method run() {
+        target_url
+            ==> scrape::site(:depth(2), :same_host(true), :js(auto))
+            ==> scrape::select(:css("title"), :as(title))
+            ==> scrape::select(:css("article"), :as(snippet))
+    }
+}

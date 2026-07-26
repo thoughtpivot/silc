@@ -22,7 +22,7 @@ The shared block between `<!-- BEGIN SILC_AGENTS_TEMPLATE -->` and
 [`crates/silc/templates/AGENTS.md`](../crates/silc/templates/AGENTS.md)
 byte-for-byte. App-specific notes go **after** the end marker only.
 
-Tracked examples today: `chatApp` and `inventoryApp` only.
+Tracked examples today: `chatApp`, `inventoryApp`, and `scraperApp`.
 
 ## Current apps
 
@@ -30,6 +30,7 @@ Tracked examples today: `chatApp` and `inventoryApp` only.
 | --- | --- | --- | --- |
 | [`chatApp/`](chatApp/) | Multi-session local chat via **silclm** | 18090 | 18091 |
 | [`inventoryApp/`](inventoryApp/) | Inventory CRUD + browse/admin + grounded silclm assistant | 18096 | 18097 |
+| [`scraperApp/`](scraperApp/) | URL + depth form; site crawl via `scrape::*`; results table | 18110 | 18111 |
 
 ## Conventions
 

@@ -150,6 +150,12 @@ fn compile_common(
                 models::ensure_model(model_id)?;
                 supervisor::build_llm_python(&lock, &output.root)?;
             }
+            if graph.needs_scrape_crawl() {
+                supervisor::build_scrape_crawl(&lock, &output.root)?;
+            }
+            if graph.needs_scrape_browser() {
+                supervisor::build_scrape_python(&lock, &output.root)?;
+            }
         }
         if graph.has_api() {
             supervisor::build_go_api_worker(&lock, &output.root)?;

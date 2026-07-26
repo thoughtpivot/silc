@@ -16,6 +16,7 @@ pub mod operation;
 pub mod pipeline;
 pub mod program;
 pub mod resource;
+pub mod scrape_catalog;
 pub mod target;
 pub mod types;
 pub mod ui;
@@ -35,8 +36,12 @@ pub use model_catalog::{
 pub use module::{Method, Module, ModuleKind, Param};
 pub use operation::{
     classify_program, infer_graph, is_executable_op, ApiRoute, ExecutableGraph, ExecutionMode,
-    ProcessorOp, UiCapabilities, DEFAULT_API_PORT, DEFAULT_TERMINAL_PORT, DEFAULT_WEB_PORT,
-    EXECUTABLE_OPS,
+    ProcessorOp, ScrapeCapabilities, ScrapeSelect, UiCapabilities, DEFAULT_API_PORT,
+    DEFAULT_TERMINAL_PORT, DEFAULT_WEB_PORT, EXECUTABLE_OPS,
+};
+pub use scrape_catalog::{
+    parse_js_mode, parse_same_host, parse_site_depth, JsMode, DEFAULT_JS_MODE, DEFAULT_SITE_DEPTH,
+    JS_MODES, MAX_SITE_DEPTH,
 };
 pub use pipeline::{Pipeline, PipelineStep};
 pub use program::Program;

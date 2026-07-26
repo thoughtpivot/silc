@@ -7,6 +7,9 @@ use crate::module::{Module, ModuleKind};
 use crate::pipeline::PipelineStep;
 use crate::program::Program;
 use crate::resource::{ActionDef, Resource, ResourceKind};
+use crate::scrape_catalog::{
+    parse_js_mode, parse_same_host, parse_site_depth, JsMode, DEFAULT_JS_MODE, DEFAULT_SITE_DEPTH,
+};
 
 /// Operations Silc 0.2.0 can lower and run.
 pub const EXECUTABLE_OPS: &[(&str, &str)] = &[
@@ -23,10 +26,18 @@ pub const EXECUTABLE_OPS: &[(&str, &str)] = &[
     ("resource", "create"),
     ("resource", "update"),
     ("resource", "delete"),
+    ("scrape", "page"),
+    ("scrape", "site"),
+    ("scrape", "select"),
+    ("scrape", "render"),
+    ("scrape", "extract"),
 ];
 
 const SUPPORTED_OPS_HELP: &str =
-    "ui::web + ui::terminal with an `is app` root, resources/actions, optional text::score or llm::complete, or service::http API-only";
+    "ui::web + ui::terminal with an `is app` root, resources/actions, optional text::score or llm::complete, scrape::*, or service::http API-only";
+
+const SCRAPE_MIGRATE_HINT: &str =
+    "use scrape::page / scrape::site / scrape::select instead of http::get / html::* (see ADR-006)";
 
 pub const DEFAULT_TERMINAL_PORT: u16 = 18023;
 pub const DEFAULT_API_PORT: u16 = 8080;
@@ -77,6 +88,62 @@ pub struct UiCapabilities {
     pub llm: bool,
     pub history: bool,
     pub resources: bool,
+    pub scrape: bool,
+}
+
+/// Derived scrape capabilities (ADR-006).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScrapeCapabilities {
+    pub page: bool,
+    pub site: bool,
+    pub select: bool,
+    pub render: bool,
+    pub extract: bool,
+    pub js: JsMode,
+    pub depth: u32,
+    pub same_host: bool,
+    pub link_css: Option<String>,
+    pub extract_into: Option<String>,
+    pub selects: Vec<ScrapeSelect>,
+}
+
+impl Default for ScrapeCapabilities {
+    fn default() -> Self {
+        Self {
+            page: false,
+            site: false,
+            select: false,
+            render: false,
+            extract: false,
+            js: JsMode::Auto,
+            depth: DEFAULT_SITE_DEPTH,
+            same_host: true,
+            link_css: None,
+            extract_into: None,
+            selects: Vec::new(),
+        }
+    }
+}
+
+impl ScrapeCapabilities {
+    pub fn active(&self) -> bool {
+        self.page || self.site || self.select || self.render || self.extract
+    }
+
+    pub fn needs_crawl(&self) -> bool {
+        self.active() && self.site
+    }
+
+    pub fn needs_browser(&self) -> bool {
+        self.active() && (self.render || self.extract || self.js.needs_browser())
+    }
+}
+
+/// One `scrape::select(:css(...), :as(...))` projection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScrapeSelect {
+    pub css: String,
+    pub as_field: Option<String>,
 }
 
 /// One declarative HTTP API route bound to a Contract (`service::http`).
@@ -93,6 +160,7 @@ pub struct ExecutableGraph {
     pub mode: ExecutionMode,
     pub processor_op: ProcessorOp,
     pub capabilities: UiCapabilities,
+    pub scrape: ScrapeCapabilities,
     pub app: Option<App>,
     pub app_name: Option<String>,
     pub service: String,
@@ -122,12 +190,28 @@ impl ExecutableGraph {
         self.has_api() && !self.has_ui()
     }
 
+    pub fn has_scrape(&self) -> bool {
+        self.scrape.active()
+    }
+
+    pub fn is_scrape_only(&self) -> bool {
+        self.has_scrape() && !self.has_ui() && !self.has_api()
+    }
+
     pub fn api_port(&self) -> Option<u16> {
         self.api_routes.first().map(|r| r.port)
     }
 
     pub fn needs_llm(&self) -> bool {
         self.processor_op.needs_llm() || self.capabilities.llm
+    }
+
+    pub fn needs_scrape_browser(&self) -> bool {
+        self.has_scrape() && self.scrape.needs_browser()
+    }
+
+    pub fn needs_scrape_crawl(&self) -> bool {
+        self.has_scrape() && self.scrape.needs_crawl()
     }
 }
 
@@ -148,6 +232,7 @@ fn is_known_namespace(ns: &str) -> bool {
             | "ipc"
             | "store"
             | "resource"
+            | "scrape"
             | "tensor"
             | "numpy"
             | "pandas"
@@ -162,13 +247,29 @@ fn is_known_namespace(ns: &str) -> bool {
 fn is_v1_exec_namespace(ns: &str) -> bool {
     matches!(
         ns,
-        "ui" | "http" | "html" | "service" | "text" | "llm" | "ipc" | "store" | "resource"
+        "ui" | "http"
+            | "html"
+            | "service"
+            | "text"
+            | "llm"
+            | "ipc"
+            | "store"
+            | "resource"
+            | "scrape"
     )
 }
 
-pub fn classify_program(program: &Program) -> Result<ExecutionMode, String> {
-    let mut saw_exec = false;
-    let mut saw_unknown_ns = false;
+fn is_legacy_http_html_stub(ns: &str, name: &str) -> bool {
+    matches!(
+        (ns, name),
+        ("http", "get")
+            | ("html", "extract_body")
+            | ("html", "extract")
+            | ("html", "select")
+    )
+}
+
+fn scan_calls(program: &Program, mut f: impl FnMut(&str, &str)) {
     for module in &program.modules {
         for method in &module.methods {
             for step in &method.pipeline.steps {
@@ -178,16 +279,11 @@ pub fn classify_program(program: &Program) -> Result<ExecutionMode, String> {
                     ..
                 } = step
                 {
-                    if is_executable_op(ns, name) {
-                        saw_exec = true;
-                    } else if is_known_namespace(ns) {
-                        saw_unknown_ns = true;
-                    }
+                    f(ns, name);
                 }
             }
         }
     }
-    // Also scan app serve + resource methods.
     for app in &program.apps {
         if let Some(serve) = &app.serve {
             for step in &serve.pipeline.steps {
@@ -197,11 +293,7 @@ pub fn classify_program(program: &Program) -> Result<ExecutionMode, String> {
                     ..
                 } = step
                 {
-                    if is_executable_op(ns, name) {
-                        saw_exec = true;
-                    } else if is_known_namespace(ns) {
-                        saw_unknown_ns = true;
-                    }
+                    f(ns, name);
                 }
             }
         }
@@ -215,17 +307,34 @@ pub fn classify_program(program: &Program) -> Result<ExecutionMode, String> {
                     ..
                 } = step
                 {
-                    if is_executable_op(ns, name) {
-                        saw_exec = true;
-                    } else if is_known_namespace(ns) {
-                        saw_unknown_ns = true;
-                    }
+                    f(ns, name);
                 }
             }
         }
     }
+}
+
+pub fn classify_program(program: &Program) -> Result<ExecutionMode, String> {
+    let mut saw_exec = false;
+    let mut saw_unknown_ns = false;
+    let mut saw_legacy_http_html = false;
+    scan_calls(program, |ns, name| {
+        if is_executable_op(ns, name) {
+            saw_exec = true;
+        } else if is_known_namespace(ns) {
+            saw_unknown_ns = true;
+            if is_legacy_http_html_stub(ns, name) {
+                saw_legacy_http_html = true;
+            }
+        }
+    });
 
     if saw_exec && saw_unknown_ns {
+        if saw_legacy_http_html {
+            return Err(format!(
+                "cannot mix stub-only and executable operations; {SCRAPE_MIGRATE_HINT}"
+            ));
+        }
         return Err(format!(
             "cannot mix stub-only and executable operations; supported runnable ops: {SUPPORTED_OPS_HELP}"
         ));
@@ -375,6 +484,12 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
     let mut app_root: Option<String> = None;
     let mut api_routes: Vec<ApiRoute> = Vec::new();
     let mut last_contract: Option<String> = None;
+    let mut scrape = ScrapeCapabilities {
+        js: parse_js_mode(DEFAULT_JS_MODE).unwrap_or(JsMode::Auto),
+        depth: DEFAULT_SITE_DEPTH,
+        same_host: true,
+        ..Default::default()
+    };
 
     let mut scan_pipeline = |steps: &[PipelineStep]| -> Result<(), String> {
         for step in steps {
@@ -455,6 +570,71 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
                         }
                     }
                     ("store", "commit") => saw_commit = true,
+                    ("scrape", "page") => {
+                        scrape.page = true;
+                        for arg in args {
+                            match arg.name.as_str() {
+                                "js" => scrape.js = parse_js_mode(&arg.value)?,
+                                "timeout_ms" => {
+                                    let _ = normalize_ident(&arg.value);
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    ("scrape", "site") => {
+                        scrape.site = true;
+                        scrape.page = true;
+                        for arg in args {
+                            match arg.name.as_str() {
+                                "depth" => scrape.depth = parse_site_depth(&arg.value)?,
+                                "same_host" => scrape.same_host = parse_same_host(&arg.value)?,
+                                "link_css" => {
+                                    scrape.link_css = Some(normalize_ident(&arg.value));
+                                }
+                                "js" => scrape.js = parse_js_mode(&arg.value)?,
+                                _ => {}
+                            }
+                        }
+                    }
+                    ("scrape", "select") => {
+                        scrape.select = true;
+                        let mut css: Option<String> = None;
+                        let mut as_field: Option<String> = None;
+                        for arg in args {
+                            match arg.name.as_str() {
+                                "css" => css = Some(normalize_ident(&arg.value)),
+                                "as" => as_field = Some(normalize_ident(&arg.value)),
+                                _ => {}
+                            }
+                        }
+                        let css = css.ok_or_else(|| {
+                            "scrape::select requires :css(...)".to_string()
+                        })?;
+                        scrape.selects.push(ScrapeSelect { css, as_field });
+                    }
+                    ("scrape", "render") => {
+                        scrape.render = true;
+                        scrape.js = JsMode::True;
+                    }
+                    ("scrape", "extract") => {
+                        scrape.extract = true;
+                        let mut into: Option<String> = None;
+                        for arg in args {
+                            if arg.name == "into" {
+                                into = Some(normalize_ident(&arg.value));
+                            }
+                        }
+                        let into = into.ok_or_else(|| {
+                            "scrape::extract requires :into(Contract)".to_string()
+                        })?;
+                        if !program.contracts.iter().any(|c| c.name == into) {
+                            return Err(format!(
+                                "scrape::extract references unknown contract `{into}`"
+                            ));
+                        }
+                        scrape.extract_into = Some(into);
+                    }
                     _ => {}
                 },
                 _ => {}
@@ -481,13 +661,24 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
 
     let has_ui = saw_ui_web || saw_terminal;
     let has_api = !api_routes.is_empty();
-    if !has_ui && !has_api {
+    let has_scrape = scrape.active();
+    if !has_ui && !has_api && !has_scrape {
         // Resource-only or processor pipelines without surface — still runnable if we have resources + app.
         if program.apps.is_empty() && program.resources.is_empty() {
             return Err(format!(
-                "runnable program must declare ui::web/ui::terminal, an `is app`, or service::http; {SUPPORTED_OPS_HELP}"
+                "runnable program must declare ui::web/ui::terminal, an `is app`, scrape::*, or service::http; {SUPPORTED_OPS_HELP}"
             ));
         }
+    }
+
+    if has_scrape && saw_score {
+        return Err("cannot mix scrape::* with text::score in one program".into());
+    }
+    if has_scrape && saw_llm {
+        return Err("cannot mix scrape::* with llm::complete in one program".into());
+    }
+    if has_scrape && !scrape.select && !scrape.extract && !scrape.site && !scrape.page {
+        return Err("scrape programs need scrape::page, scrape::site, or scrape::extract".into());
     }
 
     if has_api {
@@ -640,6 +831,7 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
         llm: saw_llm || uses_chat,
         history: uses_chat,
         resources: !program.resources.is_empty(),
+        scrape: has_scrape,
     };
 
     let service_name = services
@@ -652,6 +844,7 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
         mode: ExecutionMode::Runnable,
         processor_op,
         capabilities,
+        scrape,
         app_name: app.as_ref().map(|a| a.name.clone()),
         app,
         service: service_name,
@@ -688,6 +881,11 @@ mod tests {
     fn executable_ops_include_resources() {
         assert!(is_executable_op("resource", "list"));
         assert!(is_executable_op("ui", "web"));
+        assert!(is_executable_op("scrape", "page"));
+        assert!(is_executable_op("scrape", "site"));
+        assert!(is_executable_op("scrape", "select"));
+        assert!(is_executable_op("scrape", "render"));
+        assert!(is_executable_op("scrape", "extract"));
         assert!(!is_executable_op("tensor", "infer"));
     }
 

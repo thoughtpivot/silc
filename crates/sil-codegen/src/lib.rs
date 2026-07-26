@@ -23,6 +23,14 @@ const LLM_REQUIREMENTS: &str = include_str!("../templates/llm_requirements.txt")
 const STORE_GOMOD: &str = include_str!("../templates/go.mod");
 const SERVICE_HTTP_GO: &str = include_str!("../templates/service_http_worker.go");
 const SERVICE_HTTP_GOMOD: &str = include_str!("../templates/service_http_go.mod");
+const SCRAPE_CRAWL_GO: &str = include_str!("../templates/scrape_crawl_worker.go");
+const SCRAPE_CRAWL_GOMOD: &str = include_str!("../templates/scrape_crawl_go.mod");
+const SCRAPE_BROWSER_PY: &str = include_str!("../templates/scrape_browser_worker.py");
+const SCRAPE_REQUIREMENTS: &str = include_str!("../templates/scrape_requirements.txt");
+
+pub const SCRAPE_BUN_ADAPTER: &str = "bun-fetch-v1";
+pub const SCRAPE_COLLY_ADAPTER: &str = "go-colly-v1";
+pub const SCRAPE_PLAYWRIGHT_ADAPTER: &str = "python-playwright-v1";
 const UI_WEB_PACKAGE_JSON: &str = include_str!("../templates/ui_web_package.json");
 const UI_WEB_BUN_LOCK: &str = include_str!("../templates/ui_web_bun.lock");
 const UI_WEB_INDEX_HTML: &str = include_str!("../templates/ui_web_index.html");
@@ -188,7 +196,9 @@ pub fn emit(
                 "llm": g.capabilities.llm,
                 "history": g.capabilities.history,
                 "resources": g.capabilities.resources,
+                "scrape": g.capabilities.scrape,
             },
+            "scrape": scrape_manifest(g),
             "app": g.app_name,
             "root_component": g.root_component,
             "model_ref": g.model_ref,
@@ -321,7 +331,28 @@ pub fn emit(
             entrypoints.insert("api_source".into(), serde_json::json!("go/api/worker.go"));
             entrypoints.insert("api_binary".into(), serde_json::json!("go/api/worker"));
         }
+        if g.has_scrape() {
+            if g.needs_scrape_crawl() {
+                entrypoints.insert(
+                    "go_crawl_source".into(),
+                    serde_json::json!("go/crawl/worker.go"),
+                );
+                entrypoints.insert(
+                    "go_crawl_binary".into(),
+                    serde_json::json!("go/crawl/worker"),
+                );
+            }
+            if g.needs_scrape_browser() {
+                entrypoints.insert(
+                    "python_browser".into(),
+                    serde_json::json!("python/browser_worker.py"),
+                );
+            }
+        }
         manifest["entrypoints"] = serde_json::Value::Object(entrypoints);
+        if g.has_scrape() {
+            manifest["scrape"] = scrape_manifest(g);
+        }
         manifest["engines"] = serde_json::json!({
             "bun": {"path": null, "version": "1.2.18"},
             "python": {"path": null, "version": "3.12.12"},
@@ -339,6 +370,7 @@ pub fn emit(
             "llm": g.capabilities.llm,
             "history": g.capabilities.history,
             "resources": g.capabilities.resources,
+            "scrape": g.capabilities.scrape,
         });
     }
 
@@ -589,6 +621,25 @@ fn emit_ui_app(
             LLM_REQUIREMENTS.to_string(),
         ));
     }
+    if graph.has_scrape() {
+        if graph.needs_scrape_crawl() {
+            files.push((root.join("go/crawl/worker.go"), SCRAPE_CRAWL_GO.to_string()));
+            files.push((
+                root.join("go/crawl/go.mod"),
+                SCRAPE_CRAWL_GOMOD.to_string(),
+            ));
+        }
+        if graph.needs_scrape_browser() {
+            files.push((
+                root.join("python/browser_worker.py"),
+                SCRAPE_BROWSER_PY.to_string(),
+            ));
+            files.push((
+                root.join("python/scrape_requirements.txt"),
+                SCRAPE_REQUIREMENTS.to_string(),
+            ));
+        }
+    }
     for (path, contents) in files {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)
@@ -743,6 +794,60 @@ fn actions_json(graph: &ExecutableGraph) -> serde_json::Value {
     )
 }
 
+fn scrape_manifest(graph: &ExecutableGraph) -> serde_json::Value {
+    let mut ops = Vec::new();
+    if graph.scrape.page {
+        ops.push("page");
+    }
+    if graph.scrape.site {
+        ops.push("site");
+    }
+    if graph.scrape.select {
+        ops.push("select");
+    }
+    if graph.scrape.render {
+        ops.push("render");
+    }
+    if graph.scrape.extract {
+        ops.push("extract");
+    }
+    serde_json::json!({
+        "ops": ops,
+        "js": graph.scrape.js.as_str(),
+        "depth": graph.scrape.depth,
+        "same_host": graph.scrape.same_host,
+        "link_css": graph.scrape.link_css,
+        "extract_into": graph.scrape.extract_into,
+        "selects": graph.scrape.selects.iter().map(|s| {
+            serde_json::json!({ "css": s.css, "as_field": s.as_field })
+        }).collect::<Vec<_>>(),
+        "adapters": {
+            "static": SCRAPE_BUN_ADAPTER,
+            "crawl": if graph.needs_scrape_crawl() {
+                serde_json::Value::String(SCRAPE_COLLY_ADAPTER.into())
+            } else {
+                serde_json::Value::Null
+            },
+            "browser": if graph.needs_scrape_browser() {
+                serde_json::Value::String(SCRAPE_PLAYWRIGHT_ADAPTER.into())
+            } else {
+                serde_json::Value::Null
+            },
+        },
+        "provenance": "ADR-006 scrape::* fused substrates",
+    })
+}
+
+fn scrape_table(graph: &ExecutableGraph) -> String {
+    graph
+        .resource_tables
+        .iter()
+        .map(|(_, table)| table.clone())
+        .find(|t| t.contains("scrape") || t == "scraped_pages")
+        .or_else(|| graph.resource_tables.first().map(|(_, t)| t.clone()))
+        .unwrap_or_else(|| "scraped_pages".into())
+}
+
 fn render_template(template: &str, graph: &ExecutableGraph, schema_id: u32) -> String {
     let actions =
         serde_json::to_string_pretty(&actions_json(graph)).unwrap_or_else(|_| "[]".into());
@@ -775,6 +880,32 @@ fn render_template(template: &str, graph: &ExecutableGraph, schema_id: u32) -> S
     } else {
         graph.processor_op.as_str()
     };
+    let has_scrape = if graph.has_scrape() { "true" } else { "false" };
+    let scrape_site = if graph.scrape.site { "true" } else { "false" };
+    let scrape_same_host = if graph.scrape.same_host {
+        "true"
+    } else {
+        "false"
+    };
+    let scrape_selects = serde_json::to_string(
+        &graph
+            .scrape
+            .selects
+            .iter()
+            .map(|s| {
+                serde_json::json!({
+                    "css": s.css,
+                    "as_field": s.as_field,
+                })
+            })
+            .collect::<Vec<_>>(),
+    )
+    .unwrap_or_else(|_| "[]".into());
+    let link_css = graph
+        .scrape
+        .link_css
+        .clone()
+        .unwrap_or_else(|| "a[href]".into());
 
     template
         .replace("__PORT__", &graph.http_port.to_string())
@@ -789,6 +920,14 @@ fn render_template(template: &str, graph: &ExecutableGraph, schema_id: u32) -> S
         .replace("__SCHEMA_ID__", &schema_id.to_string())
         .replace("__PROCESSOR_OP__", processor)
         .replace("__HAS_LLM__", has_llm)
+        .replace("__HAS_SCRAPE__", has_scrape)
+        .replace("__SCRAPE_SITE__", scrape_site)
+        .replace("__SCRAPE_JS__", graph.scrape.js.as_str())
+        .replace("__SCRAPE_DEPTH__", &graph.scrape.depth.to_string())
+        .replace("__SCRAPE_SAME_HOST__", scrape_same_host)
+        .replace("__SCRAPE_LINK_CSS__", &link_css)
+        .replace("__SCRAPE_SELECTS_JSON__", &scrape_selects)
+        .replace("__SCRAPE_TABLE__", &scrape_table(graph))
         .replace("__ACTIONS_JSON__", &actions)
         .replace("__RESOURCE_TABLES__", &resource_tables)
         .replace("__ROUTES_JSON__", &routes)
@@ -1217,6 +1356,14 @@ class FeedbackApi is service {
             assert!(!source.contains("__DB_PATH__"));
             assert!(!source.contains("__PROCESSOR_OP__"));
             assert!(!source.contains("__HAS_LLM__"));
+            assert!(!source.contains("__HAS_SCRAPE__"));
+            assert!(!source.contains("__SCRAPE_SITE__"));
+            assert!(!source.contains("__SCRAPE_JS__"));
+            assert!(!source.contains("__SCRAPE_DEPTH__"));
+            assert!(!source.contains("__SCRAPE_SAME_HOST__"));
+            assert!(!source.contains("__SCRAPE_LINK_CSS__"));
+            assert!(!source.contains("__SCRAPE_SELECTS_JSON__"));
+            assert!(!source.contains("__SCRAPE_TABLE__"));
             assert!(!source.contains("__ACTIONS_JSON__"));
             assert!(!source.contains("__RESOURCE_TABLES__"));
             assert!(!source.contains("__ROUTES_JSON__"));
@@ -1470,6 +1617,81 @@ class FeedbackApi is service {
         assert!(manifest.contains("service::http") || manifest.contains("\"manifest_version\": 3"));
         assert!(manifest.contains("go/api/worker.go"));
         assert!(!manifest.contains("portal_kind"));
+        fs::remove_dir_all(output).ok();
+    }
+
+    const SCRAPE_SOURCE: &str = r#"
+@version("0.2.0")
+class ScrapedPage {
+    has Str $.id;
+    has Str $.url;
+    has Str $.title;
+    has Str $.snippet;
+    has Str $.depth;
+    has Str $.status;
+}
+class Pages is resource {
+    has Str $.table = "scraped_pages";
+    query list() -> [ScrapedPage] {
+        ScrapedPage ==> resource::list(:table(scraped_pages))
+    }
+}
+class Home is component {
+    has state Str $.url = "";
+    has state Str $.depth = "2";
+    query $.pages = Pages.list();
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("Scraper"))),
+            ui::form(:on(submit(on_submit)),
+                ui::text_input(:field(url), :label("URL")),
+                ui::button(:label("Scrape"), :variant(primary), :submit)
+            ),
+            ui::table(:rows($.pages), :columns(["title", "url"]))
+        )
+    }
+    method on_submit() { submit(); Pages.list(); }
+}
+class ScraperApp is app {
+    route "/" => Home;
+    method serve() {
+        ui::web(:root(ScraperApp), :port(18110)) ==> ui::terminal(:port(18111))
+    }
+}
+class Crawler is service {
+    method run() {
+        target_url
+            ==> scrape::site(:depth(2), :same_host(true), :js(false))
+            ==> scrape::select(:css("title"), :as(title))
+    }
+}
+"#;
+
+    #[test]
+    fn emits_scrape_app_with_colly_sidecar() {
+        let (_program, result, output) = parse_emit(SCRAPE_SOURCE, "scraper");
+        let graph = result.graph.as_ref().unwrap();
+        assert!(graph.has_scrape());
+        assert!(graph.needs_scrape_crawl());
+        assert!(!graph.needs_scrape_browser()); // :js(false)
+
+        let ts = fs::read_to_string(output.join("typescript/worker.ts")).unwrap();
+        assert!(ts.contains("HAS_SCRAPE = true") || ts.contains("const HAS_SCRAPE = true"));
+        assert!(ts.contains("SCRAPE_SITE = true") || ts.contains("const SCRAPE_SITE = true"));
+        assert!(ts.contains("runScrapeJob") || ts.contains("/scrape"));
+        assert!(ts.contains("scraped_pages"));
+        assert!(!ts.contains("__HAS_SCRAPE__"));
+
+        assert!(output.join("go/crawl/worker.go").is_file());
+        assert!(output.join("go/crawl/go.mod").is_file());
+        let crawl = fs::read_to_string(output.join("go/crawl/worker.go")).unwrap();
+        assert!(crawl.contains("gocolly/colly"));
+        assert!(!output.join("python/browser_worker.py").is_file());
+
+        let manifest = fs::read_to_string(&result.manifest).unwrap();
+        assert!(manifest.contains("go-colly-v1"));
+        assert!(manifest.contains("\"scrape\": true") || manifest.contains("bun-fetch-v1"));
+        assert!(manifest.contains("go/crawl/worker"));
         fs::remove_dir_all(output).ok();
     }
 

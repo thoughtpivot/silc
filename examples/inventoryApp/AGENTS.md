@@ -21,6 +21,7 @@ application code.
 - Surface syntax: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-002-silc-surface-syntax.md
 - Declarative UI: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-003-declarative-ui.md
 - Local LLM: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-005-local-llm-complete.md
+- Scrape: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-006-scrape-namespace.md
 - Architecture: https://github.com/thoughtpivot/silc/blob/main/docs/ARCHITECTURE.md
 - Examples: https://github.com/thoughtpivot/silc/tree/main/examples
 
@@ -315,12 +316,19 @@ Executable today (registry in `sil-core`):
 `ui::web`, `ui::terminal`, `service::http`, `text::score`, `llm::complete`,
 `ipc::publish`, `store::sqlite`, `store::commit`,
 `resource::list`, `resource::get`, `resource::create`, `resource::update`,
-`resource::delete`.
+`resource::delete`,
+`scrape::page`, `scrape::site`, `scrape::select`, `scrape::render`,
+`scrape::extract`.
 
 Local LLM chat uses **silclm** (default catalog id). Prefer
 `llm::complete(:model("silclm"))` or omit `:model`. Do not invent Ollama,
 OpenAI, or ad-hoc GGUF paths in `.silc`. Legacy alias `llama3.2-1b` resolves to
 `silclm` for one release.
+
+Scraping uses **`scrape::*`** (ADR-006). Authors never name Bun, Colly, or
+Playwright. Prefer `scrape::site` for crawls and `scrape::page` /
+`scrape::select` for single pages. Do **not** use stub `http::get` /
+`html::extract_body` in runnable programs — migrate to `scrape::*`.
 
 Stub-only namespaces (parse/route/emit, do not run): `http`, `html`, `tensor`,
 `numpy`, `pandas`, `ws`, `sys`, `schema`, `payload`, `json`, plus non-registry
@@ -331,7 +339,8 @@ ops under runnable namespaces. Mixing stub-only ops into a runnable graph is a
 
 Compiler-owned (do not invent alternatives):
 
-- `POST /submit` — form `submit()` handlers
+- `POST /submit` — form `submit()` handlers (also scrape jobs when `scrape::*` is present)
+- `POST /scrape` — explicit scrape ingest when `scrape::*` is present
 - `POST /complete` — chat / `*.complete()` processors
 - `GET|POST|PUT|DELETE /api/{table}` — resource queries/mutations
 - Web: React app served by Bun
@@ -345,8 +354,9 @@ Compiler-owned (do not invent alternatives):
 3. Closed enums (`:variant`, `:tone`, `:size`) reject unknown tokens.
 4. Resource `query` bindings must reference real resource query methods.
 5. Do not mix `text::score` and `llm::complete`.
-6. Do not mix executable and stub-only ops in one runnable graph.
-7. Default fallback ports if omitted: web `18088`, terminal `18023`, API `8080`
+6. Do not mix `scrape::*` with `text::score` or `llm::complete`.
+7. Do not mix executable and stub-only ops in one runnable graph.
+8. Default fallback ports if omitted: web `18088`, terminal `18023`, API `8080`
    (examples often pick explicit ports instead).
 
 ## Rules for agents

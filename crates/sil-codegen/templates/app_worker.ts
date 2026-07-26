@@ -15,6 +15,17 @@ const distDir = join(root, "dist");
 const ACTIONS = __ACTIONS_JSON__;
 const PROCESSOR = "__PROCESSOR_OP__";
 const HAS_LLM = __HAS_LLM__;
+const HAS_SCRAPE = __HAS_SCRAPE__;
+const SCRAPE_SITE = __SCRAPE_SITE__;
+const SCRAPE_JS = "__SCRAPE_JS__";
+const SCRAPE_DEPTH = __SCRAPE_DEPTH__;
+const SCRAPE_SAME_HOST = __SCRAPE_SAME_HOST__;
+const SCRAPE_LINK_CSS = "__SCRAPE_LINK_CSS__";
+const SCRAPE_SELECTS = __SCRAPE_SELECTS_JSON__;
+const SCRAPE_TABLE = "__SCRAPE_TABLE__";
+const SCRAPE_CRAWL_BIN = process.env.SILC_SCRAPE_CRAWL_BIN || join(root, "..", "go", "crawl", "worker");
+const SCRAPE_BROWSER_PY = process.env.SILC_SCRAPE_BROWSER_PY || join(root, "..", "python", "browser_worker.py");
+const SCRAPE_PYTHON_BIN = process.env.SILC_SCRAPE_PYTHON_BIN || process.env.SILC_PYTHON_BIN || "python3";
 
 function encodeFrame(value: unknown): Buffer {
   const payload = Buffer.from(JSON.stringify(value));
@@ -213,12 +224,203 @@ async function handleResource(req: Request, pathname: string): Promise<Response 
   return null;
 }
 
+function decodeEntities(text: string): string {
+  return text
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
+function selectCss(html: string, css: string): string {
+  const sel = css.trim().toLowerCase();
+  if (sel === "title") {
+    const m = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+    return m ? decodeEntities(m[1].replace(/\s+/g, " ").trim()) : "";
+  }
+  const tagMatch = sel.match(/^([a-z][a-z0-9]*)(?:\s*,\s*.*)?$/);
+  if (tagMatch) {
+    const tag = tagMatch[1];
+    const re = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)</${tag}>`, "i");
+    const m = html.match(re);
+    if (!m) return "";
+    return decodeEntities(m[1].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim());
+  }
+  // attribute / compound selectors: best-effort first matching tag text
+  const any = html.match(/<([a-z][a-z0-9]*)[^>]*>([\s\S]*?)<\/\1>/i);
+  return any ? decodeEntities(any[2].replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()) : "";
+}
+
+function applySelects(html: string, page: Record<string, string>) {
+  for (const sel of SCRAPE_SELECTS as Array<{ css: string; as_field?: string | null }>) {
+    const value = selectCss(html, sel.css);
+    const field = sel.as_field || sel.css.replace(/[^a-zA-Z0-9_]+/g, "_") || "value";
+    if (field === "title" && value) page.title = value;
+    else if (field === "snippet" || field === "body") page.snippet = value.slice(0, 280);
+    else page[field] = value;
+  }
+}
+
+function looksLikeShell(html: string): boolean {
+  const text = html || "";
+  const lower = text.toLowerCase();
+  if (text.trim().length < 80) return true;
+  if (lower.includes('<div id="root"></div>') || lower.includes('<div id="app"></div>')) return true;
+  const bodyMatch = text.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  const body = bodyMatch ? bodyMatch[1] : text;
+  const plain = body.replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  return plain.length < 40;
+}
+
+async function fetchStaticPage(url: string): Promise<{ html: string; status: string; error?: string }> {
+  try {
+    const resp = await fetch(url, { redirect: "follow", headers: { "user-agent": "SilcScrape/0.2" } });
+    if (!resp.ok) return { html: "", status: "error", error: `HTTP ${resp.status}` };
+    const html = await resp.text();
+    return { html, status: "ok" };
+  } catch (error) {
+    return { html: "", status: "error", error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+async function renderWithBrowser(url: string): Promise<{ html: string; title: string; status: string; error?: string }> {
+  const proc = Bun.spawn([SCRAPE_PYTHON_BIN, SCRAPE_BROWSER_PY, "--url", url, "--json"], {
+    stdout: "pipe",
+    stderr: "pipe",
+    env: { ...process.env },
+  });
+  const out = await new Response(proc.stdout).text();
+  const err = await new Response(proc.stderr).text();
+  const code = await proc.exited;
+  if (code !== 0) {
+    return { html: "", title: "", status: "error", error: err || `browser exit ${code}` };
+  }
+  try {
+    const parsed = JSON.parse(out);
+    return { html: parsed.html || "", title: parsed.title || "", status: "ok" };
+  } catch {
+    return { html: out, title: selectCss(out, "title"), status: "ok" };
+  }
+}
+
+async function crawlWithGo(url: string, depth: number): Promise<Array<Record<string, string>>> {
+  const proc = Bun.spawn([SCRAPE_CRAWL_BIN], {
+    stdout: "pipe",
+    stderr: "pipe",
+    env: {
+      ...process.env,
+      SILC_SCRAPE_URL: url,
+      SILC_SCRAPE_DEPTH: String(depth),
+      SILC_SCRAPE_SAME_HOST: SCRAPE_SAME_HOST ? "true" : "false",
+      SILC_SCRAPE_LINK_CSS: SCRAPE_LINK_CSS || "a[href]",
+      SILC_SCRAPE_INCLUDE_HTML: SCRAPE_JS === "auto" || SCRAPE_JS === "true" ? "true" : "false",
+    },
+  });
+  const out = await new Response(proc.stdout).text();
+  const err = await new Response(proc.stderr).text();
+  const code = await proc.exited;
+  if (code !== 0) {
+    throw new Error(err || `crawl worker exit ${code}`);
+  }
+  const pages = JSON.parse(out);
+  if (!Array.isArray(pages)) throw new Error("crawl worker returned non-array");
+  return pages;
+}
+
+function persistScrapePages(pages: Array<Record<string, string>>) {
+  if (!SCRAPE_TABLE) return;
+  db.query(`DELETE FROM ${SCRAPE_TABLE}`).run();
+  const insert = db.query(`INSERT INTO ${SCRAPE_TABLE} (id, data) VALUES (?, ?)`);
+  for (const page of pages) {
+    const id = page.id || crypto.randomUUID();
+    const { id: _drop, html: _html, ...rest } = page as any;
+    insert.run(id, JSON.stringify({ ...rest, id }));
+  }
+}
+
+async function runScrapeJob(body: Record<string, unknown>) {
+  const url = String(body.url || body.target_url || "").trim();
+  if (!url) throw new Error("url is required");
+  let depth = Number(body.depth ?? SCRAPE_DEPTH ?? 2);
+  if (!Number.isFinite(depth) || depth < 1) depth = 1;
+  if (depth > 5) depth = 5;
+
+  let rawPages: Array<Record<string, string>> = [];
+  if (SCRAPE_SITE) {
+    rawPages = await crawlWithGo(url, depth);
+  } else {
+    const fetched = await fetchStaticPage(url);
+    rawPages = [{
+      id: crypto.randomUUID(),
+      url,
+      title: selectCss(fetched.html, "title"),
+      snippet: fetched.html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 280),
+      depth: "0",
+      status: fetched.status,
+      html: fetched.html,
+      ...(fetched.error ? { snippet: fetched.error } : {}),
+    }];
+  }
+
+  const pages: Array<Record<string, string>> = [];
+  for (const page of rawPages) {
+    let html = page.html || "";
+    let title = page.title || "";
+    let status = page.status || "ok";
+    if (status === "ok" && (SCRAPE_JS === "true" || (SCRAPE_JS === "auto" && looksLikeShell(html)))) {
+      const rendered = await renderWithBrowser(page.url);
+      if (rendered.status === "ok") {
+        html = rendered.html;
+        title = rendered.title || title;
+      } else {
+        status = "error";
+        page.snippet = rendered.error || "browser render failed";
+      }
+    }
+    const out: Record<string, string> = {
+      id: page.id || crypto.randomUUID(),
+      url: page.url,
+      title,
+      snippet: page.snippet || "",
+      depth: page.depth || "0",
+      status,
+    };
+    if (html) applySelects(html, out);
+    if (!out.snippet && html) {
+      out.snippet = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 280);
+    }
+    pages.push(out);
+  }
+
+  persistScrapePages(pages);
+  return { ok: true, count: pages.length, pages };
+}
+
 async function handleAction(req: Request, pathname: string): Promise<Response | null> {
   if (pathname === "/submit" && req.method === "POST") {
     const body = await req.json();
+    if (HAS_SCRAPE) {
+      try {
+        const result = await runScrapeJob(body);
+        return json(result);
+      } catch (error) {
+        return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 500);
+      }
+    }
     const requestId = crypto.randomUUID();
     const response = await ingest({ author: body.author || "", text: body.text || JSON.stringify(body), ...body }, requestId);
     return json({ ok: true, request_id: requestId, ...response });
+  }
+  if (pathname === "/scrape" && req.method === "POST" && HAS_SCRAPE) {
+    const body = await req.json();
+    try {
+      const result = await runScrapeJob(body);
+      return json(result);
+    } catch (error) {
+      return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 500);
+    }
   }
   if (pathname === "/complete" && req.method === "POST") {
     const body = await req.json();
