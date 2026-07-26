@@ -340,9 +340,22 @@ function persistScrapePages(pages: Array<Record<string, string>>) {
   }
 }
 
-async function runScrapeJob(body: Record<string, unknown>) {
-  const url = String(body.url || body.target_url || "").trim();
+function normalizeScrapeUrl(raw: string): string {
+  let url = raw.trim();
   if (!url) throw new Error("url is required");
+  // Users type bare domains; default to https.
+  if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) {
+    url = `https://${url}`;
+  }
+  const parsed = new URL(url); // throws on garbage input
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`unsupported URL scheme "${parsed.protocol}" — use http(s)`);
+  }
+  return parsed.toString();
+}
+
+async function runScrapeJob(body: Record<string, unknown>) {
+  const url = normalizeScrapeUrl(String(body.url || body.target_url || ""));
   let depth = Number(body.depth ?? SCRAPE_DEPTH ?? 2);
   if (!Number.isFinite(depth) || depth < 1) depth = 1;
   if (depth > 5) depth = 5;

@@ -53,7 +53,7 @@ class ScraperHome is component {
                         :options(["1", "2", "3", "4", "5"])
                     ),
                     ui::toolbar(
-                        ui::button(:label("Scrape"), :variant(primary), :submit)
+                        ui::button(:label("Scrape"), :variant("primary"), :submit)
                     )
                 ),
                 when $.status {
