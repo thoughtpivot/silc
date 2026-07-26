@@ -471,7 +471,37 @@ pub fn run_app(output: &EmitResult, lock: &RuntimeLock) -> Result<(), String> {
         );
     }
     if let Some(port) = graph.terminal_port {
-        println!("silc: ui::terminal listening at telnet://127.0.0.1:{port}");
+        // Primary local surface: OpenTUI (when this process has a TTY).
+        // TCP telnet CLI remains available as a remote/headless fallback.
+        let terminal_main = output.root.join("typescript/terminal_main.ts");
+        if terminal_main.is_file() && std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+            // Classic JSX so TerminalApp lowers to OpenTUI `h`, not React.
+            let opentui = Command::new(&lock.bun_bin)
+                .arg("--jsx-runtime=classic")
+                .arg("--jsx-factory=h")
+                .arg("--jsx-fragment=Fragment")
+                .arg(&terminal_main)
+                .current_dir(output.root.join("typescript"))
+                .env("SILC_TERMINAL_MODE", "opentui")
+                .env(
+                    "SILC_WEB_ORIGIN",
+                    format!("http://127.0.0.1:{}", graph.http_port),
+                )
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit())
+                .stdin(Stdio::inherit())
+                .spawn();
+            match opentui {
+                Ok(child) => {
+                    children.push(child);
+                    println!("silc: ui::terminal OpenTUI attached (local TTY)");
+                }
+                Err(error) => {
+                    eprintln!("silc: warning: failed to start OpenTUI terminal: {error}");
+                }
+            }
+        }
+        println!("silc: ui::terminal CLI fallback at telnet://127.0.0.1:{port}");
         println!("silc: connect with `telnet 127.0.0.1 {port}`");
     }
     if let Some(port) = graph.api_port() {

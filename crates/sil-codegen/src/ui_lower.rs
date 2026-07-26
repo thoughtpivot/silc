@@ -1,8 +1,34 @@
-//! Lower Silc components to dual-surface adapters (React web + terminal).
+//! Lower Silc components to dual-surface adapters (React web + OpenTUI terminal).
 
 use sil_core::{
     App, BinOp, Component, ExecutableGraph, Expr, Program, UiNode, UiTemplate, UnaryOp,
 };
+use std::cell::Cell;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SurfaceKind {
+    Web,
+    Terminal,
+}
+
+thread_local! {
+    static SURFACE: Cell<SurfaceKind> = const { Cell::new(SurfaceKind::Web) };
+    static FORM_SUBMIT: Cell<Option<String>> = const { Cell::new(None) };
+}
+
+fn surface() -> SurfaceKind {
+    SURFACE.with(|s| s.get())
+}
+
+fn with_surface<T>(kind: SurfaceKind, f: impl FnOnce() -> T) -> T {
+    SURFACE.with(|s| {
+        let prev = s.get();
+        s.set(kind);
+        let out = f();
+        s.set(prev);
+        out
+    })
+}
 
 pub fn render_web_app(program: &Program, graph: &ExecutableGraph) -> String {
     let app = graph.app.as_ref().expect("UI graph requires app");
@@ -24,6 +50,20 @@ pub fn render_web_app(program: &Program, graph: &ExecutableGraph) -> String {
     out.push_str("import { HistoryPanel } from \"./components/ui/history-panel\";\n");
     out.push_str("import { SearchInput } from \"./components/ui/search-input\";\n");
     out.push_str("import { DataTable } from \"./components/ui/data-table\";\n");
+    out.push_str("import { Select } from \"./components/ui/select\";\n");
+    out.push_str("import { Checkbox } from \"./components/ui/checkbox\";\n");
+    out.push_str("import { Switch } from \"./components/ui/switch\";\n");
+    out.push_str("import { Field } from \"./components/ui/field\";\n");
+    out.push_str("import { Badge } from \"./components/ui/badge\";\n");
+    out.push_str("import { Alert } from \"./components/ui/alert\";\n");
+    out.push_str("import { Divider } from \"./components/ui/divider\";\n");
+    out.push_str("import { Section } from \"./components/ui/section\";\n");
+    out.push_str("import { Footer } from \"./components/ui/footer\";\n");
+    out.push_str("import { DescriptionList } from \"./components/ui/description-list\";\n");
+    out.push_str("import { Tabs, Tab } from \"./components/ui/tabs\";\n");
+    out.push_str("import { Dialog } from \"./components/ui/dialog\";\n");
+    out.push_str("import { Loading } from \"./components/ui/loading\";\n");
+    out.push_str("import { Empty } from \"./components/ui/empty\";\n");
     out.push_str("\n");
     // Empty arrays/objects are truthy in JS; Silc `when` treats them as empty.
     out.push_str(
@@ -580,14 +620,31 @@ fn render_node(node: &UiNode, indent: usize) -> String {
                 .map(|(_, t)| render_template(t, indent + 2))
                 .unwrap_or_default();
             let children = render_children(&node.children, indent + 4);
+            let footer = node
+                .slots
+                .iter()
+                .find(|(n, _)| n == "footer")
+                .map(|(_, t)| render_template(t, indent + 2))
+                .unwrap_or_default();
+            if surface() == SurfaceKind::Terminal {
+                return format!(
+                    "{pad}<Page>\n{app_bar}\n{side}\n{pad}  <Main>\n{children}\n{pad}  </Main>\n{footer}\n{pad}</Page>",
+                    pad = pad,
+                    app_bar = app_bar,
+                    side = side,
+                    children = children,
+                    footer = footer
+                );
+            }
             // Viewport-height shell: persistent app bar, independently
             // scrollable sidebar and main content on every ui::page.
             format!(
-                "{pad}<div className=\"h-screen overflow-hidden flex flex-col\">\n{app_bar}\n{pad}  <div className=\"min-h-0 flex-1 flex\">\n{side}\n{pad}    <main className=\"min-h-0 min-w-0 flex-1 overflow-y-auto p-6 space-y-4\">\n{children}\n{pad}    </main>\n{pad}  </div>\n{pad}</div>",
+                "{pad}<div className=\"h-screen overflow-hidden flex flex-col\">\n{app_bar}\n{pad}  <div className=\"min-h-0 flex-1 flex\">\n{side}\n{pad}    <main className=\"min-h-0 min-w-0 flex-1 overflow-y-auto p-6 space-y-4\">\n{children}\n{pad}    </main>\n{pad}  </div>\n{footer}\n{pad}</div>",
                 pad = pad,
                 app_bar = app_bar,
                 side = side,
-                children = children
+                children = children,
+                footer = footer
             )
         }
         "app_bar" => format!(
@@ -603,7 +660,11 @@ fn render_node(node: &UiNode, indent: usize) -> String {
         "nav_item" => {
             let to = node.prop("to").map(expr_to_js);
             let on_click = if let Some(to) = to {
-                format!("() => {{ window.history.pushState({{}}, \"\", {to}); window.dispatchEvent(new PopStateEvent(\"popstate\")); }}")
+                if surface() == SurfaceKind::Terminal {
+                    format!("() => __silcNavigate({to})")
+                } else {
+                    format!("() => {{ window.history.pushState({{}}, \"\", {to}); window.dispatchEvent(new PopStateEvent(\"popstate\")); }}")
+                }
             } else {
                 node.events
                     .iter()
@@ -622,27 +683,64 @@ fn render_node(node: &UiNode, indent: usize) -> String {
                 on_click = on_click
             )
         }
-        "stack" => format!(
-            "{pad}<div className=\"flex flex-col gap-3\">\n{children}\n{pad}</div>",
-            pad = pad,
-            children = render_children(&node.children, indent + 2)
-        ),
-        "row" => format!(
-            "{pad}<div className=\"flex flex-row gap-3 items-center\">\n{children}\n{pad}</div>",
-            pad = pad,
-            children = render_children(&node.children, indent + 2)
-        ),
-        "grid" | "collection" => format!(
-            "{pad}<div className=\"grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4\">\n{children}\n{pad}</div>",
-            pad = pad,
-            children = render_children(&node.children, indent + 2)
-        ),
+        "stack" => {
+            if surface() == SurfaceKind::Terminal {
+                format!(
+                    "{pad}<Stack>\n{children}\n{pad}</Stack>",
+                    pad = pad,
+                    children = render_children(&node.children, indent + 2)
+                )
+            } else {
+                format!(
+                    "{pad}<div className=\"flex flex-col gap-3\">\n{children}\n{pad}</div>",
+                    pad = pad,
+                    children = render_children(&node.children, indent + 2)
+                )
+            }
+        }
+        "row" => {
+            if surface() == SurfaceKind::Terminal {
+                format!(
+                    "{pad}<Row>\n{children}\n{pad}</Row>",
+                    pad = pad,
+                    children = render_children(&node.children, indent + 2)
+                )
+            } else {
+                format!(
+                    "{pad}<div className=\"flex flex-row gap-3 items-center\">\n{children}\n{pad}</div>",
+                    pad = pad,
+                    children = render_children(&node.children, indent + 2)
+                )
+            }
+        }
+        "grid" | "collection" => {
+            if surface() == SurfaceKind::Terminal {
+                format!(
+                    "{pad}<Grid>\n{children}\n{pad}</Grid>",
+                    pad = pad,
+                    children = render_children(&node.children, indent + 2)
+                )
+            } else {
+                format!(
+                    "{pad}<div className=\"grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4\">\n{children}\n{pad}</div>",
+                    pad = pad,
+                    children = render_children(&node.children, indent + 2)
+                )
+            }
+        }
         "card" => format!(
             "{pad}<Card>\n{children}\n{pad}</Card>",
             pad = pad,
             children = render_children(&node.children, indent + 2)
         ),
         "heading" => {
+            if surface() == SurfaceKind::Terminal {
+                return format!(
+                    "{pad}<Heading>{{{text}}}</Heading>",
+                    pad = pad,
+                    text = prop_js(node, "text")
+                );
+            }
             let level = node
                 .prop("level")
                 .and_then(|e| e.as_ident())
@@ -659,24 +757,46 @@ fn render_node(node: &UiNode, indent: usize) -> String {
                 text = prop_js(node, "text")
             )
         }
-        "text" => format!(
-            "{pad}<p className=\"text-sm opacity-80\">{{{text}}}</p>",
-            pad = pad,
-            text = prop_js(node, "text")
-        ),
+        "text" => {
+            if surface() == SurfaceKind::Terminal {
+                format!(
+                    "{pad}<TText>{{{text}}}</TText>",
+                    pad = pad,
+                    text = prop_js(node, "text")
+                )
+            } else {
+                format!(
+                    "{pad}<p className=\"text-sm opacity-80\">{{{text}}}</p>",
+                    pad = pad,
+                    text = prop_js(node, "text")
+                )
+            }
+        }
         "form" => {
             let on_submit = node
                 .events
                 .iter()
                 .find(|e| e.event == "submit")
                 .map(|e| e.handler.as_str())
-                .unwrap_or("undefined");
-            format!(
-                "{pad}<form className=\"space-y-4\" onSubmit={{async (e) => {{ e.preventDefault(); await {handler}(); }}}}>\n{children}\n{pad}</form>",
-                pad = pad,
-                handler = on_submit,
-                children = render_children(&node.children, indent + 2)
-            )
+                .unwrap_or("undefined")
+                .to_string();
+            if surface() == SurfaceKind::Terminal {
+                FORM_SUBMIT.with(|f| f.set(Some(on_submit.clone())));
+                let children = render_children(&node.children, indent + 2);
+                FORM_SUBMIT.with(|f| f.set(None));
+                format!(
+                    "{pad}<Stack>\n{children}\n{pad}</Stack>",
+                    pad = pad,
+                    children = children
+                )
+            } else {
+                format!(
+                    "{pad}<form className=\"space-y-4\" onSubmit={{async (e) => {{ e.preventDefault(); await {handler}(); }}}}>\n{children}\n{pad}</form>",
+                    pad = pad,
+                    handler = on_submit,
+                    children = render_children(&node.children, indent + 2)
+                )
+            }
         }
         "text_input" => {
             let field = node
@@ -692,13 +812,34 @@ fn render_node(node: &UiNode, indent: usize) -> String {
                 .as_ref()
                 .map(|f| format!("set{}", pascal(f)))
                 .unwrap_or_else(|| "undefined".into());
-            format!(
-                "{pad}<div className=\"space-y-1\"><Label>{{ {label} }}</Label><Input value={{{value}}} onChange={{(e) => {setter}?.(e.target.value)}} /></div>",
-                pad = pad,
-                label = prop_js(node, "label"),
-                value = value,
-                setter = setter
-            )
+            if surface() == SurfaceKind::Terminal {
+                format!(
+                    "{pad}<Field label={{{label}}}><InputField value={{{value}}} onChange={{{setter}}} placeholder={{{ph}}} disabled={{{disabled}}} /></Field>",
+                    pad = pad,
+                    label = prop_js(node, "label"),
+                    value = value,
+                    setter = setter,
+                    ph = prop_js(node, "placeholder"),
+                    disabled = if node.prop("disabled").is_some() {
+                        "true"
+                    } else {
+                        "false"
+                    }
+                )
+            } else {
+                format!(
+                    "{pad}<div className=\"space-y-1\"><Label>{{ {label} }}</Label><Input value={{{value}}} disabled={{{disabled}}} onChange={{(e) => {setter}?.(e.target.value)}} /></div>",
+                    pad = pad,
+                    label = prop_js(node, "label"),
+                    value = value,
+                    setter = setter,
+                    disabled = if node.prop("disabled").is_some() {
+                        "true"
+                    } else {
+                        "false"
+                    }
+                )
+            }
         }
         "textarea" => {
             let field = node
@@ -714,13 +855,33 @@ fn render_node(node: &UiNode, indent: usize) -> String {
                 .as_ref()
                 .map(|f| format!("set{}", pascal(f)))
                 .unwrap_or_else(|| "undefined".into());
-            format!(
-                "{pad}<div className=\"space-y-1\"><Label>{{ {label} }}</Label><Textarea value={{{value}}} onChange={{(e) => {setter}?.(e.target.value)}} /></div>",
-                pad = pad,
-                label = prop_js(node, "label"),
-                value = value,
-                setter = setter
-            )
+            if surface() == SurfaceKind::Terminal {
+                format!(
+                    "{pad}<Field label={{{label}}}><TextareaField value={{{value}}} onChange={{{setter}}} disabled={{{disabled}}} /></Field>",
+                    pad = pad,
+                    label = prop_js(node, "label"),
+                    value = value,
+                    setter = setter,
+                    disabled = if node.prop("disabled").is_some() {
+                        "true"
+                    } else {
+                        "false"
+                    }
+                )
+            } else {
+                format!(
+                    "{pad}<div className=\"space-y-1\"><Label>{{ {label} }}</Label><Textarea value={{{value}}} disabled={{{disabled}}} onChange={{(e) => {setter}?.(e.target.value)}} /></div>",
+                    pad = pad,
+                    label = prop_js(node, "label"),
+                    value = value,
+                    setter = setter,
+                    disabled = if node.prop("disabled").is_some() {
+                        "true"
+                    } else {
+                        "false"
+                    }
+                )
+            }
         }
         "radio_group" => {
             let field = node
@@ -741,25 +902,37 @@ fn render_node(node: &UiNode, indent: usize) -> String {
                 .map(expr_to_js)
                 .unwrap_or_else(|| "[]".into());
             format!(
-                "{pad}<RadioGroup label={{{label}}} value={{{value}}} options={{{options}}} onChange={{{setter}}} />",
+                "{pad}<RadioGroup label={{{label}}} value={{{value}}} options={{{options}}} onChange={{{setter}}} disabled={{{disabled}}} />",
                 pad = pad,
                 label = prop_js(node, "label"),
                 value = value,
                 options = options,
-                setter = setter
+                setter = setter,
+                disabled = if node.prop("disabled").is_some() {
+                    "true"
+                } else {
+                    "false"
+                }
             )
         }
         "button" => {
-            let on_click = node
+            let is_submit = node.prop("submit").is_some();
+            let mut on_click = node
                 .events
                 .iter()
                 .find(|e| e.event == "click")
                 .map(|e| e.handler.clone())
                 .unwrap_or_else(|| "undefined".into());
-            let submit = node
-                .prop("submit")
-                .map(|_| "submit")
-                .unwrap_or("button");
+            if is_submit && surface() == SurfaceKind::Terminal && on_click == "undefined" {
+                on_click = FORM_SUBMIT
+                    .with(|f| f.take())
+                    .map(|handler| {
+                        FORM_SUBMIT.with(|f| f.set(Some(handler.clone())));
+                        handler
+                    })
+                    .unwrap_or_else(|| "undefined".into());
+            }
+            let submit = if is_submit { "submit" } else { "button" };
             let variant = if let Some(active) = node.prop("active") {
                 format!(
                     "({} ? \"secondary\" : ({} ?? \"primary\"))",
@@ -769,14 +942,34 @@ fn render_node(node: &UiNode, indent: usize) -> String {
             } else {
                 prop_js(node, "variant")
             };
-            format!(
-                "{pad}<Button type=\"{submit}\" variant={{{variant}}} onClick={{{on_click}}}>{{{label}}}</Button>",
-                pad = pad,
-                submit = submit,
-                variant = variant,
-                on_click = on_click,
-                label = prop_js(node, "label")
-            )
+            if surface() == SurfaceKind::Terminal {
+                format!(
+                    "{pad}<Button label={{{label}}} variant={{{variant}}} disabled={{{disabled}}} onClick={{{on_click}}} />",
+                    pad = pad,
+                    variant = variant,
+                    disabled = if node.prop("disabled").is_some() {
+                        "true"
+                    } else {
+                        "false"
+                    },
+                    on_click = on_click,
+                    label = prop_js(node, "label")
+                )
+            } else {
+                format!(
+                    "{pad}<Button type=\"{submit}\" variant={{{variant}}} disabled={{{disabled}}} onClick={{{on_click}}}>{{{label}}}</Button>",
+                    pad = pad,
+                    submit = submit,
+                    variant = variant,
+                    disabled = if node.prop("disabled").is_some() {
+                        "true"
+                    } else {
+                        "false"
+                    },
+                    on_click = on_click,
+                    label = prop_js(node, "label")
+                )
+            }
         }
         "toolbar" => format!(
             "{pad}<Toolbar>\n{children}\n{pad}</Toolbar>",
@@ -805,13 +998,20 @@ fn render_node(node: &UiNode, indent: usize) -> String {
                 .iter()
                 .find(|e| e.event == "send")
                 .map(|e| e.handler.as_str());
-            let on_submit = match send {
-                Some(handler) => format!(
-                    "async (e) => {{ e.preventDefault(); await {handler}(); }}"
-                ),
-                None => format!(
-                    "async (e) => {{ e.preventDefault(); await __chatComplete({value}); }}"
-                ),
+            let on_submit = if surface() == SurfaceKind::Terminal {
+                match send {
+                    Some(handler) => format!("async () => {{ await {handler}(); }}"),
+                    None => format!("async () => {{ await __chatComplete({value}); }}"),
+                }
+            } else {
+                match send {
+                    Some(handler) => format!(
+                        "async (e) => {{ e.preventDefault(); await {handler}(); }}"
+                    ),
+                    None => format!(
+                        "async (e) => {{ e.preventDefault(); await __chatComplete({value}); }}"
+                    ),
+                }
             };
             let loading = node
                 .prop("loading")
@@ -821,16 +1021,28 @@ fn render_node(node: &UiNode, indent: usize) -> String {
                 .prop("error")
                 .map(expr_to_js)
                 .unwrap_or_else(|| "historyError || chatError".into());
-            format!(
-                "{pad}<div className=\"flex min-h-0 flex-1 flex-col gap-4\">\n{pad}  <ChatThread messages={{messages}} thinking={{thinking}} loading={{{loading}}} error={{{error}}} />\n{pad}  <ChatComposer id={{\"{id}\"}} value={{{value}}} onChange={{{setter}}} onSubmit={{{on_submit}}} submitting={{thinking}} />\n{pad}</div>",
-                pad = pad,
-                id = field,
-                value = value,
-                setter = setter,
-                on_submit = on_submit,
-                loading = loading,
-                error = error
-            )
+            if surface() == SurfaceKind::Terminal {
+                format!(
+                    "{pad}<Stack>\n{pad}  <ChatThread items={{messages}} loading={{{loading}}} error={{{error}}} />\n{pad}  <ChatComposer value={{{value}}} onChange={{{setter}}} onSubmit={{{on_submit}}} submitting={{thinking}} />\n{pad}</Stack>",
+                    pad = pad,
+                    value = value,
+                    setter = setter,
+                    on_submit = on_submit,
+                    loading = loading,
+                    error = error
+                )
+            } else {
+                format!(
+                    "{pad}<div className=\"flex min-h-0 flex-1 flex-col gap-4\">\n{pad}  <ChatThread messages={{messages}} thinking={{thinking}} loading={{{loading}}} error={{{error}}} />\n{pad}  <ChatComposer id={{\"{id}\"}} value={{{value}}} onChange={{{setter}}} onSubmit={{{on_submit}}} submitting={{thinking}} />\n{pad}</div>",
+                    pad = pad,
+                    id = field,
+                    value = value,
+                    setter = setter,
+                    on_submit = on_submit,
+                    loading = loading,
+                    error = error
+                )
+            }
         }
         "chat_history" => format!(
             "{pad}<HistoryPanel items={{{items}}} title={{{title}}} />",
@@ -856,11 +1068,21 @@ fn render_node(node: &UiNode, indent: usize) -> String {
                 .unwrap_or("undefined"),
             ph = prop_js(node, "placeholder")
         ),
-        "filter_bar" => format!(
-            "{pad}<div className=\"flex gap-2 items-center\">\n{children}\n{pad}</div>",
-            pad = pad,
-            children = render_children(&node.children, indent + 2)
-        ),
+        "filter_bar" => {
+            if surface() == SurfaceKind::Terminal {
+                format!(
+                    "{pad}<FilterBar>\n{children}\n{pad}</FilterBar>",
+                    pad = pad,
+                    children = render_children(&node.children, indent + 2)
+                )
+            } else {
+                format!(
+                    "{pad}<div className=\"flex gap-2 items-center\">\n{children}\n{pad}</div>",
+                    pad = pad,
+                    children = render_children(&node.children, indent + 2)
+                )
+            }
+        }
         "list" => format!(
             "{pad}<ul className=\"space-y-2\">\n{children}\n{pad}</ul>",
             pad = pad,
@@ -890,10 +1112,199 @@ fn render_node(node: &UiNode, indent: usize) -> String {
             if node.prop("searchable").is_some() {
                 props.push_str(" searchable");
             }
+            if node.prop("selectable").is_some() {
+                props.push_str(" selectable");
+            }
+            if node.prop("dense").is_some() {
+                props.push_str(" dense");
+            }
             format!("{pad}<DataTable {props} />")
         }
+        "select" => {
+            let field = node
+                .prop("field")
+                .and_then(|e| e.as_ident())
+                .map(|s| s.to_string());
+            let value = node
+                .prop("value")
+                .map(expr_to_js)
+                .or_else(|| field.clone())
+                .unwrap_or_else(|| "\"\"".into());
+            let on_change = field
+                .as_ref()
+                .map(|f| format!("set{}", pascal(f)))
+                .unwrap_or_else(|| "undefined".into());
+            let tag = if surface() == SurfaceKind::Terminal {
+                "SelectField"
+            } else {
+                "Select"
+            };
+            format!(
+                "{pad}<{tag} label={{{label}}} value={{{value}}} options={{{options}}} onChange={{{on_change}}} placeholder={{{ph}}} disabled={{{disabled}}} />",
+                pad = pad,
+                tag = tag,
+                label = prop_js(node, "label"),
+                value = value,
+                options = prop_js(node, "options"),
+                on_change = on_change,
+                ph = prop_js(node, "placeholder"),
+                disabled = if node.prop("disabled").is_some() {
+                    "true"
+                } else {
+                    "false"
+                }
+            )
+        }
+        "checkbox" | "switch" => {
+            let tag = if node.component == "switch" {
+                "Switch"
+            } else {
+                "Checkbox"
+            };
+            let field = node
+                .prop("field")
+                .and_then(|e| e.as_ident())
+                .map(|s| s.to_string());
+            let checked = node
+                .prop("checked")
+                .map(expr_to_js)
+                .or_else(|| field.clone())
+                .unwrap_or_else(|| "false".into());
+            let on_change = field
+                .as_ref()
+                .map(|f| format!("set{}", pascal(f)))
+                .unwrap_or_else(|| "undefined".into());
+            format!(
+                "{pad}<{tag} label={{{label}}} checked={{{checked}}} onChange={{{on_change}}} disabled={{{disabled}}} />",
+                pad = pad,
+                tag = tag,
+                label = prop_js(node, "label"),
+                checked = checked,
+                on_change = on_change,
+                disabled = if node.prop("disabled").is_some() {
+                    "true"
+                } else {
+                    "false"
+                }
+            )
+        }
+        "field" => format!(
+            "{pad}<Field label={{{label}}} hint={{{hint}}} error={{{error}}}>\n{children}\n{pad}</Field>",
+            pad = pad,
+            label = prop_js(node, "label"),
+            hint = prop_js(node, "hint"),
+            error = prop_js(node, "error"),
+            children = render_children(&node.children, indent + 2)
+        ),
+        "badge" => format!(
+            "{pad}<Badge text={{{text}}} tone={{{tone}}} />",
+            pad = pad,
+            text = prop_js(node, "text"),
+            tone = enum_prop_js(node, "tone", "\"default\"")
+        ),
+        "alert" => {
+            let dismiss = node
+                .events
+                .iter()
+                .find(|e| e.event == "dismiss")
+                .map(|e| e.handler.as_str())
+                .unwrap_or("undefined");
+            format!(
+                "{pad}<Alert text={{{text}}} title={{{title}}} tone={{{tone}}} dismissible={{{dismissible}}} onDismiss={{{dismiss}}} />",
+                pad = pad,
+                text = prop_js(node, "text"),
+                title = prop_js(node, "title"),
+                tone = enum_prop_js(node, "tone", "\"info\""),
+                dismissible = if node.prop("dismissible").is_some() {
+                    "true"
+                } else {
+                    "false"
+                },
+                dismiss = dismiss
+            )
+        }
+        "divider" => format!(
+            "{pad}<Divider label={{{label}}} />",
+            pad = pad,
+            label = prop_js(node, "label")
+        ),
+        "section" => format!(
+            "{pad}<Section title={{{title}}} description={{{description}}}>\n{children}\n{pad}</Section>",
+            pad = pad,
+            title = prop_js(node, "title"),
+            description = prop_js(node, "description"),
+            children = render_children(&node.children, indent + 2)
+        ),
+        "footer" => format!(
+            "{pad}<Footer>\n{children}\n{pad}</Footer>",
+            pad = pad,
+            children = render_children(&node.children, indent + 2)
+        ),
+        "description_list" => format!(
+            "{pad}<DescriptionList items={{{items}}} />",
+            pad = pad,
+            items = prop_js(node, "items")
+        ),
+        "tabs" => {
+            let field = node
+                .prop("field")
+                .and_then(|e| e.as_ident())
+                .map(|s| s.to_string());
+            let value = node
+                .prop("value")
+                .map(expr_to_js)
+                .or_else(|| field.clone())
+                .unwrap_or_else(|| "\"\"".into());
+            let on_change = field
+                .as_ref()
+                .map(|f| format!("set{}", pascal(f)))
+                .or_else(|| {
+                    node.events
+                        .iter()
+                        .find(|e| e.event == "change")
+                        .map(|e| e.handler.clone())
+                })
+                .unwrap_or_else(|| "undefined".into());
+            format!(
+                "{pad}<Tabs value={{{value}}} onChange={{{on_change}}}>\n{children}\n{pad}</Tabs>",
+                pad = pad,
+                value = value,
+                on_change = on_change,
+                children = render_children(&node.children, indent + 2)
+            )
+        }
+        "tab" => format!(
+            "{pad}<Tab label={{{label}}} value={{{value}}}>\n{children}\n{pad}</Tab>",
+            pad = pad,
+            label = prop_js(node, "label"),
+            value = prop_js(node, "value"),
+            children = render_children(&node.children, indent + 2)
+        ),
+        "dialog" => {
+            let confirm = node
+                .events
+                .iter()
+                .find(|e| e.event == "confirm")
+                .map(|e| e.handler.as_str())
+                .unwrap_or("undefined");
+            let cancel = node
+                .events
+                .iter()
+                .find(|e| e.event == "cancel")
+                .map(|e| e.handler.as_str())
+                .unwrap_or("undefined");
+            format!(
+                "{pad}<Dialog open={{{open}}} title={{{title}}} onConfirm={{{confirm}}} onCancel={{{cancel}}}>\n{children}\n{pad}</Dialog>",
+                pad = pad,
+                open = prop_js(node, "open"),
+                title = prop_js(node, "title"),
+                confirm = confirm,
+                cancel = cancel,
+                children = render_children(&node.children, indent + 2)
+            )
+        }
         "loading" => format!(
-            "{pad}<p className=\"opacity-60\">{{{text}}}</p>",
+            "{pad}<Loading text={{{text}}} />",
             pad = pad,
             text = node
                 .prop("text")
@@ -901,14 +1312,16 @@ fn render_node(node: &UiNode, indent: usize) -> String {
                 .unwrap_or_else(|| "\"Loading…\"".into())
         ),
         "empty" => format!(
-            "{pad}<p className=\"opacity-60\">{{{text}}}</p>",
+            "{pad}<Empty text={{{text}}} />",
             pad = pad,
             text = node
                 .prop("text")
                 .map(expr_to_js)
                 .unwrap_or_else(|| "\"No items\"".into())
         ),
-        other => format!("{pad}{{/* unsupported ui::{other} */}}"),
+        other => panic!(
+            "silc codegen: no web/terminal lowerer for ui::{other} — add a render_node arm"
+        ),
     }
 }
 
@@ -924,6 +1337,15 @@ fn prop_js(node: &UiNode, name: &str) -> String {
     node.prop(name)
         .map(expr_to_js)
         .unwrap_or_else(|| "undefined".into())
+}
+
+/// Closed enums authored as bare idents (`info`, `primary`) become JS strings.
+fn enum_prop_js(node: &UiNode, name: &str, default: &str) -> String {
+    match node.prop(name) {
+        Some(Expr::Ident(s) | Expr::Var(s)) => format!("\"{s}\""),
+        Some(other) => expr_to_js(other),
+        None => default.to_string(),
+    }
 }
 
 pub fn expr_to_js(expr: &Expr) -> String {
@@ -1092,7 +1514,7 @@ fn binop_js(op: &BinOp) -> &'static str {
     }
 }
 
-/// Emit a terminal UI module that mirrors the web component graph.
+/// Emit terminal route/component metadata (used by the TCP CLI fallback).
 pub fn render_terminal_module(program: &Program, graph: &ExecutableGraph) -> String {
     let app = graph.app.as_ref().expect("UI graph requires app");
     let mut routes = String::from("[\n");
@@ -1137,13 +1559,80 @@ pub fn render_terminal_module(program: &Program, graph: &ExecutableGraph) -> Str
     }
     components.push('}');
     format!(
-        r#"// AUTO-GENERATED BY silc 0.2.0 — terminal surface metadata
+        r#"// AUTO-GENERATED BY silc 0.2.0 — terminal surface metadata (TCP CLI fallback)
 export const ROUTES = {routes};
 export const COMPONENTS = {components};
 export const SURFACES = ["web", "terminal"];
+export const TERMINAL_SUBSTRATE = "opentui";
 "#,
         routes = routes,
         components = components
+    )
+}
+
+/// Emit the OpenTUI TerminalApp that mirrors the web component graph.
+pub fn render_terminal_app(program: &Program, graph: &ExecutableGraph) -> String {
+    with_surface(SurfaceKind::Terminal, || {
+        let app = graph.app.as_ref().expect("UI graph requires app");
+        let mut out = String::new();
+        out.push_str("/* AUTO-GENERATED BY silc 0.2.0 — OpenTUI terminal surface. DO NOT EDIT */\n");
+        out.push_str("/** @jsx h */\n/** @jsxFrag Fragment */\n");
+        out.push_str("import { useState, useEffect, useRef, h, Fragment } from \"./components/terminal/runtime\";\n");
+        out.push_str("import {\n");
+        out.push_str("  Page, AppBar, SidePanel, NavItem, Stack, Row, Grid, Card, Heading, TText,\n");
+        out.push_str("  Toolbar, Button, Label, InputField, TextareaField, RadioGroup, SelectField,\n");
+        out.push_str("  Checkbox, Switch, Field, Badge, Alert, Divider, Section, Footer,\n");
+        out.push_str("  DescriptionList, Tabs, Tab, Dialog, DataTable, ChatThread, ChatComposer,\n");
+        out.push_str("  HistoryPanel, SearchInput, FilterBar, Loading, Empty, Main,\n");
+        out.push_str("} from \"./components/terminal/components\";\n\n");
+        out.push_str("let __silcNavigateImpl = (_path) => {};\n");
+        out.push_str("export function __silcNavigate(path) { __silcNavigateImpl(path); }\n\n");
+        out.push_str("function __truthy(value) {\n  if (Array.isArray(value)) return value.length > 0;\n  if (value && typeof value === \"object\") return Object.keys(value).length > 0;\n  return Boolean(value);\n}\n\n");
+
+        for component in program.all_components() {
+            out.push_str(&render_web_component(component, program));
+            out.push('\n');
+        }
+
+        out.push_str(&render_terminal_router(app));
+        out
+    })
+}
+
+fn render_terminal_router(app: &App) -> String {
+    let mut cases = String::new();
+    for (i, route) in app.routes.iter().enumerate() {
+        let keyword = if i == 0 { "if" } else { "else if" };
+        cases.push_str(&format!(
+            "  {keyword} (path === {path}) page = <{comp} />;\n",
+            keyword = keyword,
+            path = escape_js_string(&route.path),
+            comp = route.component
+        ));
+    }
+    let default = app
+        .routes
+        .first()
+        .map(|r| r.component.clone())
+        .unwrap_or_else(|| "Stack".into());
+    format!(
+        r#"export function App() {{
+  const [path, setPath] = useState({home});
+  useEffect(() => {{
+    __silcNavigateImpl = setPath;
+  }}, []);
+  let page = <{default} />;
+{cases}  return page;
+}}
+"#,
+        home = escape_js_string(
+            &app.routes
+                .first()
+                .map(|r| r.path.clone())
+                .unwrap_or_else(|| "/".into())
+        ),
+        cases = cases,
+        default = default
     )
 }
 
@@ -1184,10 +1673,73 @@ fn snake_case(s: &str) -> String {
     out
 }
 
+/// Catalog names that must have a `render_node` arm (kept in sync manually).
+#[cfg(test)]
+const LOWERED_BUILTINS: &[&str] = &[
+    "page",
+    "app_bar",
+    "side_panel",
+    "nav_item",
+    "stack",
+    "row",
+    "grid",
+    "collection",
+    "card",
+    "heading",
+    "text",
+    "form",
+    "text_input",
+    "textarea",
+    "radio_group",
+    "select",
+    "checkbox",
+    "switch",
+    "field",
+    "button",
+    "toolbar",
+    "chat",
+    "chat_history",
+    "search_input",
+    "filter_bar",
+    "list",
+    "table",
+    "badge",
+    "alert",
+    "divider",
+    "section",
+    "footer",
+    "description_list",
+    "tabs",
+    "tab",
+    "dialog",
+    "loading",
+    "empty",
+];
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sil_core::{Expr, Span, UiNode, UiTemplate};
+    use sil_core::{catalog_component_names, Expr, Span, UiNode, UiTemplate};
+
+    #[test]
+    fn catalog_and_lowerer_stay_in_parity() {
+        let catalog = catalog_component_names();
+        for name in &catalog {
+            assert!(
+                LOWERED_BUILTINS.contains(name),
+                "catalog ui::{name} missing from LOWERED_BUILTINS / render_node"
+            );
+        }
+        for name in LOWERED_BUILTINS {
+            if *name == "collection" {
+                continue; // alias arm for grid
+            }
+            assert!(
+                catalog.contains(name),
+                "LOWERED_BUILTINS has ui::{name} but catalog does not"
+            );
+        }
+    }
 
     #[test]
     fn expr_member_to_js() {
@@ -1210,6 +1762,99 @@ mod tests {
         };
         let html = render_template(&UiTemplate::Node(node), 0);
         assert!(html.contains("Hello"));
+    }
+
+    #[test]
+    fn lowers_phase1_form_and_feedback_on_both_surfaces() {
+        let select = UiNode {
+            component: "select".into(),
+            props: vec![
+                ("field".into(), Expr::Ident("category".into())),
+                (
+                    "options".into(),
+                    Expr::List(vec![
+                        Expr::String("A".into()),
+                        Expr::String("B".into()),
+                    ]),
+                ),
+                ("disabled".into(), Expr::Bool(true)),
+            ],
+            events: vec![],
+            slots: vec![],
+            children: vec![],
+            span: Span::default(),
+        };
+        let section = UiNode {
+            component: "section".into(),
+            props: vec![("title".into(), Expr::String("Stock".into()))],
+            events: vec![],
+            slots: vec![],
+            children: vec![],
+            span: Span::default(),
+        };
+        let web_select = with_surface(SurfaceKind::Web, || {
+            render_template(&UiTemplate::Node(select.clone()), 0)
+        });
+        let term_select = with_surface(SurfaceKind::Terminal, || {
+            render_template(&UiTemplate::Node(select), 0)
+        });
+        let web_section = with_surface(SurfaceKind::Web, || {
+            render_template(&UiTemplate::Node(section.clone()), 0)
+        });
+        let term_section = with_surface(SurfaceKind::Terminal, || {
+            render_template(&UiTemplate::Node(section), 0)
+        });
+        assert!(web_select.contains("Select") && web_select.contains("disabled={true}"));
+        assert!(term_select.contains("SelectField") && term_select.contains("disabled={true}"));
+        assert!(web_section.contains("Section") && web_section.contains("Stock"));
+        assert!(term_section.contains("Section") && term_section.contains("Stock"));
+    }
+
+    #[test]
+    fn lowers_phase2_shell_and_table_flags() {
+        let dialog = UiNode {
+            component: "dialog".into(),
+            props: vec![
+                ("open".into(), Expr::Ident("show".into())),
+                ("title".into(), Expr::String("Confirm".into())),
+            ],
+            events: vec![],
+            slots: vec![],
+            children: vec![],
+            span: Span::default(),
+        };
+        let table = UiNode {
+            component: "table".into(),
+            props: vec![
+                ("rows".into(), Expr::Ident("items".into())),
+                (
+                    "columns".into(),
+                    Expr::List(vec![Expr::String("name".into())]),
+                ),
+                ("selectable".into(), Expr::Bool(true)),
+                ("dense".into(), Expr::Bool(true)),
+            ],
+            events: vec![],
+            slots: vec![],
+            children: vec![],
+            span: Span::default(),
+        };
+        let web_dialog = with_surface(SurfaceKind::Web, || {
+            render_template(&UiTemplate::Node(dialog.clone()), 0)
+        });
+        let term_dialog = with_surface(SurfaceKind::Terminal, || {
+            render_template(&UiTemplate::Node(dialog), 0)
+        });
+        let web_table = with_surface(SurfaceKind::Web, || {
+            render_template(&UiTemplate::Node(table.clone()), 0)
+        });
+        let term_table = with_surface(SurfaceKind::Terminal, || {
+            render_template(&UiTemplate::Node(table), 0)
+        });
+        assert!(web_dialog.contains("Dialog"));
+        assert!(term_dialog.contains("Dialog"));
+        assert!(web_table.contains("selectable") && web_table.contains("dense"));
+        assert!(term_table.contains("selectable") && term_table.contains("dense"));
     }
 
     #[test]

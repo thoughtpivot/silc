@@ -10,6 +10,7 @@ export interface RadioGroupProps {
   value: string;
   options: string[];
   onChange: (value: string) => void;
+  disabled?: boolean;
   className?: string;
 }
 
@@ -20,6 +21,7 @@ export function RadioGroup({
   value,
   options,
   onChange,
+  disabled = false,
   className,
 }: RadioGroupProps) {
   return (
@@ -35,6 +37,7 @@ export function RadioGroup({
               htmlFor={optionId}
               className={cn(
                 "inline-flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition",
+                disabled && "cursor-not-allowed opacity-50",
                 selected
                   ? "border-[var(--silc-accent)] bg-primary/15 text-foreground"
                   : "border-border bg-background/50 text-muted-foreground hover:border-ring"
@@ -46,6 +49,7 @@ export function RadioGroup({
                 name={name}
                 value={option}
                 checked={selected}
+                disabled={disabled}
                 onChange={() => onChange(option)}
                 className="accent-[var(--silc-accent)]"
               />

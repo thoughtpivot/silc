@@ -65,6 +65,10 @@ function rowMatches(row: Row, columns: string[], query: string): boolean {
   return fuzzyMatches(query, columns.map((column) => String(row?.[column] ?? "")).join(" "));
 }
 
+function rowKey(row: Row, index: number): string {
+  return String(row.id ?? index);
+}
+
 export function DataTable({
   rows,
   columns,
@@ -74,6 +78,8 @@ export function DataTable({
   filterAll = "All",
   sortable = false,
   searchable = false,
+  selectable = false,
+  dense = false,
   searchPlaceholder = "Search…",
   className,
 }: {
@@ -85,12 +91,26 @@ export function DataTable({
   filterAll?: string;
   sortable?: boolean;
   searchable?: boolean;
+  selectable?: boolean;
+  dense?: boolean;
   searchPlaceholder?: string;
   className?: string;
 }) {
   const [sortColumn, setSortColumn] = React.useState<string | null>(null);
   const [sortDirection, setSortDirection] = React.useState<SortDirection>("asc");
   const [query, setQuery] = React.useState("");
+  const [selectedIds, setSelectedIds] = React.useState<Set<string>>(() => new Set());
+
+  const cellPadding = dense ? "px-3 py-1.5" : "px-4 py-3";
+
+  function toggleRowSelection(key: string) {
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
 
   function toggleSort(column: string) {
     if (sortColumn === column) {
@@ -138,7 +158,7 @@ export function DataTable({
             {columns.map((column) => {
               if (!sortable) {
                 return (
-                  <th key={column} className="px-4 py-3 font-medium text-muted-foreground">
+                  <th key={column} className={cn(cellPadding, "font-medium text-muted-foreground")}>
                     {labelFor(column)}
                   </th>
                 );
@@ -151,7 +171,8 @@ export function DataTable({
                     onClick={() => toggleSort(column)}
                     aria-sort={active ? (sortDirection === "asc" ? "ascending" : "descending") : undefined}
                     className={cn(
-                      "flex w-full cursor-pointer items-center gap-1 px-4 py-3 text-left font-medium transition hover:text-foreground",
+                      "flex w-full cursor-pointer items-center gap-1 text-left font-medium transition hover:text-foreground",
+                      cellPadding,
                       active && "text-foreground"
                     )}
                   >
@@ -168,23 +189,33 @@ export function DataTable({
         <tbody>
           {visible.length === 0 ? (
             <tr>
-              <td colSpan={columns.length} className="px-4 py-8 text-center text-muted-foreground">
+              <td colSpan={columns.length} className={cn(cellPadding, "py-8 text-center text-muted-foreground")}>
                 {searchable && query.trim() ? "No rows match your search." : emptyText}
               </td>
             </tr>
           ) : (
-            visible.map((row, index) => (
-              <tr
-                key={String((row as Row).id ?? index)}
-                className="border-b border-border/60 transition last:border-b-0 hover:bg-background/60"
-              >
-                {columns.map((column) => (
-                  <td key={column} className="px-4 py-3 align-top">
-                    {String((row as Row)[column] ?? "")}
-                  </td>
-                ))}
-              </tr>
-            ))
+            visible.map((row, index) => {
+              const key = rowKey(row as Row, index);
+              const selected = selectable && selectedIds.has(key);
+              return (
+                <tr
+                  key={key}
+                  aria-selected={selectable ? selected : undefined}
+                  onClick={selectable ? () => toggleRowSelection(key) : undefined}
+                  className={cn(
+                    "border-b border-border/60 transition last:border-b-0 hover:bg-background/60",
+                    selectable && "cursor-pointer",
+                    selected && "bg-primary/10"
+                  )}
+                >
+                  {columns.map((column) => (
+                    <td key={column} className={cn(cellPadding, "align-top")}>
+                      {String((row as Row)[column] ?? "")}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })
           )}
         </tbody>
       </table>

@@ -75,8 +75,14 @@ class BrowsePage is component {
                 ui::nav_item(:label("Assistant"), :to("/assistant"))
             )),
             ui::stack(
-                ui::heading(:text("Stock browser"), :level(1)),
-                ui::text(:text("Filter by category, or ask the Assistant about live inventory.")),
+                ui::section(
+                    :title("Stock browser"),
+                    :description("Filter by category, or ask the Assistant about live inventory.")
+                ),
+                ui::alert(
+                    :tone(info),
+                    :text("Browse mirrors Admin and Assistant — same inventory_items resource on web and OpenTUI.")
+                ),
                 ui::filter_bar(
                     ui::radio_group(
                         :field(category_filter),
@@ -116,29 +122,35 @@ class AdminPage is component {
                 ui::nav_item(:label("Assistant"), :to("/assistant"))
             )),
             ui::stack(
-                ui::heading(:text("Add item"), :level(1)),
-                ui::form(:on(submit(on_create)),
-                    ui::text_input(:field(name), :label("Name")),
-                    ui::radio_group(
-                        :field(category),
-                        :options(["Electronics", "Hardware", "Supplies", "Other"]),
-                        :label("Category")
-                    ),
-                    ui::text_input(:field(location), :label("Location / aisle")),
-                    ui::text_input(:field(quantity), :label("Quantity")),
-                    ui::text_input(:field(reorder_level), :label("Reorder level")),
-                    ui::textarea(:field(notes), :label("Notes")),
-                    ui::toolbar(
-                        ui::button(:label("Create"), :variant("primary"), :submit)
+                ui::section(
+                    :title("Add item"),
+                    :description("Create an inventory record shared by Browse and the Assistant."),
+                    ui::form(:on(submit(on_create)),
+                        ui::text_input(:field(name), :label("Name")),
+                        ui::radio_group(
+                            :field(category),
+                            :options(["Electronics", "Hardware", "Supplies", "Other"]),
+                            :label("Category")
+                        ),
+                        ui::text_input(:field(location), :label("Location / aisle")),
+                        ui::text_input(:field(quantity), :label("Quantity")),
+                        ui::text_input(:field(reorder_level), :label("Reorder level")),
+                        ui::textarea(:field(notes), :label("Notes")),
+                        ui::toolbar(
+                            ui::button(:label("Create"), :variant("primary"), :submit)
+                        )
                     )
                 ),
-                ui::heading(:text("Catalog"), :level(2)),
-                when !$.items {
-                    ui::empty(:text("Catalog is empty."))
-                },
-                for $.items -> $item {
-                    ItemCard(:item($item), :on(remove => on_delete))
-                }
+                ui::section(
+                    :title("Catalog"),
+                    :description("Review and remove current inventory records."),
+                    when !$.items {
+                        ui::empty(:text("Catalog is empty."))
+                    },
+                    for $.items -> $item {
+                        ItemCard(:item($item), :on(remove => on_delete))
+                    }
+                )
             )
         )
     }
@@ -180,14 +192,20 @@ class AssistantPage is component {
                 ui::nav_item(:label("Assistant"), :to("/assistant"), :active)
             )),
             ui::stack(
-                ui::heading(:text("Ask about inventory"), :level(1)),
-                ui::text(:text("silclm answers using a live snapshot of inventory_items.")),
-                ui::chat(
-                    :value($.prompt),
-                    :context($.items),
-                    :persona("You are the Inventory Assistant for this Silc inventory app, built on silclm. You help users understand stock levels, categories, quantities, and reorder needs from the live inventory snapshot."),
-                    :placeholder("Which items are below reorder level?"),
-                    :on(send(on_send))
+                ui::section(
+                    :title("Ask about inventory"),
+                    :description("Use natural language to inspect current stock and reorder needs."),
+                    ui::alert(
+                        :tone(info),
+                        :text("silclm answers using a live snapshot of inventory_items.")
+                    ),
+                    ui::chat(
+                        :value($.prompt),
+                        :context($.items),
+                        :persona("You are the Inventory Assistant for this Silc inventory app, built on silclm. You help users understand stock levels, categories, quantities, and reorder needs from the live inventory snapshot."),
+                        :placeholder("Which items are below reorder level?"),
+                        :on(send(on_send))
+                    )
                 )
             )
         )

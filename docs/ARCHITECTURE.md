@@ -164,12 +164,13 @@ components and its `serve()` method declares both `ui::web(:root(App), …)` and
 `ui::terminal(…)`.
 
 Codegen consumes one component graph and emits equal web and terminal adapters.
-Web currently lowers to compiler-owned React/Tailwind templates. Terminal
-exposes the same routes, actions, and resources through the compiler-owned
-terminal adapter. Every catalog primitive declares both surfaces. There is no
-separate component-source standard library or resolver; out-of-box capability
-lives in the compiler catalog and templates, while author components stay in
-application source. See [ADR-003-declarative-ui.md](ADR-003-declarative-ui.md).
+Web lowers to compiler-owned React/Tailwind templates. Terminal lowers to a
+compiler-owned **OpenTUI** app that renders the same routes, state, events, and
+primitives; a TCP telnet CLI remains a remote/headless fallback. Every catalog
+primitive declares both surfaces. There is no separate component-source standard
+library or resolver; out-of-box capability lives in the compiler catalog and
+templates, while author components stay in application source. See
+[ADR-003-declarative-ui.md](ADR-003-declarative-ui.md).
 
 ### IPC
 
@@ -262,7 +263,7 @@ splitting does not.
 
 - Expand expression and subject type inference beyond the 0.2.0 grammar
 - Generalize executable target adapters beyond the current operation registry
-- Enrich the compiler-owned terminal renderer while preserving surface parity
+- Deepen OpenTUI terminal fidelity (dialogs, dense tables, chat polish) while preserving surface parity
 - Add typed field views atop the implemented mmap/UDS ABI
 - Add program-level crash recovery and deployment bundles
 

@@ -90,8 +90,9 @@ class ChatPage is component {
             )),
             ui::stack(
                 when $.active_session {
-                    ui::stack(
-                        ui::heading(:text($.title_edit), :level(2)),
+                    ui::section(
+                        :title($.title_edit),
+                        :description("Rename this conversation or continue chatting with silclm."),
                         ui::form(:on(submit(on_rename)),
                             ui::text_input(:field(title_edit), :label("Rename chat")),
                             ui::toolbar(
@@ -103,6 +104,10 @@ class ChatPage is component {
                                 )
                             )
                         ),
+                        ui::alert(
+                            :tone(info),
+                            :text("This conversation is available on both the web and OpenTUI surfaces.")
+                        ),
                         ui::chat(
                             :value($.prompt),
                             :session($.active_session),
@@ -111,7 +116,7 @@ class ChatPage is component {
                         )
                     )
                 } else {
-                    ui::text(:text("Select a chat or create a new one."))
+                    ui::empty(:text("Select a chat or create a new one."))
                 }
             )
         )

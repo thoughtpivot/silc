@@ -28,7 +28,9 @@ trees as skins over compiler-owned applications. That prevented general apps
 
 **Dual-surface is required:** every UI app must declare both `ui::web` and
 `ui::terminal`. No component may be web-only or terminal-only. Authors write one
-semantic tree; the compiler lowers it to React (web) and a terminal adapter.
+semantic tree; the compiler lowers it to React/Tailwind (web) and OpenTUI
+(terminal). A TCP telnet CLI remains available as a remote/headless fallback
+only — it is not the primary definition of `ui::terminal`.
 
 `is view`, Contract-left-of-`ui::web` binding, and `PortalKind` profiles are
 removed. Chat, scored forms, and product UIs are built from compiler-owned
@@ -36,9 +38,17 @@ catalog primitives and author-defined app components, not compiler modes.
 
 ### Semantic primitives
 
-Built-ins (`ui::page`, `ui::button`, `ui::collection`, …) expose semantic events
-(`:on(click(handler))`, `:on(submit(handler))`) and expression props. Catalog
-entries declare both `web` and `terminal` surfaces.
+Built-ins (`ui::page`, `ui::button`, `ui::table`, `ui::select`, …) expose
+semantic events (`:on(click(handler))`, `:on(submit(handler))`) and expression
+props. Catalog entries declare both `web` and `terminal` surfaces and must have
+matching lowerers for React and OpenTUI.
+
+Shared prop vocabulary:
+
+- `:field(ident)` — bind to component state
+- `:value(expr)` — controlled/display value
+- `:variant` / `:tone` / `:size` — closed role enums
+- Flags (`:disabled`, `:sortable`, `:searchable`, `:selectable`, `:dense`, …)
 
 ### Out-of-box components
 

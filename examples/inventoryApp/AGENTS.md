@@ -58,16 +58,35 @@ resources — not compiler modes that take over the application.
 
 Authors write **one** semantic component tree. The compiler lowers it to:
 
-- `ui::web` → React (compiler-owned)
-- `ui::terminal` → terminal adapter (compiler-owned)
+- `ui::web` → React/Tailwind (compiler-owned)
+- `ui::terminal` → OpenTUI (compiler-owned); TCP telnet CLI is a remote fallback
 
 Every UI app **must** declare both surfaces in `serve()`. No component may be
 web-only or terminal-only. Never write HTML, CSS, React, Tailwind, OpenTUI,
 ShadCN trees, or bundler config in Silc source.
 
-Built-in primitives (`ui::page`, `ui::button`, `ui::form`, …) are compiler-owned
-catalog entries with web + terminal contracts. Author-defined reusable
-components live in app `.silc` source beside the rest of the program.
+Built-in primitives (`ui::page`, `ui::button`, `ui::table`, `ui::select`, …) are
+compiler-owned catalog entries with web + terminal contracts. Author-defined
+reusable components live in app `.silc` source beside the rest of the program.
+
+### Shared prop vocabulary
+
+| Concern | Shape | Closed values / notes |
+| --- | --- | --- |
+| State bind | `:field(name)` | forms, tabs, filters |
+| Display | `:value(expr)` | controlled inputs |
+| Role | `:variant(...)` | `primary` \| `secondary` \| `destructive` \| `ghost` |
+| Tone | `:tone(...)` | `default` \| `muted` \| `info` \| `success` \| `warning` \| `danger` |
+| Size | `:size(...)` | `sm` \| `md` \| `lg` |
+| Capability flags | bare flags | `:disabled`, `:sortable`, `:searchable`, `:selectable`, `:dense` |
+
+Unknown closed tokens are compile errors. `:field` stays a prop pattern;
+`ui::field` is optional chrome around a control.
+
+Form kit: `ui::text_input`, `ui::textarea`, `ui::select`, `ui::checkbox`,
+`ui::switch`, `ui::field`, `ui::radio_group`, `ui::button`.
+Feedback/layout: `ui::badge`, `ui::alert`, `ui::divider`, `ui::section`,
+`ui::footer`, `ui::tabs`/`ui::tab`, `ui::dialog`, `ui::description_list`.
 
 ## Valid patterns
 
@@ -148,7 +167,9 @@ and other non-registry ops. Mixing stub-only ops into a runnable graph is a
 ## App-specific notes (inventoryApp)
 
 - Routes: `/` browse, `/admin` CRUD, `/assistant` grounded silclm chat.
-- Browse renders `ui::table(:rows($.items), :columns([...]), :filter_field(category_filter), :filter_column("category"), :sortable, :searchable)` — the compiler-owned DataTable handles filtering, the empty state, opt-in per-column sorting, and opt-in Levenshtein fuzzy search.
+- Browse renders `ui::section` + `ui::alert` + `ui::table(:rows($.items), :columns([...]), :filter_field(category_filter), :filter_column("category"), :sortable, :searchable)` — DataTable handles filtering, empty state, sort, and fuzzy search on web and OpenTUI.
+- Admin and Assistant also use semantic `ui::section`/`ui::alert` structure on both surfaces.
+- Dual-surface: `ui::web` (React/Tailwind) and `ui::terminal` (OpenTUI primary; TCP CLI fallback on the terminal port).
 - Resource table: `inventory_items` via `Inventory` (`list` / `create` / `update` / `delete`).
 - Assistant chat uses `ui::chat(:context($.items))` so silclm sees a live inventory snapshot.
 - The chat also sets `:persona(...)` so the assistant identifies as the Inventory Assistant built on silclm; personas ride the ingest frame and are never persisted into chat history.

@@ -80,6 +80,24 @@ fn inventory_app_builds_with_chat_context() {
         "browse page must render the inventory as a filterable data grid"
     );
     assert!(
+        app.contains("<Section") && app.contains("<Alert"),
+        "browse page must use section/alert primitives"
+    );
+    let terminal_app =
+        std::fs::read_to_string(root.join("typescript/src/TerminalApp.tsx")).unwrap();
+    assert!(
+        terminal_app.contains("__silcNavigate")
+            && terminal_app.contains("DataTable")
+            && terminal_app.contains("<Section")
+            && terminal_app.contains("<Alert"),
+        "OpenTUI TerminalApp must mirror browse section/alert/table"
+    );
+    let pkg = std::fs::read_to_string(root.join("typescript/package.json")).unwrap();
+    assert!(
+        pkg.contains("@opentui/core"),
+        "inventory runtime must pin OpenTUI"
+    );
+    assert!(
         app.contains("filterColumn={\"category\"} sortable searchable />"),
         "browse grid must opt into sorting and fuzzy search"
     );

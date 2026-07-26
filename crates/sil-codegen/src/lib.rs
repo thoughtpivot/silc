@@ -45,13 +45,31 @@ const UI_WEB_CHAT_THREAD_TSX: &str = include_str!("../templates/ui_web_chat_thre
 const UI_WEB_CHAT_COMPOSER_TSX: &str = include_str!("../templates/ui_web_chat_composer.tsx");
 const UI_WEB_HISTORY_PANEL_TSX: &str = include_str!("../templates/ui_web_history_panel.tsx");
 const UI_WEB_SEARCH_INPUT_TSX: &str = include_str!("../templates/ui_web_search_input.tsx");
-const UI_WEB_PRODUCT_GRID_TSX: &str = include_str!("../templates/ui_web_product_grid.tsx");
 const UI_WEB_DATA_TABLE_TSX: &str = include_str!("../templates/ui_web_data_table.tsx");
+const UI_WEB_SELECT_TSX: &str = include_str!("../templates/ui_web_select.tsx");
+const UI_WEB_CHECKBOX_TSX: &str = include_str!("../templates/ui_web_checkbox.tsx");
+const UI_WEB_SWITCH_TSX: &str = include_str!("../templates/ui_web_switch.tsx");
+const UI_WEB_FIELD_TSX: &str = include_str!("../templates/ui_web_field.tsx");
+const UI_WEB_BADGE_TSX: &str = include_str!("../templates/ui_web_badge.tsx");
+const UI_WEB_ALERT_TSX: &str = include_str!("../templates/ui_web_alert.tsx");
+const UI_WEB_DIVIDER_TSX: &str = include_str!("../templates/ui_web_divider.tsx");
+const UI_WEB_SECTION_TSX: &str = include_str!("../templates/ui_web_section.tsx");
+const UI_WEB_FOOTER_TSX: &str = include_str!("../templates/ui_web_footer.tsx");
+const UI_WEB_DESCRIPTION_LIST_TSX: &str = include_str!("../templates/ui_web_description_list.tsx");
+const UI_WEB_TABS_TSX: &str = include_str!("../templates/ui_web_tabs.tsx");
+const UI_WEB_DIALOG_TSX: &str = include_str!("../templates/ui_web_dialog.tsx");
+const UI_WEB_LOADING_TSX: &str = include_str!("../templates/ui_web_loading.tsx");
+const UI_WEB_EMPTY_TSX: &str = include_str!("../templates/ui_web_empty.tsx");
+const UI_TERMINAL_RUNTIME_TS: &str = include_str!("../templates/ui_terminal_runtime.ts");
+const UI_TERMINAL_COMPONENTS_TS: &str = include_str!("../templates/ui_terminal_components.ts");
+const UI_TERMINAL_MAIN_TS: &str = include_str!("../templates/ui_terminal_main.ts");
 
 /// Compiler-pinned React version for ui::web (must match ui_web_package.json).
 pub const UI_WEB_REACT_VERSION: &str = "18.3.1";
 pub const UI_WEB_TAILWIND_VERSION: &str = "3.4.17";
 pub const UI_WEB_SUBSTRATE: &str = "react";
+pub const UI_TERMINAL_SUBSTRATE: &str = "opentui";
+pub const UI_TERMINAL_OPENTUI_VERSION: &str = "0.4.5";
 /// Compiler-owned Gin adapter for `service::http`.
 pub const SERVICE_HTTP_ADAPTER: &str = "gin-v1";
 pub const SERVICE_HTTP_GIN_VERSION: &str = "1.10.0";
@@ -189,7 +207,13 @@ pub fn emit(
                 "profile": "web",
                 "surfaces": ["web", "terminal"],
                 "substrate": UI_WEB_SUBSTRATE,
-                "terminal_substrate": if g.terminal_port.is_some() { "bun-tcp-telnet" } else { "disabled" },
+                "terminal_substrate": if g.terminal_port.is_some() {
+                    UI_TERMINAL_SUBSTRATE
+                } else {
+                    "disabled"
+                },
+                "terminal_fallback": "bun-tcp-telnet",
+                "opentui_version": UI_TERMINAL_OPENTUI_VERSION,
                 "react_version": UI_WEB_REACT_VERSION,
                 "tailwind_version": UI_WEB_TAILWIND_VERSION,
                 "app": g.app_name,
@@ -198,6 +222,10 @@ pub fn emit(
                     "typescript/src/main.tsx",
                     "typescript/src/App.tsx",
                     "typescript/terminal.ts",
+                    "typescript/terminal_main.ts",
+                    "typescript/src/TerminalApp.tsx",
+                    "typescript/src/components/terminal/runtime.ts",
+                    "typescript/src/components/terminal/components.ts",
                     "typescript/src/theme.css",
                     "typescript/src/lib/utils.ts",
                     "typescript/src/components/ui/button.tsx",
@@ -215,8 +243,21 @@ pub fn emit(
                     "typescript/src/components/ui/chat-composer.tsx",
                     "typescript/src/components/ui/history-panel.tsx",
                     "typescript/src/components/ui/search-input.tsx",
-                    "typescript/src/components/ui/product-grid.tsx",
                     "typescript/src/components/ui/data-table.tsx",
+                    "typescript/src/components/ui/select.tsx",
+                    "typescript/src/components/ui/checkbox.tsx",
+                    "typescript/src/components/ui/switch.tsx",
+                    "typescript/src/components/ui/field.tsx",
+                    "typescript/src/components/ui/badge.tsx",
+                    "typescript/src/components/ui/alert.tsx",
+                    "typescript/src/components/ui/divider.tsx",
+                    "typescript/src/components/ui/section.tsx",
+                    "typescript/src/components/ui/footer.tsx",
+                    "typescript/src/components/ui/description-list.tsx",
+                    "typescript/src/components/ui/tabs.tsx",
+                    "typescript/src/components/ui/dialog.tsx",
+                    "typescript/src/components/ui/loading.tsx",
+                    "typescript/src/components/ui/empty.tsx",
                     "typescript/tailwind.config.js",
                     "typescript/index.html",
                     "typescript/package.json",
@@ -231,8 +272,9 @@ pub fn emit(
                     "tailwindcss": UI_WEB_TAILWIND_VERSION,
                     "clsx": "2.1.1",
                     "tailwind-merge": "2.6.0",
+                    "@opentui/core": UI_TERMINAL_OPENTUI_VERSION,
                 },
-                "provenance": "compiler-owned ui::web + ui::terminal → React/Tailwind/Bun",
+                "provenance": "compiler-owned ui::web (React/Tailwind) + ui::terminal (OpenTUI) via Bun",
                 "catalog": sil_core::catalog_component_names(),
             });
         }
@@ -264,6 +306,10 @@ pub fn emit(
             );
             entrypoints.insert(
                 "terminal".into(),
+                serde_json::json!("typescript/terminal_main.ts"),
+            );
+            entrypoints.insert(
+                "terminal_cli".into(),
                 serde_json::json!("typescript/terminal.ts"),
             );
             entrypoints.insert(
@@ -347,6 +393,8 @@ fn emit_ui_app(
     }
     fs::create_dir_all(ts_src.join("components/ui"))
         .map_err(|error| format!("create {}: {error}", ts_src.display()))?;
+    fs::create_dir_all(ts_src.join("components/terminal"))
+        .map_err(|error| format!("create {}: {error}", ts_src.display()))?;
     fs::create_dir_all(ts_src.join("lib"))
         .map_err(|error| format!("create {}: {error}", ts_src.display()))?;
     fs::create_dir_all(&ts_dist)
@@ -355,6 +403,7 @@ fn emit_ui_app(
 
     let app_tsx = ui_lower::render_web_app(program, graph);
     let terminal_ts = ui_lower::render_terminal_module(program, graph);
+    let terminal_app = ui_lower::render_terminal_app(program, graph);
 
     let mut files = vec![
         (
@@ -362,6 +411,10 @@ fn emit_ui_app(
             render_template(APP_WORKER_TS, graph, schema_id),
         ),
         (root.join("typescript/terminal.ts"), terminal_ts),
+        (
+            root.join("typescript/terminal_main.ts"),
+            UI_TERMINAL_MAIN_TS.to_string(),
+        ),
         (
             root.join("typescript/package.json"),
             UI_WEB_PACKAGE_JSON.to_string(),
@@ -383,6 +436,7 @@ fn emit_ui_app(
             UI_WEB_MAIN_TSX.to_string(),
         ),
         (root.join("typescript/src/App.tsx"), app_tsx),
+        (root.join("typescript/src/TerminalApp.tsx"), terminal_app),
         (
             root.join("typescript/src/theme.css"),
             UI_WEB_THEME_CSS.to_string(),
@@ -390,6 +444,14 @@ fn emit_ui_app(
         (
             root.join("typescript/src/lib/utils.ts"),
             UI_WEB_UTILS_TS.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/terminal/runtime.ts"),
+            UI_TERMINAL_RUNTIME_TS.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/terminal/components.ts"),
+            UI_TERMINAL_COMPONENTS_TS.to_string(),
         ),
         (
             root.join("typescript/src/components/ui/button.tsx"),
@@ -452,12 +514,64 @@ fn emit_ui_app(
             UI_WEB_SEARCH_INPUT_TSX.to_string(),
         ),
         (
-            root.join("typescript/src/components/ui/product-grid.tsx"),
-            UI_WEB_PRODUCT_GRID_TSX.to_string(),
-        ),
-        (
             root.join("typescript/src/components/ui/data-table.tsx"),
             UI_WEB_DATA_TABLE_TSX.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/ui/select.tsx"),
+            UI_WEB_SELECT_TSX.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/ui/checkbox.tsx"),
+            UI_WEB_CHECKBOX_TSX.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/ui/switch.tsx"),
+            UI_WEB_SWITCH_TSX.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/ui/field.tsx"),
+            UI_WEB_FIELD_TSX.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/ui/badge.tsx"),
+            UI_WEB_BADGE_TSX.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/ui/alert.tsx"),
+            UI_WEB_ALERT_TSX.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/ui/divider.tsx"),
+            UI_WEB_DIVIDER_TSX.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/ui/section.tsx"),
+            UI_WEB_SECTION_TSX.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/ui/footer.tsx"),
+            UI_WEB_FOOTER_TSX.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/ui/description-list.tsx"),
+            UI_WEB_DESCRIPTION_LIST_TSX.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/ui/tabs.tsx"),
+            UI_WEB_TABS_TSX.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/ui/dialog.tsx"),
+            UI_WEB_DIALOG_TSX.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/ui/loading.tsx"),
+            UI_WEB_LOADING_TSX.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/ui/empty.tsx"),
+            UI_WEB_EMPTY_TSX.to_string(),
         ),
         (
             root.join("python/worker.py"),
@@ -1025,10 +1139,73 @@ class FeedbackApi is service {
         let go = fs::read_to_string(output.join("go/worker.go")).unwrap();
         let app = fs::read_to_string(output.join("typescript/src/App.tsx")).unwrap();
         let terminal = fs::read_to_string(output.join("typescript/terminal.ts")).unwrap();
+        let terminal_app =
+            fs::read_to_string(output.join("typescript/src/TerminalApp.tsx")).unwrap();
+        let terminal_runtime =
+            fs::read_to_string(output.join("typescript/src/components/terminal/runtime.ts"))
+                .unwrap();
         let button =
             fs::read_to_string(output.join("typescript/src/components/ui/button.tsx")).unwrap();
         let theme = fs::read_to_string(output.join("typescript/src/theme.css")).unwrap();
         let pkg = fs::read_to_string(output.join("typescript/package.json")).unwrap();
+        assert!(
+            terminal_app.contains("__silcNavigate") && terminal_app.contains("function App"),
+            "OpenTUI TerminalApp must mirror routes with __silcNavigate"
+        );
+        assert!(
+            terminal_runtime.contains("mountTerminalApp")
+                && terminal_runtime.contains("@opentui/core"),
+            "terminal runtime must mount OpenTUI"
+        );
+        assert!(
+            terminal.contains("TERMINAL_SUBSTRATE") && pkg.contains("@opentui/core"),
+            "manifest path must pin OpenTUI for ui::terminal"
+        );
+        assert!(
+            output.join("typescript/src/components/ui/select.tsx").is_file()
+                && output.join("typescript/src/components/ui/checkbox.tsx").is_file()
+                && output.join("typescript/src/components/ui/switch.tsx").is_file()
+                && output.join("typescript/src/components/ui/field.tsx").is_file()
+                && output.join("typescript/src/components/ui/badge.tsx").is_file()
+                && output.join("typescript/src/components/ui/alert.tsx").is_file()
+                && output.join("typescript/src/components/ui/divider.tsx").is_file()
+                && output.join("typescript/src/components/ui/section.tsx").is_file()
+                && output.join("typescript/src/components/ui/footer.tsx").is_file()
+                && output.join("typescript/src/components/ui/description-list.tsx").is_file()
+                && output.join("typescript/src/components/ui/tabs.tsx").is_file()
+                && output.join("typescript/src/components/ui/dialog.tsx").is_file(),
+            "phase-1/2 web primitives must be emitted"
+        );
+        assert!(
+            !output
+                .join("typescript/src/components/ui/product-grid.tsx")
+                .is_file(),
+            "dead product-grid asset must not be emitted"
+        );
+        let terminal_components = fs::read_to_string(
+            output.join("typescript/src/components/terminal/components.ts"),
+        )
+        .unwrap();
+        for export in [
+            "SelectField",
+            "Checkbox",
+            "Switch",
+            "Field",
+            "Badge",
+            "Alert",
+            "Divider",
+            "Section",
+            "Footer",
+            "DescriptionList",
+            "Tabs",
+            "Dialog",
+            "DataTable",
+        ] {
+            assert!(
+                terminal_components.contains(&format!("export function {export}")),
+                "terminal components missing {export}"
+            );
+        }
 
         for source in [&ts, &py, &go] {
             assert!(!source.contains("TODO"));

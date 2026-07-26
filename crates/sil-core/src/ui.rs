@@ -80,6 +80,10 @@ const LAYOUT_CHILDREN: &[&str] = &[
     "text_input",
     "textarea",
     "radio_group",
+    "select",
+    "checkbox",
+    "switch",
+    "field",
     "button",
     "toolbar",
     "chat",
@@ -88,6 +92,14 @@ const LAYOUT_CHILDREN: &[&str] = &[
     "filter_bar",
     "collection",
     "list",
+    "table",
+    "badge",
+    "alert",
+    "divider",
+    "section",
+    "description_list",
+    "tabs",
+    "dialog",
     "loading",
     "empty",
     "nav_item",
@@ -103,8 +115,16 @@ const FORM_CHILDREN: &[&str] = &[
     "text_input",
     "textarea",
     "radio_group",
+    "select",
+    "checkbox",
+    "switch",
+    "field",
     "button",
     "toolbar",
+    "badge",
+    "alert",
+    "divider",
+    "section",
     "loading",
     "empty",
 ];
@@ -122,6 +142,11 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
             SlotSpec {
                 name: "side_panel",
                 component: "side_panel",
+                required: false,
+            },
+            SlotSpec {
+                name: "footer",
+                component: "footer",
                 required: false,
             },
         ],
@@ -279,6 +304,11 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
                 kind: PropKind::Expr,
                 required: false,
             },
+            PropSpec {
+                name: "disabled",
+                kind: PropKind::Flag,
+                required: false,
+            },
         ],
         slots: &[],
         children: ChildPolicy::None,
@@ -301,6 +331,11 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
             PropSpec {
                 name: "label",
                 kind: PropKind::Expr,
+                required: false,
+            },
+            PropSpec {
+                name: "disabled",
+                kind: PropKind::Flag,
                 required: false,
             },
         ],
@@ -332,10 +367,136 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
                 kind: PropKind::Expr,
                 required: false,
             },
+            PropSpec {
+                name: "disabled",
+                kind: PropKind::Flag,
+                required: false,
+            },
         ],
         slots: &[],
         children: ChildPolicy::None,
         events: &[EventSpec { name: "change" }],
+        surfaces: BOTH,
+    },
+    ComponentSpec {
+        name: "select",
+        props: &[
+            PropSpec {
+                name: "field",
+                kind: PropKind::Ident,
+                required: false,
+            },
+            PropSpec {
+                name: "value",
+                kind: PropKind::Expr,
+                required: false,
+            },
+            PropSpec {
+                name: "options",
+                kind: PropKind::StringList,
+                required: true,
+            },
+            PropSpec {
+                name: "label",
+                kind: PropKind::Expr,
+                required: false,
+            },
+            PropSpec {
+                name: "placeholder",
+                kind: PropKind::Expr,
+                required: false,
+            },
+            PropSpec {
+                name: "disabled",
+                kind: PropKind::Flag,
+                required: false,
+            },
+        ],
+        slots: &[],
+        children: ChildPolicy::None,
+        events: &[EventSpec { name: "change" }],
+        surfaces: BOTH,
+    },
+    ComponentSpec {
+        name: "checkbox",
+        props: &[
+            PropSpec {
+                name: "field",
+                kind: PropKind::Ident,
+                required: false,
+            },
+            PropSpec {
+                name: "label",
+                kind: PropKind::Expr,
+                required: true,
+            },
+            PropSpec {
+                name: "checked",
+                kind: PropKind::Expr,
+                required: false,
+            },
+            PropSpec {
+                name: "disabled",
+                kind: PropKind::Flag,
+                required: false,
+            },
+        ],
+        slots: &[],
+        children: ChildPolicy::None,
+        events: &[EventSpec { name: "change" }],
+        surfaces: BOTH,
+    },
+    ComponentSpec {
+        name: "switch",
+        props: &[
+            PropSpec {
+                name: "field",
+                kind: PropKind::Ident,
+                required: false,
+            },
+            PropSpec {
+                name: "label",
+                kind: PropKind::Expr,
+                required: true,
+            },
+            PropSpec {
+                name: "checked",
+                kind: PropKind::Expr,
+                required: false,
+            },
+            PropSpec {
+                name: "disabled",
+                kind: PropKind::Flag,
+                required: false,
+            },
+        ],
+        slots: &[],
+        children: ChildPolicy::None,
+        events: &[EventSpec { name: "change" }],
+        surfaces: BOTH,
+    },
+    ComponentSpec {
+        name: "field",
+        props: &[
+            PropSpec {
+                name: "label",
+                kind: PropKind::Expr,
+                required: false,
+            },
+            PropSpec {
+                name: "hint",
+                kind: PropKind::Expr,
+                required: false,
+            },
+            PropSpec {
+                name: "error",
+                kind: PropKind::Expr,
+                required: false,
+            },
+        ],
+        slots: &[],
+        children: ChildPolicy::AnyOf(FORM_CHILDREN),
+        events: &[],
         surfaces: BOTH,
     },
     ComponentSpec {
@@ -364,6 +525,11 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
             PropSpec {
                 name: "active",
                 kind: PropKind::Expr,
+                required: false,
+            },
+            PropSpec {
+                name: "disabled",
+                kind: PropKind::Flag,
                 required: false,
             },
         ],
@@ -561,10 +727,179 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
                 kind: PropKind::Flag,
                 required: false,
             },
+            PropSpec {
+                name: "selectable",
+                kind: PropKind::Flag,
+                required: false,
+            },
+            PropSpec {
+                name: "dense",
+                kind: PropKind::Flag,
+                required: false,
+            },
         ],
         slots: &[],
         children: ChildPolicy::None,
         events: &[],
+        surfaces: BOTH,
+    },
+    ComponentSpec {
+        name: "badge",
+        props: &[
+            PropSpec {
+                name: "text",
+                kind: PropKind::Expr,
+                required: true,
+            },
+            PropSpec {
+                name: "tone",
+                kind: PropKind::Ident,
+                required: false,
+            },
+        ],
+        slots: &[],
+        children: ChildPolicy::None,
+        events: &[],
+        surfaces: BOTH,
+    },
+    ComponentSpec {
+        name: "alert",
+        props: &[
+            PropSpec {
+                name: "text",
+                kind: PropKind::Expr,
+                required: true,
+            },
+            PropSpec {
+                name: "title",
+                kind: PropKind::Expr,
+                required: false,
+            },
+            PropSpec {
+                name: "tone",
+                kind: PropKind::Ident,
+                required: false,
+            },
+            PropSpec {
+                name: "dismissible",
+                kind: PropKind::Flag,
+                required: false,
+            },
+        ],
+        slots: &[],
+        children: ChildPolicy::None,
+        events: &[EventSpec { name: "dismiss" }],
+        surfaces: BOTH,
+    },
+    ComponentSpec {
+        name: "divider",
+        props: &[PropSpec {
+            name: "label",
+            kind: PropKind::Expr,
+            required: false,
+        }],
+        slots: &[],
+        children: ChildPolicy::None,
+        events: &[],
+        surfaces: BOTH,
+    },
+    ComponentSpec {
+        name: "section",
+        props: &[
+            PropSpec {
+                name: "title",
+                kind: PropKind::Expr,
+                required: false,
+            },
+            PropSpec {
+                name: "description",
+                kind: PropKind::Expr,
+                required: false,
+            },
+        ],
+        slots: &[],
+        children: ChildPolicy::Any,
+        events: &[],
+        surfaces: BOTH,
+    },
+    ComponentSpec {
+        name: "footer",
+        props: &[],
+        slots: &[],
+        children: ChildPolicy::Any,
+        events: &[],
+        surfaces: BOTH,
+    },
+    ComponentSpec {
+        name: "description_list",
+        props: &[PropSpec {
+            name: "items",
+            kind: PropKind::Expr,
+            required: true,
+        }],
+        slots: &[],
+        children: ChildPolicy::None,
+        events: &[],
+        surfaces: BOTH,
+    },
+    ComponentSpec {
+        name: "tabs",
+        props: &[
+            PropSpec {
+                name: "field",
+                kind: PropKind::Ident,
+                required: false,
+            },
+            PropSpec {
+                name: "value",
+                kind: PropKind::Expr,
+                required: false,
+            },
+        ],
+        slots: &[],
+        children: ChildPolicy::AnyOf(&["tab"]),
+        events: &[EventSpec { name: "change" }],
+        surfaces: BOTH,
+    },
+    ComponentSpec {
+        name: "tab",
+        props: &[
+            PropSpec {
+                name: "label",
+                kind: PropKind::Expr,
+                required: true,
+            },
+            PropSpec {
+                name: "value",
+                kind: PropKind::Expr,
+                required: true,
+            },
+        ],
+        slots: &[],
+        children: ChildPolicy::Any,
+        events: &[],
+        surfaces: BOTH,
+    },
+    ComponentSpec {
+        name: "dialog",
+        props: &[
+            PropSpec {
+                name: "open",
+                kind: PropKind::Expr,
+                required: true,
+            },
+            PropSpec {
+                name: "title",
+                kind: PropKind::Expr,
+                required: false,
+            },
+        ],
+        slots: &[],
+        children: ChildPolicy::Any,
+        events: &[
+            EventSpec { name: "confirm" },
+            EventSpec { name: "cancel" },
+        ],
         surfaces: BOTH,
     },
     ComponentSpec {
@@ -599,6 +934,35 @@ pub fn lookup_component(name: &str) -> Option<&'static ComponentSpec> {
 
 pub fn catalog_component_names() -> Vec<&'static str> {
     UI_COMPONENT_CATALOG.iter().map(|c| c.name).collect()
+}
+
+const VARIANT_VALUES: &[&str] = &["primary", "secondary", "destructive", "ghost"];
+const TONE_VALUES: &[&str] = &["default", "muted", "info", "success", "warning", "danger"];
+const SIZE_VALUES: &[&str] = &["sm", "md", "lg"];
+
+fn validate_closed_ident_prop(
+    node: &UiNode,
+    prop: &str,
+    allowed: &[&str],
+) -> Result<(), String> {
+    let Some(expr) = node.prop(prop) else {
+        return Ok(());
+    };
+    let value = match expr {
+        Expr::Ident(s) | Expr::String(s) => s.as_str(),
+        // Dynamic expressions are allowed; only closed tokens are validated.
+        _ => return Ok(()),
+    };
+    if allowed.iter().any(|item| *item == value) {
+        return Ok(());
+    }
+    Err(format!(
+        "invalid `:{}({})` on `ui::{}`; expected one of: {}",
+        prop,
+        value,
+        node.component,
+        allowed.join(", ")
+    ))
 }
 
 pub fn validate_builtin_node(node: &UiNode) -> Result<(), String> {
@@ -636,6 +1000,9 @@ pub fn validate_builtin_node(node: &UiNode) -> Result<(), String> {
             ));
         }
     }
+    validate_closed_ident_prop(node, "variant", VARIANT_VALUES)?;
+    validate_closed_ident_prop(node, "tone", TONE_VALUES)?;
+    validate_closed_ident_prop(node, "size", SIZE_VALUES)?;
     Ok(())
 }
 
@@ -692,5 +1059,84 @@ pub fn expr_as_string(expr: &Expr) -> Option<String> {
         Expr::Number(n) => Some(n.clone()),
         Expr::Bool(b) => Some(b.to_string()),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::component::UiNode;
+    use crate::types::Span;
+
+    fn node(component: &str, props: Vec<(&str, Expr)>) -> UiNode {
+        UiNode {
+            component: component.into(),
+            props: props
+                .into_iter()
+                .map(|(name, expr)| (name.to_string(), expr))
+                .collect(),
+            events: vec![],
+            slots: vec![],
+            children: vec![],
+            span: Span::default(),
+        }
+    }
+
+    #[test]
+    fn rejects_unknown_variant_tone_and_size() {
+        let bad_variant = node(
+            "button",
+            vec![
+                ("label", Expr::String("Go".into())),
+                ("variant", Expr::Ident("neon".into())),
+            ],
+        );
+        assert!(validate_builtin_node(&bad_variant)
+            .unwrap_err()
+            .contains("invalid `:variant(neon)`"));
+
+        let bad_tone = node(
+            "alert",
+            vec![
+                ("text", Expr::String("Hi".into())),
+                ("tone", Expr::Ident("purple".into())),
+            ],
+        );
+        assert!(validate_builtin_node(&bad_tone)
+            .unwrap_err()
+            .contains("invalid `:tone(purple)`"));
+
+        let bad_size = node(
+            "button",
+            vec![
+                ("label", Expr::String("Go".into())),
+                ("size", Expr::Ident("xl".into())),
+            ],
+        );
+        assert!(validate_builtin_node(&bad_size)
+            .unwrap_err()
+            .contains("invalid `:size(xl)`"));
+    }
+
+    #[test]
+    fn accepts_closed_variant_and_tone_tokens() {
+        let button = node(
+            "button",
+            vec![
+                ("label", Expr::String("Save".into())),
+                ("variant", Expr::Ident("primary".into())),
+                ("size", Expr::Ident("sm".into())),
+            ],
+        );
+        assert!(validate_builtin_node(&button).is_ok());
+
+        let alert = node(
+            "alert",
+            vec![
+                ("text", Expr::String("Ready".into())),
+                ("tone", Expr::Ident("info".into())),
+            ],
+        );
+        assert!(validate_builtin_node(&alert).is_ok());
     }
 }

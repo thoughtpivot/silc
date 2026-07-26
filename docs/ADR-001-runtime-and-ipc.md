@@ -35,10 +35,10 @@ Silc's generated, local-worker model. Node compatibility is not a requirement
 for the primary runtime.
 
 Bun also executes compiler-owned UI substrates: React + Tailwind +
-ShadCN-style primitives for `ui::web`, a telnet-compatible TCP adapter for
-remote `ui::terminal` sessions, and in the future OpenTUI for rich local
-terminals. Those substrates are implementation details under `.runtime/`;
-Silc source never names them. See
+ShadCN-style primitives for `ui::web`, OpenTUI for the primary local
+`ui::terminal` surface, and a telnet-compatible TCP adapter as a remote /
+headless fallback. Those substrates are implementation details under
+`.runtime/`; Silc source never names them. See
 [ADR-003-declarative-ui.md](ADR-003-declarative-ui.md).
 
 Engine assignment rationale (why Bun vs CPython vs Go) lives in
