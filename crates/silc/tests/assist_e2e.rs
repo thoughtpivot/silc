@@ -35,7 +35,7 @@ fn assist_rejects_empty_invocation() {
     );
 }
 
-/// Live silclm assist run — downloads ~808 MB model + llama-cpp-python on first use.
+/// Live silclm assist run — downloads ~2.02 GB model + llama-cpp-python on first use.
 #[test]
 #[ignore]
 fn assist_live_writes_valid_program() {

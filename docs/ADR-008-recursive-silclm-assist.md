@@ -14,14 +14,14 @@
 ## Context
 
 [ADR-005](ADR-005-local-llm-complete.md) shipped local `llm::complete` via
-**silclm** (Llama 3.2 1B Instruct GGUF, 8K context) and deferred both a
+**silclm** (now Llama 3.2 3B Instruct GGUF, 8K context) and deferred both a
 fine-tuned GGUF and a `silc assist` authoring CLI. In-app chat remains a
 grounded product surface; authoring help is a separate problem.
 
 Silc authoring knowledge lives in a large contract:
 [`AGENTS.md`](../crates/silc/templates/AGENTS.md), `examples/*/main.silc`,
 compiler fixtures, and banked programs from `sil-training`. Stuffing that
-corpus into an 8K window fails: context rot, truncated guidance, and a 1B
+corpus into an 8K window fails: context rot, truncated guidance, and a small
 model that invents React/Ollama instead of valid `.silc`.
 
 **Recursive Language Models** (MIT; Ovid’s Shesha/Ananta) treat a long prompt
@@ -53,7 +53,7 @@ changes. Authors never name the RLM scaffold in programs.
 
 Phase 1 uses a **Rust-hosted closed tool loop**. Tools are the symbolic
 environment; recursion is `llm_query`. An open Python REPL (Shesha-style) is
-deferred: safer for local runs and more reliable for a 1B root model.
+deferred: safer for local runs and more reliable for a small root model.
 
 | Tool | Purpose | Result into root history |
 | --- | --- | --- |

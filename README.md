@@ -338,7 +338,7 @@ Each example `AGENTS.md` embeds the compiler template common block byte-for-byte
 and appends app-specific notes after `<!-- END SILC_AGENTS_TEMPLATE -->`.
 
 Local chat uses **silclm** (Silc's owned model identity; v0 is a pinned Llama
-3.2 1B GGUF). Omit `:model` or pass `:model("silclm")`. See
+3.2 3B GGUF). Omit `:model` or pass `:model("silclm")`. See
 [ADR-005](docs/ADR-005-local-llm-complete.md).
 
 ---

@@ -23,7 +23,7 @@ surface.
 **silclm** is Silc's owned local model product identity. Authors select a
 catalog id (or omit `:model` to get silclm). The inference engine remains
 compiler-owned `llama-cpp-python`; the base weights for silclm v0 are a pinned
-Llama 3.2 1B Instruct GGUF. Ownership is Silc's catalog, runtime, and future
+Llama 3.2 3B Instruct GGUF. Ownership is Silc's catalog, runtime, and future
 fine-tunes — not a claim that the base weights are proprietary.
 
 ## Decision
@@ -55,14 +55,14 @@ Summary:
 
 | ID | Artifact | Approx. size |
 | --- | --- | --- |
-| `silclm` | Llama 3.2 1B Instruct Q4_K_M GGUF (silclm v0) | ~808 MB |
+| `silclm` | Llama 3.2 3B Instruct Q4_K_M GGUF (silclm v0) | ~2.02 GB |
 
 The artifact is downloaded from the compiler-pinned Hugging Face URL into
 `~/.silc/models/silclm/` and verified against its pinned SHA-256 digest.
 Unknown catalog ids fail before worker startup. Omitting `:model` defaults to
 `silclm`. The legacy id `llama3.2-1b` is accepted for one release and resolves
-to `silclm` (including a one-time cache migration from
-`~/.silc/models/llama3.2-1b/` when present).
+to `silclm`. Existing 1B cache artifacts are not reused as 3B weights; the
+current pinned artifact is downloaded into `~/.silc/models/silclm/`.
 
 ### Runtime profile
 
@@ -100,7 +100,7 @@ Ollama, OpenAI, or ad-hoc GGUF paths in `.silc`.
 runtime, installs the pinned binding, downloads/verifies the model, and builds
 the UI and Go sink. Unit and code-generation tests remain offline. The real
 inference e2e is ignored by default because its first run downloads roughly
-808 MB:
+2.02 GB:
 
 ```bash
 cargo test -p silc --test chat_e2e -- --ignored --nocapture

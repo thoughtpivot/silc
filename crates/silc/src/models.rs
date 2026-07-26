@@ -17,7 +17,9 @@ pub fn ensure_model(model_id: &str) -> Result<PathBuf, String> {
         verify_file_sha256(&dest, entry.sha256, entry.id)?;
         return Ok(dest);
     }
-    // One-release migration: reuse a previously cached llama3.2-1b GGUF.
+    // One-release migration: reuse a compatible artifact stored under the
+    // legacy catalog directory. Older 1B weights do not match the 3B filename
+    // or digest and therefore cannot be substituted for the current silclm.
     if let Ok(legacy) = legacy_model_path(entry) {
         if legacy.is_file() {
             verify_file_sha256(&legacy, entry.sha256, entry.id)?;
@@ -180,6 +182,6 @@ mod tests {
         assert!(path.to_string_lossy().contains("models/silclm"));
         assert!(path
             .to_string_lossy()
-            .ends_with("Llama-3.2-1B-Instruct-Q4_K_M.gguf"));
+            .ends_with("Llama-3.2-3B-Instruct-Q4_K_M.gguf"));
     }
 }

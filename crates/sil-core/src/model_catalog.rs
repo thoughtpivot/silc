@@ -1,7 +1,7 @@
 //! Compiler-owned local LLM model catalog for `llm::complete`.
 //!
 //! **silclm** is Silc's owned local model identity. v0 ships pinned Llama 3.2
-//! 1B Instruct Q4_K_M weights under that catalog id; future fine-tunes keep
+//! 3B Instruct Q4_K_M weights under that catalog id; future fine-tunes keep
 //! the same authoring surface.
 
 /// Default catalog id when `:model` / `model_ref` is omitted.
@@ -28,11 +28,11 @@ pub struct ModelCatalogEntry {
 /// v1 catalog — silclm (Llama-based GGUF) ships in this slice.
 pub const MODEL_CATALOG: &[ModelCatalogEntry] = &[ModelCatalogEntry {
     id: "silclm",
-    filename: "Llama-3.2-1B-Instruct-Q4_K_M.gguf",
-    url: "https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf",
-    // bartowski Llama-3.2-1B-Instruct-Q4_K_M.gguf (807694464 bytes)
-    sha256: "6f85a640a97cf2bf5b8e764087b1e83da0fdb51d7c9fab7d0fece9385611df83",
-    approx_bytes: 807_694_464,
+    filename: "Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+    url: "https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf",
+    // bartowski Llama-3.2-3B-Instruct-Q4_K_M.gguf (2019377696 bytes)
+    sha256: "6c1a2b41161032677be168d354123594c0e6e67d2b9227c84f296ad037c728ff",
+    approx_bytes: 2_019_377_696,
 }];
 
 fn normalize_model_id(id: &str) -> &str {

@@ -17,6 +17,12 @@ Silc remains pre-1.0; this project follows SemVer 0.x with Conventional Commits.
   (`query list;`, `mutation create;`, …).
 - Require exact `@version("0.4.0")` declarations in compiled source.
 
+### Changed
+
+- Pin silclm v0 to Llama 3.2 3B Instruct Q4_K_M (~2.02 GB) instead of 1B.
+  Legacy alias `llama3.2-1b` still resolves to `silclm`; existing 1B cache
+  artifacts are not reused as 3B weights.
+
 ### Added
 
 - Implicit dual-surface UI from `app` routes (default ports; override via
