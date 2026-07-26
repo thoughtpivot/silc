@@ -24,7 +24,7 @@ llm = Llama(model_path=MODEL_PATH, n_ctx=N_CTX, verbose=False)
 out = llm(
     prompt,
     max_tokens=MAX_TOKENS,
-    temperature=0.4,
-    stop=["</s>", "\n# Tool result", "\n# Next\n#"],
+    temperature=0.2,
+    stop=["</s>", "\n# Tool result", "\n# Next\n#", "\n# Task"],
 )
 sys.stdout.write(out["choices"][0]["text"].strip())

@@ -72,7 +72,7 @@ impl Default for ToolState {
 pub fn parse_turn(text: &str) -> ParsedTurn {
     let trimmed = text.trim();
     if let Some(rest) = strip_prefix_ci(trimmed, "FINAL_VAR(") {
-        let inner = rest.trim_end_matches(')').trim();
+        let inner = rest.split(')').next().unwrap_or("").trim();
         if inner == "draft" || inner.is_empty() {
             return ParsedTurn::FinalVar;
         }
@@ -100,13 +100,110 @@ pub fn parse_turn(text: &str) -> ParsedTurn {
     if let Some(json) = extract_tool_json(trimmed) {
         match serde_json::from_str::<ToolCall>(&json) {
             Ok(call) => ParsedTurn::Tool(call),
-            Err(e) => ParsedTurn::Invalid(format!("tool JSON parse error: {e}")),
+            Err(first_error) => {
+                let repaired = sanitize_tool_json(&json);
+                if let Ok(call) = serde_json::from_str::<ToolCall>(&repaired) {
+                    return ParsedTurn::Tool(call);
+                }
+                if let Some(call) = recover_tool_name(&json) {
+                    return ParsedTurn::Tool(call);
+                }
+                ParsedTurn::Invalid(format!(
+                    "tool JSON parse error: {first_error}. Use strict JSON, e.g. {{\"name\":\"corpus_list\",\"args\":{{}}}}"
+                ))
+            }
         }
+    } else if let Some(call) = implicit_draft_set(trimmed) {
+        // Small models often reply with a bare program instead of a tool call;
+        // treat it as draft_set so the work is not lost.
+        ParsedTurn::Tool(call)
     } else {
         ParsedTurn::Invalid(
-            "expected ```tool {\"name\":...,\"args\":...}``` or FINAL/FINAL_VAR(draft)".into(),
+            "no tool call found. Reply with one fenced tool block, e.g.\n```tool\n{\"name\":\"corpus_list\",\"args\":{}}\n```\nor with FINAL_VAR(draft) after a successful silc_check.".into(),
         )
     }
+}
+
+/// Turn a bare Silc program reply into a `draft_set` call.
+fn implicit_draft_set(text: &str) -> Option<ToolCall> {
+    if !(text.contains("```silc") || text.contains("@version(")) {
+        return None;
+    }
+    let mut program = extract_program(text);
+    if !program.contains("@version(") {
+        return None;
+    }
+    // Unfenced reply: drop any prose before the program itself.
+    if !text.contains("```") {
+        if let Some(start) = program.find("@version(") {
+            program = program[start..].to_string();
+        }
+    }
+    Some(ToolCall {
+        name: "draft_set".to_string(),
+        args: serde_json::json!({ "source": program }),
+    })
+}
+
+/// Repair common small-model JSON mistakes: `{...}` placeholders, ellipses,
+/// trailing commas, and single-quoted keys/strings without embedded quotes.
+fn sanitize_tool_json(json: &str) -> String {
+    let mut out = json
+        .replace("{...}", "{}")
+        .replace("{…}", "{}")
+        .replace('…', "");
+    // Remove bare ellipsis tokens left inside objects/arrays: `, ...` / `...`
+    while let Some(pos) = out.find("...") {
+        out.replace_range(pos..pos + 3, "");
+    }
+    // Trailing commas before a closing brace/bracket.
+    let mut cleaned = String::with_capacity(out.len());
+    let chars: Vec<char> = out.chars().collect();
+    for (i, &ch) in chars.iter().enumerate() {
+        if ch == ',' {
+            if let Some(&next) = chars[i + 1..].iter().find(|c| !c.is_whitespace()) {
+                if next == '}' || next == ']' {
+                    continue;
+                }
+            }
+        }
+        cleaned.push(ch);
+    }
+    // Single quotes → double quotes only when the payload has no double quotes
+    // at all (avoids corrupting apostrophes inside proper JSON strings).
+    if !cleaned.contains('"') && cleaned.contains('\'') {
+        cleaned = cleaned.replace('\'', "\"");
+    }
+    cleaned
+}
+
+/// LLMs emit typographic punctuation the Silc lexer rejects; normalize it.
+pub fn normalize_typography(source: &str) -> String {
+    source
+        .replace('—', "-")
+        .replace('–', "-")
+        .replace('…', "...")
+        .replace(['“', '”'], "\"")
+        .replace(['‘', '’'], "'")
+}
+
+/// Last resort: pull out a known tool name and run it with empty args so the
+/// tool's own error message can guide the model, instead of burning the turn.
+fn recover_tool_name(json: &str) -> Option<ToolCall> {
+    const KNOWN: [&str; 7] = [
+        "corpus_list",
+        "corpus_grep",
+        "corpus_read",
+        "silc_check",
+        "llm_query",
+        "draft_set",
+        "draft_get",
+    ];
+    let name = KNOWN.into_iter().find(|tool| json.contains(tool))?;
+    Some(ToolCall {
+        name: name.to_string(),
+        args: Value::Object(serde_json::Map::new()),
+    })
 }
 
 fn extract_tool_json(text: &str) -> Option<String> {
@@ -244,13 +341,37 @@ pub fn execute_tool(
         "draft_set" => {
             let source = arg_str(&call.args, "source")
                 .ok_or_else(|| "draft_set requires args.source".to_string())?;
-            let program = extract_program(source);
+            let program = normalize_typography(&extract_program(source));
             state.draft = program;
             state.last_check_ok = false;
-            Ok(ToolOutcome::Continue(format!(
-                "draft_set: {} chars stored",
-                state.draft.len()
-            )))
+            let mut msg = format!("draft_set: {} chars stored", state.draft.len());
+            if state.draft.len() < 200 {
+                msg.push_str(
+                    " — warning: this draft is very short. Write the COMPLETE program for the task, not a fragment or an example from the instructions.",
+                );
+            }
+            // Auto-validate: a compiler check is free (no LLM inference), and a
+            // small model often forgets to call silc_check on its own.
+            if state.stats.checks < budgets.max_silc_check {
+                state.stats.checks += 1;
+                match check_source(&state.draft, None) {
+                    Ok(result) => {
+                        state.last_check_ok = true;
+                        msg.push_str(&format!(
+                            "\nsilc_check: ok mode={:?} tier={}",
+                            result.execution_mode, result.validation_tier
+                        ));
+                    }
+                    Err(error) => {
+                        let stage = error.split_once(':').map(|(s, _)| s).unwrap_or("unknown");
+                        msg.push_str(&format!(
+                            "\nsilc_check: fail stage={stage} error={}",
+                            truncate_for_history(&error, 800)
+                        ));
+                    }
+                }
+            }
+            Ok(ToolOutcome::Continue(msg))
         }
         "draft_get" => {
             if state.draft.is_empty() {
@@ -313,9 +434,8 @@ mod tests {
 
     #[test]
     fn parses_tool_fence() {
-        let turn = parse_turn(
-            "thinking...\n```tool\n{\"name\":\"corpus_list\",\"args\":{}}\n```\n",
-        );
+        let turn =
+            parse_turn("thinking...\n```tool\n{\"name\":\"corpus_list\",\"args\":{}}\n```\n");
         match turn {
             ParsedTurn::Tool(c) => assert_eq!(c.name, "corpus_list"),
             other => panic!("unexpected {other:?}"),
@@ -323,8 +443,58 @@ mod tests {
     }
 
     #[test]
+    fn repairs_placeholder_args() {
+        let turn = parse_turn("```tool\n{\"name\":\"corpus_list\",\"args\":{...}}\n```");
+        match turn {
+            ParsedTurn::Tool(c) => assert_eq!(c.name, "corpus_list"),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn repairs_trailing_comma() {
+        let turn = parse_turn(
+            "```tool\n{\"name\":\"corpus_read\",\"args\":{\"id\":\"agents\",\"start\":0,}}\n```",
+        );
+        match turn {
+            ParsedTurn::Tool(c) => {
+                assert_eq!(c.name, "corpus_read");
+                assert_eq!(c.args.get("id").and_then(|v| v.as_str()), Some("agents"));
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn recovers_tool_name_from_broken_json() {
+        let turn = parse_turn("```tool\n{name: corpus_grep, pattern: service}\n```");
+        match turn {
+            ParsedTurn::Tool(c) => assert_eq!(c.name, "corpus_grep"),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn bare_program_becomes_draft_set() {
+        let turn = parse_turn(
+            "Here is the program:\n@version(\"0.4.0\")\ncontract Note { has Str $.text; }\n",
+        );
+        match turn {
+            ParsedTurn::Tool(c) => {
+                assert_eq!(c.name, "draft_set");
+                let source = c.args.get("source").and_then(|v| v.as_str()).unwrap();
+                assert!(source.starts_with("@version"));
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
     fn parses_final_var() {
-        assert!(matches!(parse_turn("FINAL_VAR(draft)"), ParsedTurn::FinalVar));
+        assert!(matches!(
+            parse_turn("FINAL_VAR(draft)"),
+            ParsedTurn::FinalVar
+        ));
     }
 
     #[test]

@@ -33,7 +33,10 @@ pub fn run(args: AssistArgs) -> Result<(), String> {
     let mut corpus = Corpus::builtin();
     if let Some(dir) = &args.corpus {
         let added = corpus.load_extra_dir(dir)?;
-        eprintln!("silc assist: loaded {added} extra corpus file(s) from {}", dir.display());
+        eprintln!(
+            "silc assist: loaded {added} extra corpus file(s) from {}",
+            dir.display()
+        );
     }
 
     let mut budgets = Budgets::default();
@@ -68,6 +71,11 @@ pub fn run(args: AssistArgs) -> Result<(), String> {
         "silc assist: done turns={} checks={} llm_queries={}",
         result.stats.root_turns, result.stats.checks, result.stats.llm_queries
     );
+    if !result.finalized {
+        eprintln!(
+            "silc assist: warning — budget ran out before FINAL; program below is the last compiler-checked draft and may be incomplete"
+        );
+    }
 
     if let Some(path) = args.out {
         if let Some(parent) = path.parent() {
@@ -76,8 +84,7 @@ pub fn run(args: AssistArgs) -> Result<(), String> {
                     .map_err(|e| format!("create {}: {e}", parent.display()))?;
             }
         }
-        fs::write(&path, &result.program)
-            .map_err(|e| format!("write {}: {e}", path.display()))?;
+        fs::write(&path, &result.program).map_err(|e| format!("write {}: {e}", path.display()))?;
         eprintln!("silc assist: wrote {}", path.display());
     } else {
         println!("{}", result.program);
@@ -192,10 +199,7 @@ impl Completer for LlamaCompleter {
         let mut child = Command::new(&self.python)
             .arg(&self.script)
             .env("SILC_LLM_MODEL_PATH", &self.model_path)
-            .env(
-                "SILC_LLM_N_CTX",
-                sil_core::DEFAULT_LLM_N_CTX.to_string(),
-            )
+            .env("SILC_LLM_N_CTX", sil_core::DEFAULT_LLM_N_CTX.to_string())
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
