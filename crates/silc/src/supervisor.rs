@@ -525,9 +525,7 @@ pub fn run_app(output: &EmitResult, lock: &RuntimeLock) -> Result<(), String> {
             println!("silc: ui::terminal CLI fallback at telnet://127.0.0.1:{port}");
             println!("silc: connect with `telnet 127.0.0.1 {port}`");
         } else {
-            println!(
-                "silc: ui::terminal remote CLI fallback also on telnet://127.0.0.1:{port}"
-            );
+            println!("silc: ui::terminal remote CLI fallback also on telnet://127.0.0.1:{port}");
         }
     }
     if let Some(port) = graph.api_port() {
