@@ -97,10 +97,19 @@ fn download_streaming(
     expected_sha256: &str,
     label: &str,
 ) -> Result<(), String> {
-    let response = ureq::get(url)
-        .timeout(std::time::Duration::from_secs(600))
+    // No overall request timeout: multi-GB artifacts on slow links can take
+    // an hour. Only stalls (connect / per-read) abort the download.
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(std::time::Duration::from_secs(30))
+        .timeout_read(std::time::Duration::from_secs(120))
+        .build();
+    let response = agent
+        .get(url)
         .call()
         .map_err(|error| format!("failed to provision model `{label}`: download {url}: {error}"))?;
+    let total_bytes = response
+        .header("content-length")
+        .and_then(|v| v.parse::<u64>().ok());
     let mut reader = response.into_reader();
     let mut file = File::create(dest).map_err(|error| {
         format!(
@@ -109,6 +118,9 @@ fn download_streaming(
         )
     })?;
     let mut hasher = Sha256::new();
+    let mut size = 0u64;
+    const PROGRESS_STEP: u64 = 100 * 1024 * 1024;
+    let mut next_report = PROGRESS_STEP;
     let mut buf = [0u8; 1024 * 256];
     loop {
         let n = reader
@@ -118,12 +130,28 @@ fn download_streaming(
             break;
         }
         hasher.update(&buf[..n]);
+        size += n as u64;
         file.write_all(&buf[..n]).map_err(|error| {
             format!(
                 "failed to provision model `{label}`: write {}: {error}",
                 dest.display()
             )
         })?;
+        if size >= next_report {
+            match total_bytes {
+                Some(total) if total > 0 => println!(
+                    "silc: downloading `{label}`… {:.0} / {:.0} MB ({:.0}%)",
+                    size as f64 / 1_000_000.0,
+                    total as f64 / 1_000_000.0,
+                    size as f64 * 100.0 / total as f64
+                ),
+                _ => println!(
+                    "silc: downloading `{label}`… {:.0} MB",
+                    size as f64 / 1_000_000.0
+                ),
+            }
+            next_report += PROGRESS_STEP;
+        }
     }
     file.flush().map_err(|error| {
         format!(

@@ -24,7 +24,9 @@ impl Default for Budgets {
             max_silc_check: 8,
             max_llm_query: 16,
             max_read_chars: 4000,
-            wall_clock_secs: 120,
+            // Each root turn reloads the GGUF in a fresh llama.cpp process;
+            // 3B-class weights need well over 120s for a full session on CPU.
+            wall_clock_secs: 900,
         }
     }
 }

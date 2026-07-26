@@ -87,7 +87,7 @@ check.
 | `max_silc_check` | 8 |
 | `max_llm_query` | 16 |
 | `max_read_chars` | 4000 per `corpus_read` |
-| `wall_clock_secs` | 120 |
+| `wall_clock_secs` | 900 |
 
 Root prompt = assist system prompt + user task + **environment metadata only**
 (corpus size, tool list). Full `AGENTS.md` is corpus id `agents`, not preloaded.
