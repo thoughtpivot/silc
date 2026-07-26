@@ -4,9 +4,15 @@
 
 class ScrapedPage {
     has Str $.id;
+    has Str $.scrape_id;
+    has Str $.scraped_at;
+    has Str $.site;
     has Str $.url;
     has Str $.title;
     has Str $.snippet;
+    has Str $.prompt;
+    has Str $.summary;
+    has Str $.summary_model;
     has Str $.depth;
     has Str $.status;
 }
@@ -50,7 +56,7 @@ class ScraperHome is component {
                     ui::select(
                         :field(depth),
                         :label("Crawl depth"),
-                        :options(["1", "2", "3", "4", "5"])
+                        :options(["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"])
                     ),
                     ui::toolbar(
                         ui::button(:label("Scrape"), :variant("primary"), :submit)
@@ -60,12 +66,13 @@ class ScraperHome is component {
                     ui::alert(:tone(info), :text($.status))
                 },
                 ui::section(
-                    :title("Results"),
-                    :description("Pages discovered within the requested depth (same host)."),
+                    :title("Scrape catalog"),
+                    :description("Every crawl is retained. Filter by website or search across all discovered pages."),
                     ui::table(
                         :rows($.pages),
-                        :columns(["title", "url", "depth", "status", "snippet"]),
+                        :columns(["site", "title", "url", "depth", "status", "scraped_at", "summary"]),
                         :empty_text("No pages yet. Enter a URL and scrape."),
+                        :filter_column("site"),
                         :sortable,
                         :searchable
                     )
@@ -97,5 +104,20 @@ class Crawler is service {
             ==> scrape::site(:depth(2), :same_host(true), :js(auto))
             ==> scrape::select(:css("title"), :as(title))
             ==> scrape::select(:css("article"), :as(snippet))
+    }
+}
+
+class Summarizer is processor {
+    method summarize(ScrapedPage $page) {
+        $page.prompt ==> llm::complete()
+    }
+}
+
+class SummaryDb is sink is storage(SQLite) {
+    method persist(ScrapedPage $page) {
+        $page
+            ==> ipc::publish()
+            ==> store::sqlite(:table(scrape_summaries))
+            ==> store::commit()
     }
 }

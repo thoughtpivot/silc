@@ -1624,9 +1624,15 @@ class FeedbackApi is service {
 @version("0.2.0")
 class ScrapedPage {
     has Str $.id;
+    has Str $.scrape_id;
+    has Str $.scraped_at;
+    has Str $.site;
     has Str $.url;
     has Str $.title;
     has Str $.snippet;
+    has Str $.prompt;
+    has Str $.summary;
+    has Str $.summary_model;
     has Str $.depth;
     has Str $.status;
 }
@@ -1645,9 +1651,13 @@ class Home is component {
             :app_bar(ui::app_bar(:title("Scraper"))),
             ui::form(:on(submit(on_submit)),
                 ui::text_input(:field(url), :label("URL")),
-                ui::button(:label("Scrape"), :variant(primary), :submit)
+                ui::button(:label("Scrape"), :variant("primary"), :submit)
             ),
-            ui::table(:rows($.pages), :columns(["title", "url"]))
+            ui::table(
+                :rows($.pages),
+                :columns(["site", "title", "url", "scraped_at", "summary"]),
+                :filter_column("site")
+            )
         )
     }
     method on_submit() { submit(); Pages.list(); }
@@ -1665,6 +1675,19 @@ class Crawler is service {
             ==> scrape::select(:css("title"), :as(title))
     }
 }
+class Summarizer is processor {
+    method summarize(ScrapedPage $page) {
+        $page.prompt ==> llm::complete()
+    }
+}
+class SummaryDb is sink is storage(SQLite) {
+    method persist(ScrapedPage $page) {
+        $page
+            ==> ipc::publish()
+            ==> store::sqlite(:table(scrape_summaries))
+            ==> store::commit()
+    }
+}
 "#;
 
     #[test]
@@ -1672,6 +1695,8 @@ class Crawler is service {
         let (_program, result, output) = parse_emit(SCRAPE_SOURCE, "scraper");
         let graph = result.graph.as_ref().unwrap();
         assert!(graph.has_scrape());
+        assert!(graph.needs_llm());
+        assert_eq!(graph.model_ref.as_deref(), Some("silclm"));
         assert!(graph.needs_scrape_crawl());
         assert!(!graph.needs_scrape_browser()); // :js(false)
 
@@ -1680,13 +1705,28 @@ class Crawler is service {
         assert!(ts.contains("SCRAPE_SITE = true") || ts.contains("const SCRAPE_SITE = true"));
         assert!(ts.contains("runScrapeJob") || ts.contains("/scrape"));
         assert!(ts.contains("scraped_pages"));
+        assert!(ts.contains("scrape_id"));
+        assert!(ts.contains("scraped_at"));
+        assert!(ts.contains("summarizeScrapedPage"));
+        assert!(ts.contains("built on silclm"));
+        assert!(ts.contains("summary_model"));
+        assert!(ts.contains("SELECT id, data, created_at FROM"));
+        assert!(!ts.contains("DELETE FROM ${SCRAPE_TABLE}"));
         assert!(!ts.contains("__HAS_SCRAPE__"));
+
+        let app = fs::read_to_string(output.join("typescript/src/App.tsx")).unwrap();
+        assert!(app.contains("filterColumn={\"site\"}"));
+        let data_table =
+            fs::read_to_string(output.join("typescript/src/components/ui/data-table.tsx")).unwrap();
+        assert!(data_table.contains("facetOptions"));
+        assert!(data_table.contains("aria-pressed"));
 
         assert!(output.join("go/crawl/worker.go").is_file());
         assert!(output.join("go/crawl/go.mod").is_file());
         let crawl = fs::read_to_string(output.join("go/crawl/worker.go")).unwrap();
         assert!(crawl.contains("gocolly/colly"));
         assert!(!output.join("python/browser_worker.py").is_file());
+        assert!(output.join("python/requirements.txt").is_file());
 
         let manifest = fs::read_to_string(&result.manifest).unwrap();
         assert!(manifest.contains("go-colly-v1"));

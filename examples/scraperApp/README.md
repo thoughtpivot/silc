@@ -2,9 +2,11 @@
 
 Standalone Silc 0.2.0 scraping application:
 
-- Enter a **website URL** and **crawl depth** (1–5)
+- Enter a **website URL** and **crawl depth** (1–10)
 - Silc runs `scrape::site` (Go Colly) with optional Playwright escalation (`:js(auto)`)
-- Results appear in a searchable `ui::table` backed by the `scraped_pages` resource
+- SilcLM produces a grounded summary for every successfully scraped page
+- Every scrape is retained in the `scraped_pages` resource
+- Website chips and fuzzy search filter the complete scrape catalog
 
 ## Authored files
 
@@ -16,8 +18,12 @@ Standalone Silc 0.2.0 scraping application:
 
 ## Data model
 
-`ScrapedPage`: id, url, title, snippet, depth, status  
-Persisted in SQLite table `scraped_pages` through the `Pages` resource.
+`ScrapedPage`: id, scrape_id, scraped_at, site, url, title, summary,
+summary_model, depth, status.
+Persisted as append-only history in SQLite table `scraped_pages` through the `Pages`
+resource. Re-scraping a site creates a new cataloged run instead of replacing earlier results.
+The summary shown in the table is generated locally through `llm::complete()` using
+SilcLM and the scraped page content as grounded context.
 
 ## Run
 

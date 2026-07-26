@@ -100,6 +100,7 @@ export function DataTable({
   const [sortDirection, setSortDirection] = React.useState<SortDirection>("asc");
   const [query, setQuery] = React.useState("");
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(() => new Set());
+  const [facetValue, setFacetValue] = React.useState(filterAll);
 
   const cellPadding = dense ? "px-3 py-1.5" : "px-4 py-3";
 
@@ -122,9 +123,20 @@ export function DataTable({
   }
 
   const safeRows = Array.isArray(rows) ? rows : [];
+  const facetOptions =
+    filterColumn && filterValue === undefined
+      ? Array.from(
+          new Set(
+            safeRows
+              .map((row) => String(row?.[filterColumn] ?? "").trim())
+              .filter(Boolean)
+          )
+        ).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
+      : [];
+  const activeFilter = filterValue ?? facetValue;
   const categoryFiltered =
-    filterColumn && filterValue && filterValue !== filterAll
-      ? safeRows.filter((row) => String(row?.[filterColumn] ?? "") === filterValue)
+    filterColumn && activeFilter && activeFilter !== filterAll
+      ? safeRows.filter((row) => String(row?.[filterColumn] ?? "") === activeFilter)
       : safeRows;
   const filtered =
     searchable && query.trim()
@@ -140,6 +152,34 @@ export function DataTable({
 
   return (
     <div className={cn("overflow-hidden rounded-xl border border-border bg-card/85 shadow-sm", className)}>
+      {facetOptions.length ? (
+        <div className="flex flex-wrap items-center gap-2 border-b border-border p-3" aria-label={`${labelFor(filterColumn!)} filters`}>
+          {[filterAll, ...facetOptions].map((option) => {
+            const active = facetValue === option;
+            const count =
+              option === filterAll
+                ? safeRows.length
+                : safeRows.filter((row) => String(row?.[filterColumn!] ?? "") === option).length;
+            return (
+              <button
+                key={option}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setFacetValue(option)}
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition",
+                  active
+                    ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                    : "border-border bg-background/70 text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                )}
+              >
+                {option}
+                <span className={cn("tabular-nums", active ? "opacity-80" : "opacity-60")}>{count}</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
       {searchable ? (
         <div className="border-b border-border p-3">
           <input

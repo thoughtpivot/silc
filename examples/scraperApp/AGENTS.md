@@ -354,7 +354,8 @@ Compiler-owned (do not invent alternatives):
 3. Closed enums (`:variant`, `:tone`, `:size`) reject unknown tokens.
 4. Resource `query` bindings must reference real resource query methods.
 5. Do not mix `text::score` and `llm::complete`.
-6. Do not mix `scrape::*` with `text::score` or `llm::complete`.
+6. Do not mix `scrape::*` with `text::score`. Scrape pipelines may use
+   `llm::complete` for grounded SilcLM summaries.
 7. Do not mix executable and stub-only ops in one runnable graph.
 8. Default fallback ports if omitted: web `18088`, terminal `18023`, API `8080`
    (examples often pick explicit ports instead).

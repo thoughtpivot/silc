@@ -291,7 +291,8 @@ Graph constraints:
 3. Score/LLM paths need exactly one processor and one `is storage(SQLite)` sink
    with `ipc::publish ==> store::sqlite ==> store::commit`.
 4. API-only `service::http` programs must not declare processor/sink modules.
-5. `scrape::*` cannot mix with `text::score` or `llm::complete`.
+5. `scrape::*` cannot mix with `text::score`; it may feed scraped content into
+   `llm::complete` for grounded SilcLM summaries.
 
 ### Generated runtime surfaces
 

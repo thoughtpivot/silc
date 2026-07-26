@@ -10,7 +10,7 @@ pub const DEFAULT_JS_MODE: &str = "auto";
 pub const DEFAULT_SITE_DEPTH: u32 = 2;
 
 /// Maximum author-facing crawl depth.
-pub const MAX_SITE_DEPTH: u32 = 5;
+pub const MAX_SITE_DEPTH: u32 = 10;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JsMode {
@@ -84,7 +84,8 @@ mod tests {
     #[test]
     fn parses_depth_bounds() {
         assert_eq!(parse_site_depth("2").unwrap(), 2);
+        assert_eq!(parse_site_depth("10").unwrap(), 10);
         assert!(parse_site_depth("0").is_err());
-        assert!(parse_site_depth("9").is_err());
+        assert!(parse_site_depth("11").is_err());
     }
 }

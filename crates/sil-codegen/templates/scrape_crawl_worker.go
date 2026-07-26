@@ -33,8 +33,8 @@ func main() {
 	if depth < 1 {
 		depth = 1
 	}
-	if depth > 5 {
-		depth = 5
+	if depth > 10 { // MAX_SITE_DEPTH (scrape_catalog)
+		depth = 10
 	}
 	sameHost := env("SILC_SCRAPE_SAME_HOST", "true") != "false"
 	linkCSS := env("SILC_SCRAPE_LINK_CSS", "a[href]")

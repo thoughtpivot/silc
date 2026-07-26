@@ -674,9 +674,6 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
     if has_scrape && saw_score {
         return Err("cannot mix scrape::* with text::score in one program".into());
     }
-    if has_scrape && saw_llm {
-        return Err("cannot mix scrape::* with llm::complete in one program".into());
-    }
     if has_scrape && !scrape.select && !scrape.extract && !scrape.site && !scrape.page {
         return Err("scrape programs need scrape::page, scrape::site, or scrape::extract".into());
     }

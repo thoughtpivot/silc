@@ -180,8 +180,18 @@ function contentType(pathname: string): string {
 function json(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { "content-type": "application/json; charset=utf-8" },
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store, max-age=0",
+    },
   });
+}
+
+function staticHeaders(pathname: string): Record<string, string> {
+  return {
+    "content-type": contentType(pathname),
+    "cache-control": "no-store, max-age=0",
+  };
 }
 
 async function handleResource(req: Request, pathname: string): Promise<Response | null> {
@@ -331,7 +341,46 @@ async function crawlWithGo(url: string, depth: number): Promise<Array<Record<str
 
 function persistScrapePages(pages: Array<Record<string, string>>) {
   if (!SCRAPE_TABLE) return;
-  db.query(`DELETE FROM ${SCRAPE_TABLE}`).run();
+  // Preserve previous crawl results and backfill catalog metadata for rows
+  // written by runtimes that predate scrape history.
+  const existing = db
+    .query(`SELECT id, data, created_at FROM ${SCRAPE_TABLE}`)
+    .all() as Array<{ id: string; data: string; created_at: string }>;
+  const update = db.query(`UPDATE ${SCRAPE_TABLE} SET data = ? WHERE id = ?`);
+  for (const row of existing) {
+    const page = JSON.parse(row.data) as Record<string, string>;
+    let changed = false;
+    if (!page.site && page.url) {
+      try {
+        page.site = new URL(page.url).hostname.replace(/^www\./i, "");
+        changed = true;
+      } catch {
+        // Keep malformed legacy URLs visible under the All filter.
+      }
+    }
+    const legacyScrapeId = `legacy:${page.site || "unknown"}:${row.created_at}`;
+    if (
+      !page.scrape_id ||
+      (page.scrape_id.startsWith("legacy:") && page.scrape_id !== legacyScrapeId)
+    ) {
+      page.scrape_id = legacyScrapeId;
+      changed = true;
+    }
+    if (!page.scraped_at) {
+      page.scraped_at = row.created_at;
+      changed = true;
+    }
+    if (!page.summary) {
+      page.summary = "Legacy crawl — re-scrape this site to generate a SilcLM summary.";
+      page.summary_model = "legacy:none";
+      changed = true;
+    } else if (!page.summary_model) {
+      page.summary_model = "legacy:unknown";
+      changed = true;
+    }
+    if (changed) update.run(JSON.stringify(page), row.id);
+  }
+
   const insert = db.query(`INSERT INTO ${SCRAPE_TABLE} (id, data) VALUES (?, ?)`);
   for (const page of pages) {
     const id = page.id || crypto.randomUUID();
@@ -354,11 +403,54 @@ function normalizeScrapeUrl(raw: string): string {
   return parsed.toString();
 }
 
+function scrapeSummaryText(html: string, fallback: string): string {
+  if (!html) return fallback.trim();
+  return decodeEntities(
+    html
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
+      .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
+      .replace(/<[^>]+>/g, " ")
+  )
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 7_000);
+}
+
+async function summarizeScrapedPage(
+  page: Record<string, string>,
+  html: string
+): Promise<string> {
+  if (!HAS_LLM) return page.snippet || "";
+  const text = scrapeSummaryText(html, page.snippet || "");
+  if (!text) return "No readable page content was available to summarize.";
+  const result = await ingest(
+    {
+      author: "scraper",
+      text: "Summarize this scraped web page.",
+      prompt:
+        "Summarize this web page in one concise sentence. State what the page is about and its main useful information. Do not mention that you are an AI or that the content was scraped.",
+      context: normalizeContext({ url: page.url, title: page.title, content: text }),
+      persona: normalizePersona(
+        "You are the Scraper summary engine, built on silclm. Produce factual summaries grounded only in the supplied page content."
+      ),
+      model: "silclm",
+    },
+    crypto.randomUUID()
+  );
+  const summary = String(result.reply || "").trim();
+  if (!summary) throw new Error(`silclm returned an empty summary for ${page.url}`);
+  return summary;
+}
+
 async function runScrapeJob(body: Record<string, unknown>) {
   const url = normalizeScrapeUrl(String(body.url || body.target_url || ""));
+  const scrapeId = crypto.randomUUID();
+  const scrapedAt = new Date().toISOString();
+  const site = new URL(url).hostname.replace(/^www\./i, "");
+  // Request depth (from the UI) wins; the pipeline :depth(...) is the fallback.
   let depth = Number(body.depth ?? SCRAPE_DEPTH ?? 2);
   if (!Number.isFinite(depth) || depth < 1) depth = 1;
-  if (depth > 5) depth = 5;
+  if (depth > 10) depth = 10; // MAX_SITE_DEPTH (scrape_catalog)
 
   let rawPages: Array<Record<string, string>> = [];
   if (SCRAPE_SITE) {
@@ -393,7 +485,10 @@ async function runScrapeJob(body: Record<string, unknown>) {
       }
     }
     const out: Record<string, string> = {
-      id: page.id || crypto.randomUUID(),
+      id: `${scrapeId}:${page.id || crypto.randomUUID()}`,
+      scrape_id: scrapeId,
+      scraped_at: scrapedAt,
+      site,
       url: page.url,
       title,
       snippet: page.snippet || "",
@@ -404,6 +499,8 @@ async function runScrapeJob(body: Record<string, unknown>) {
     if (!out.snippet && html) {
       out.snippet = html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 280);
     }
+    out.summary = await summarizeScrapedPage(out, html);
+    out.summary_model = HAS_LLM ? "silclm" : "none";
     pages.push(out);
   }
 
@@ -496,7 +593,9 @@ const server = Bun.serve({
     if (actionResp) return actionResp;
 
     if (pathname === route || pathname === "/" || pathname === route + "/") {
-      return new Response(Bun.file(join(distDir, "index.html")));
+      return new Response(Bun.file(join(distDir, "index.html")), {
+        headers: staticHeaders("index.html"),
+      });
     }
     // Static assets must never fall back to index.html — that makes the
     // browser execute HTML as JS and produces a blank white page.
@@ -504,15 +603,17 @@ const server = Bun.serve({
       const filePath = join(distDir, pathname.replace(/^\//, ""));
       const file = Bun.file(filePath);
       if (await file.exists()) {
-        return new Response(file, { headers: { "content-type": contentType(pathname) } });
+        return new Response(file, { headers: staticHeaders(pathname) });
       }
       return new Response("Not found", { status: 404 });
     }
     const asset = Bun.file(join(distDir, pathname.replace(/^\//, "")));
     if (await asset.exists()) {
-      return new Response(asset, { headers: { "content-type": contentType(pathname) } });
+      return new Response(asset, { headers: staticHeaders(pathname) });
     }
-    return new Response(Bun.file(join(distDir, "index.html")));
+    return new Response(Bun.file(join(distDir, "index.html")), {
+      headers: staticHeaders("index.html"),
+    });
   },
 });
 
