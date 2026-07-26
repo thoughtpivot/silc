@@ -3,6 +3,16 @@
 All notable changes to Silc are documented here.
 Silc remains pre-1.0; this project follows SemVer 0.x with Conventional Commits.
 
+## [Unreleased]
+
+### Added
+
+- Experimental `silc assist "<task>"` closed-tool recursive authoring scaffold
+  (`sil-rlm`, ADR-008): explores embedded AGENTS/examples/fixtures, validates
+  with `check_source`, depth-1 `llm_query` via silclm. Fine-tuned
+  `silclm-assist` weights are not shipped yet.
+
+
 ## [0.2.0] - 2026-07-25
 
 ### Breaking

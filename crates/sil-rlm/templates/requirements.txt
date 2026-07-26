@@ -1,0 +1,2 @@
+# Pinned for silc assist one-shot completer (must match llm_requirements.txt).
+llama-cpp-python==0.3.7

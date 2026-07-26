@@ -87,5 +87,14 @@ cargo run -p sil-training -- subject-first-bench \
 
 **silclm** is Silc's owned local model identity. Chat apps already default to
 it (`llm::complete` / omit `:model`). This bank is the path to a fine-tuned
-silclm for in-app chat, Silc assist flows, and cheap local authoring help.
+silclm for in-app chat and cheap local authoring help.
 See [docs/ADR-005-local-llm-complete.md](../docs/ADR-005-local-llm-complete.md).
+
+## Future: RLM trajectories (ADR-008)
+
+[`silc assist`](../docs/ADR-008-recursive-silclm-assist.md) explores AGENTS +
+examples via a closed-tool recursive loop and validates drafts with
+`check_source`. Phase 2 will record trajectory JSONL (root / tool / sub_llm
+turns) and filter to bank-accepted programs for a future `silclm-assist`
+distillation. Until then, continue banking final completions with `bank` as
+above.

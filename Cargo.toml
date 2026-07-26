@@ -9,6 +9,7 @@ members = [
     "crates/sil-codegen",
     "crates/sil-ipc",
     "crates/sil-training",
+    "crates/sil-rlm",
 ]
 
 [workspace.package]
@@ -26,3 +27,4 @@ sil-router = { path = "crates/sil-router" }
 sil-codegen = { path = "crates/sil-codegen" }
 sil-ipc = { path = "crates/sil-ipc" }
 sil-training = { path = "crates/sil-training" }
+sil-rlm = { path = "crates/sil-rlm" }

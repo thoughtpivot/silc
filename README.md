@@ -63,6 +63,14 @@ The scaffold is a small note-form app with an author-defined component, an
 `is app` route table, and both `ui::web` and `ui::terminal`.
 
 OpenTUI is the **primary** terminal surface when stdin/stdout are a TTY (or
+
+Experimental authoring help (ADR-008) explores Silc examples via a closed-tool
+recursive loop around **silclm**:
+
+```bash
+silc assist "dual-surface notes app with submit" --out notes.silc
+```
+
 `SILC_FORCE_OPENTUI=1`). The TCP telnet CLI on the terminal port remains a
 remote fallback for non-TTY sessions.
 
@@ -408,6 +416,7 @@ concurrent `/submit` POSTs with SQLite checks.
 | [docs/ADR-003-declarative-ui.md](docs/ADR-003-declarative-ui.md) | Dual-surface UI |
 | [docs/ADR-004-runtime-strengths.md](docs/ADR-004-runtime-strengths.md) | Why Bun / CPython / Go |
 | [docs/ADR-005-local-llm-complete.md](docs/ADR-005-local-llm-complete.md) | Local LLM completions |
+| [docs/ADR-008-recursive-silclm-assist.md](docs/ADR-008-recursive-silclm-assist.md) | Recursive `silc assist` / silclm RLM |
 | [docs/SILC-IPC-ABI-v1.md](docs/SILC-IPC-ABI-v1.md) | Shared buffer ABI |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
 

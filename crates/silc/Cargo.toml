@@ -17,6 +17,7 @@ sil-parser = { workspace = true }
 sil-router = { workspace = true }
 sil-codegen = { workspace = true }
 sil-ipc = { workspace = true }
+sil-rlm = { workspace = true }
 ureq = "2"
 flate2 = "1"
 tar = "0.4"

@@ -19,7 +19,9 @@ Engine strength catalogs that justify Go / CPython / Bun routing are in
 Surface syntax is Raku-inspired
 ([ADR-002](ADR-002-silc-surface-syntax.md)): Silc is an independent intent
 language; `.silc` is the only accepted extension. `.raku` and `.sil` are not
-supported. Pipeline feeds: [ADR-007](ADR-007-pipeline-feeds.md).
+supported. Pipeline feeds: [ADR-007](ADR-007-pipeline-feeds.md). Local LLM
+chat: [ADR-005](ADR-005-local-llm-complete.md). Recursive authoring assist
+(`silc assist` / `sil-rlm`): [ADR-008](ADR-008-recursive-silclm-assist.md).
 
 The exhaustive 0.2.0 authoring and UI API contract (language constructs,
 executable operations, and the 38-primitive dual-surface catalog) lives in
@@ -76,6 +78,8 @@ when it transforms or coordinates subjects without owning their definitions:
 | `sil-router` | Resolve a module's `Target` from subject data |
 | `sil-codegen` | Project validated subjects into target source |
 | `sil-ipc` | Implement the cross-runtime transport boundary |
+| `sil-training` | Prompt banking and compiler-backed candidate validation |
+| `sil-rlm` | Closed-tool recursive assist loop (ADR-008); not a language subject |
 | `silc` | Keep CLI composition thin and orchestrate the workflow |
 
 This distinction prevents phase-owned duplicate models such as parser

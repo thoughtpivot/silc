@@ -1,3 +1,4 @@
+mod assist;
 mod init;
 mod models;
 mod runtimes;
@@ -19,6 +20,19 @@ fn main() {
         }
         Some("init") => {
             let path = args.next();
+            println!(
+                "       silc assist \"<task>\" [--out path.silc] [--corpus <dir>] [--max-turns N]"
+            );
+        }
+        Some("assist") => {
+            let rest: Vec<String> = args.collect();
+            match assist::parse_args(rest).and_then(assist::run) {
+                Ok(()) => {}
+                Err(err) => {
+                    eprintln!("silc: {err}");
+                    process::exit(1);
+                }
+            }
             if let Err(err) = init::run(path.as_deref()) {
                 eprintln!("silc: {err}");
                 process::exit(1);

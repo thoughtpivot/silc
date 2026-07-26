@@ -112,4 +112,9 @@ cargo test -p silc --test chat_e2e -- --ignored --nocapture
   daemons
 - `is model` modules or `ui::model`
 - Headless `service::http` chat in this slice
-- Shipping a fine-tuned GGUF or `silc assist` authoring CLI in this slice
+- Shipping a fine-tuned GGUF in this slice (`silclm-assist` distillation is
+  Phase 3 of [ADR-008](ADR-008-recursive-silclm-assist.md))
+
+`silc assist` (recursive closed-tool authoring scaffold) is specified and
+partially implemented under [ADR-008](ADR-008-recursive-silclm-assist.md); it
+is not an in-app `llm::complete` / `ui::chat` mode.
