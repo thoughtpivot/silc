@@ -2,10 +2,11 @@
 
 use crate::app::App;
 use crate::component::{Component, UiTemplate};
-use crate::contract::{Contract, Subset};
+use crate::contract::{Contract, Subset, SubsetPredicate};
 use crate::expr::Expr;
 use crate::module::Module;
 use crate::resource::Resource;
+use crate::types::TypeExpr;
 use crate::ui::validate_template;
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -102,10 +103,24 @@ impl Program {
 
         for subset in &self.subsets {
             validate_type(&subset.base, &known_types)?;
+            if subset.predicate.is_some() && !resolves_to_str(self, &subset.base) {
+                return Err(format!(
+                    "subset `{}` has a string where predicate but base type does not resolve to `Str`",
+                    subset.name
+                ));
+            }
         }
         for contract in &self.contracts {
             for field in &contract.fields {
                 validate_type(&field.ty, &known_types)?;
+                if let Some(default) = &field.default {
+                    if let Some(lit) = string_literal_from_default(default) {
+                        check_subset_string(self, &field.ty, &lit, &format!(
+                            "contract `{}` field `{}` default",
+                            contract.name, field.name
+                        ))?;
+                    }
+                }
             }
         }
         for module in &self.modules {
@@ -123,6 +138,12 @@ impl Program {
         for component in self.all_components() {
             for field in component.all_fields() {
                 validate_type(&field.ty, &known_types)?;
+                if let Some(Expr::String(lit)) = &field.default {
+                    check_subset_string(self, &field.ty, lit, &format!(
+                        "component `{}` field `{}` default",
+                        component.name, field.name
+                    ))?;
+                }
             }
             for query in &component.queries {
                 let Some(resource) = self.resources.iter().find(|r| r.name == query.resource)
@@ -299,6 +320,63 @@ fn validate_component_template(
     Ok(())
 }
 
+fn resolves_to_str(program: &Program, ty: &TypeExpr) -> bool {
+    match ty {
+        TypeExpr::Named(name) if name == "Str" => true,
+        TypeExpr::Named(name) => program
+            .subsets
+            .iter()
+            .find(|s| s.name == *name)
+            .is_some_and(|s| resolves_to_str(program, &s.base)),
+        TypeExpr::Optional(inner) => resolves_to_str(program, inner),
+        _ => false,
+    }
+}
+
+fn subset_predicate_for_type<'a>(
+    program: &'a Program,
+    ty: &TypeExpr,
+) -> Option<(&'a str, &'a SubsetPredicate)> {
+    match ty {
+        TypeExpr::Named(name) => {
+            let subset = program.subsets.iter().find(|s| s.name == *name)?;
+            subset
+                .predicate
+                .as_ref()
+                .map(|p| (subset.name.as_str(), p))
+        }
+        TypeExpr::Optional(inner) => subset_predicate_for_type(program, inner),
+        _ => None,
+    }
+}
+
+fn string_literal_from_default(default: &str) -> Option<String> {
+    let trimmed = default.trim();
+    if (trimmed.starts_with('"') && trimmed.ends_with('"'))
+        || (trimmed.starts_with('\'') && trimmed.ends_with('\''))
+    {
+        Some(trimmed[1..trimmed.len() - 1].to_string())
+    } else {
+        None
+    }
+}
+
+fn check_subset_string(
+    program: &Program,
+    ty: &TypeExpr,
+    value: &str,
+    context: &str,
+) -> Result<(), String> {
+    if let Some((subset_name, pred)) = subset_predicate_for_type(program, ty) {
+        if !pred.check_str(value) {
+            return Err(format!(
+                "{context}: value `{value}` does not satisfy subset `{subset_name}`"
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn validate_handler_expr(
     program: &Program,
     component: &Component,
@@ -312,6 +390,16 @@ fn validate_handler_expr(
                         "component `{}` may only assign reactive state; `{name}` is not state",
                         component.name
                     ));
+                }
+                if let Expr::String(lit) = value.as_ref() {
+                    if let Some(field) = component.state.iter().find(|f| f.name == *name) {
+                        check_subset_string(
+                            program,
+                            &field.ty,
+                            lit,
+                            &format!("component `{}` assignment to `{name}`", component.name),
+                        )?;
+                    }
                 }
             }
             validate_handler_expr(program, component, value)?;
@@ -366,9 +454,25 @@ fn validate_handler_expr(
                 validate_handler_expr(program, component, item)?;
             }
         }
-        Expr::New { fields, .. } => {
-            for (_, value) in fields {
-                validate_handler_expr(program, component, value)?;
+        Expr::New { ty, fields } => {
+            if let Some(contract) = program.contracts.iter().find(|c| c.name == *ty) {
+                for (fname, value) in fields {
+                    if let Some(field) = contract.fields.iter().find(|f| f.name == *fname) {
+                        if let Expr::String(lit) = value {
+                            check_subset_string(
+                                program,
+                                &field.ty,
+                                lit,
+                                &format!("{ty}.new field `{fname}`"),
+                            )?;
+                        }
+                    }
+                    validate_handler_expr(program, component, value)?;
+                }
+            } else {
+                for (_, value) in fields {
+                    validate_handler_expr(program, component, value)?;
+                }
             }
         }
         Expr::Member { base, .. } => validate_handler_expr(program, component, base)?,

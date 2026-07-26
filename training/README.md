@@ -71,6 +71,18 @@ Accepted rows include `program`, `program_sha256`, `execution_mode`,
 `validation_tier`, and `target_model: "silclm"`. Rejected rows keep the raw
 `completion` plus structured `stage`/`error` for future repair training.
 
+## Subject-first declarator benchmark
+
+Evaluate `class X is resource` vs hypothetical `resource X` **without migrating
+syntax**. See [docs/subject-first-declarators.md](../docs/subject-first-declarators.md).
+
+```bash
+cargo run -p sil-training -- subject-first-bench \
+  --agents crates/silc/templates/AGENTS.md \
+  --tasks training/tasks \
+  --out training/out/subject_first_bench.json
+```
+
 ## Product note
 
 **silclm** is Silc's owned local model identity. Chat apps already default to

@@ -27,7 +27,7 @@ pub use component::{
     UiTemplate,
 };
 pub use constraint::TraitArg;
-pub use contract::{Contract, Field, Subset};
+pub use contract::{Contract, Field, Subset, SubsetPredicate};
 pub use expr::{BinOp, Expr, InterpPart, UnaryOp};
 pub use model_catalog::{
     is_known_model_id, lookup_model, validate_model_id, ModelCatalogEntry, DEFAULT_LLM_N_CTX,
@@ -86,7 +86,7 @@ mod tests {
                 Subset {
                     name: "Uri".into(),
                     base: TypeExpr::Named("Str".into()),
-                    predicate: Some(".contains(\"://\")".into()),
+                    predicate: Some(SubsetPredicate::Contains("://".into())),
                     span: Span::default(),
                 },
                 Subset {

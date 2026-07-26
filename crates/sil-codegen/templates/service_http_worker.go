@@ -3,11 +3,7 @@
 package main
 
 import (
-	"net/http"
-	"os"
-	"sync"
-
-	"github.com/gin-gonic/gin"
+__IMPORTS__
 )
 
 __STRUCTS__

@@ -2,7 +2,8 @@
 # Silc project guidance for AI tools
 
 This directory is a **Silc 0.2.0** project. Silc (said like “silk”) is an
-AI-native language and local Rust compiler. Edit `.silc` source only.
+independent intent language with a Raku-inspired surface and a local Rust
+compiler. Edit `.silc` source only (not `.raku` / `.sil`).
 
 **Never** hand-edit `.runtime/` or `.silc/runtimes.lock.json`. Those are
 compiler-owned outputs.
@@ -19,6 +20,7 @@ application code.
 ## Authoritative docs
 
 - Surface syntax: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-002-silc-surface-syntax.md
+- Pipeline feeds (`==>`): https://github.com/thoughtpivot/silc/blob/main/docs/ADR-007-pipeline-feeds.md
 - Declarative UI: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-003-declarative-ui.md
 - Local LLM: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-005-local-llm-complete.md
 - Scrape: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-006-scrape-namespace.md
@@ -42,7 +44,7 @@ meaningful edit. Stop and report limits instead of inventing substrates.
 | Construct | Role |
 | --- | --- |
 | `@version("0.2.0")` | Optional program version annotation |
-| `subset Name of Base where { … }` | Semantic type alias over a base type |
+| `subset Name of Base where { … }` | Semantic type alias; v1 `where` predicates (Str): `.contains` / `.starts-with` / `.ends-with` (ADR-002) |
 | `class X { has T $.f; }` | **Contract** — typed data schema |
 | `class X is component` | **Component** — props, `has state`, slots, `emit`, handlers, `render()` |
 | `class X is resource` | **Resource** — `query` / `mutation` data layer (CRUD over SQLite) |
@@ -362,7 +364,7 @@ Compiler-owned (do not invent alternatives):
 
 ## Rules for agents
 
-1. Edit only `.silc` (and conforming `.raku`) source.
+1. Edit only `.silc` source (`.raku` / `.sil` are not accepted).
 2. Prefer author-defined `is component` + `is app` over inventing profiles.
 3. Always serve UI with **both** `ui::web` and `ui::terminal`.
 4. Use Contracts + resources for persistence; do not hard-code seeded product DBs.
@@ -371,16 +373,3 @@ Compiler-owned (do not invent alternatives):
 7. Stay inside the UI catalog and runnable op set above.
 8. Validate with `silc build`; report errors instead of patching `.runtime/`.
 <!-- END SILC_AGENTS_TEMPLATE -->
-
-## App-specific notes (inventoryApp)
-
-- Routes: `/` browse, `/admin` CRUD, `/assistant` grounded silclm chat with `ui::nav_item(:active)` highlighting.
-- Browse: `ui::section` + `ui::alert` + `ui::table(:rows($.items), :columns([...]), :filter_field(category_filter), :filter_column("category"), :sortable, :searchable)` on web and OpenTUI.
-- Admin: `ui::section` form + catalog; author `ItemCard` emits `remove(InventoryItem)` via `:on(remove => on_delete)`.
-- Resource table `inventory_items` via `Inventory` (`list` / `create` / `update` / `delete`) → compiler HTTP `/api/inventory_items`.
-- Assistant: `ui::chat(:context($.items), :persona("… built on silclm …"))`; context/persona are not persisted into chat history.
-- Processor/sink: `Assistant.complete()` → `llm::complete()` and `ChatDb` with `ipc::publish ==> store::sqlite ==> store::commit`.
-- Dual-surface: `ui::web` (React/Tailwind) and `ui::terminal` (OpenTUI primary; TCP CLI fallback on the terminal port).
-- Default model: `llm::complete()` with no `:model` (silclm).
-- Ports: web `18096`, terminal `18097`.
-- Never hand-edit `.runtime/` or invent Ollama/OpenAI paths.

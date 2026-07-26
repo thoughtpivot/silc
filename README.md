@@ -1,10 +1,11 @@
 # Silc — Intent-Native Polyglot Application Compiler
 
-ThoughtPivot’s **Silc** (pronounced *silk*) is a compact, contract-bound
-language and local Rust compiler. You write a short intent program. The
-compiler validates it, routes each module to the right engine, provisions
-pinned Bun / CPython / Go runtimes, emits workers, and runs the app — without
-asking an LLM to invent React, Python, Go, manifests, or glue.
+ThoughtPivot’s **Silc** (pronounced *silk*) is an independent intent language
+with a Raku-inspired surface and a local Rust compiler. It is not a Raku
+subset. You write a short `.silc` intent program. The compiler validates it,
+routes each module to the right engine, provisions pinned Bun / CPython / Go
+runtimes, emits workers, and runs the app — without asking an LLM to invent
+React, Python, Go, manifests, or glue.
 
 ```text
 .silc intent  →  Rust compiler  →  Bun · CPython · Go workers  →  mmap IPC + UDS
@@ -110,7 +111,7 @@ semantics live in the ADRs after the API is visible here.
 | Construct | Role |
 | --- | --- |
 | `@version("0.2.0")` | Optional program version annotation |
-| `subset Name of Base where { … }` | Semantic type alias over a base type |
+| `subset Name of Base where { … }` | Semantic type alias; v1 `where` predicates (Str): `.contains` / `.starts-with` / `.ends-with` (ADR-002) |
 | `class X { has T $.f; }` | **Contract** — typed data schema |
 | `class X is component` | **Component** — props, `has state`, slots, `emit`, handlers, `render()` |
 | `class X is resource` | **Resource** — `query` / `mutation` data layer (CRUD over SQLite) |
@@ -401,7 +402,9 @@ concurrent `/submit` POSTs with SQLite checks.
 | --- | --- |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Subject model and crate layout |
 | [docs/ADR-001-runtime-and-ipc.md](docs/ADR-001-runtime-and-ipc.md) | Engines and IPC |
-| [docs/ADR-002-silc-surface-syntax.md](docs/ADR-002-silc-surface-syntax.md) | Language surface |
+| [docs/ADR-002-silc-surface-syntax.md](docs/ADR-002-silc-surface-syntax.md) | Language surface (Raku-inspired, not Raku-compatible) |
+| [docs/ADR-007-pipeline-feeds.md](docs/ADR-007-pipeline-feeds.md) | `==>` pipeline feed semantics |
+| [docs/subject-first-declarators.md](docs/subject-first-declarators.md) | Subject-first syntax evaluation (no migration yet) |
 | [docs/ADR-003-declarative-ui.md](docs/ADR-003-declarative-ui.md) | Dual-surface UI |
 | [docs/ADR-004-runtime-strengths.md](docs/ADR-004-runtime-strengths.md) | Why Bun / CPython / Go |
 | [docs/ADR-005-local-llm-complete.md](docs/ADR-005-local-llm-complete.md) | Local LLM completions |

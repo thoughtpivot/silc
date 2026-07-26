@@ -4,7 +4,7 @@ mod ui_lower;
 
 use sil_core::{
     infer_graph, ApiRoute, Contract, ExecutableGraph, ExecutionMode, Module, ProcessorOp, Program,
-    ResourceKind, Target,
+    ResourceKind, SubsetPredicate, Target, TypeExpr,
 };
 use sil_ipc::{ABI_VERSION, PROTOCOL_VERSION};
 use sil_router::RouteDecision;
@@ -440,7 +440,7 @@ fn emit_ui_app(
     let mut files = vec![
         (
             root.join("typescript/worker.ts"),
-            render_template(APP_WORKER_TS, graph, schema_id),
+            render_template(APP_WORKER_TS, program, graph, schema_id),
         ),
         (root.join("typescript/terminal.ts"), terminal_ts),
         (
@@ -607,11 +607,11 @@ fn emit_ui_app(
         ),
         (
             root.join("python/worker.py"),
-            render_template(PROCESSOR_WORKER_PY, graph, schema_id),
+            render_template(PROCESSOR_WORKER_PY, program, graph, schema_id),
         ),
         (
             root.join("go/worker.go"),
-            render_template(STORE_WORKER_GO, graph, schema_id),
+            render_template(STORE_WORKER_GO, program, graph, schema_id),
         ),
         (root.join("go/go.mod"), STORE_GOMOD.to_string()),
     ];
@@ -670,6 +670,7 @@ fn emit_service_http(
         .collect();
     let mut structs = String::new();
     let mut stores = String::new();
+    let mut needs_strings = false;
     for name in &contracts_used {
         let contract = program
             .contracts
@@ -683,15 +684,25 @@ fn emit_service_http(
             "var {store_name} = struct {{\n\tmu    sync.Mutex\n\titems []{}\n}}{{\n\titems: []{}{{}},\n}}\n\n",
             contract.name, contract.name
         ));
+        if contract_has_subset_fields(program, contract) {
+            needs_strings = true;
+        }
     }
 
     let mut routes = String::new();
     for route in &graph.api_routes {
-        routes.push_str(&render_go_route(route));
+        routes.push_str(&render_go_route(program, route));
     }
+
+    let imports = if needs_strings {
+        "\t\"net/http\"\n\t\"os\"\n\t\"strings\"\n\t\"sync\"\n\n\t\"github.com/gin-gonic/gin\"\n"
+    } else {
+        "\t\"net/http\"\n\t\"os\"\n\t\"sync\"\n\n\t\"github.com/gin-gonic/gin\"\n"
+    };
 
     let port = graph.api_port().unwrap_or(8080);
     let body = SERVICE_HTTP_GO
+        .replace("__IMPORTS__", imports)
         .replace("__STRUCTS__", structs.trim_end())
         .replace("__STORES__", stores.trim_end())
         .replace("__ROUTES__", &routes)
@@ -707,6 +718,13 @@ fn emit_service_http(
     generated.push(worker_path);
     generated.push(gomod_path);
     Ok(())
+}
+
+fn contract_has_subset_fields(program: &Program, contract: &Contract) -> bool {
+    contract
+        .fields
+        .iter()
+        .any(|f| subset_rule_for_field(program, &f.ty).is_some())
 }
 
 fn render_go_contract_struct(contract: &Contract) -> String {
@@ -736,19 +754,48 @@ fn go_type_for(ty: &str) -> &'static str {
     }
 }
 
-fn render_go_route(route: &ApiRoute) -> String {
+fn render_go_route(program: &Program, route: &ApiRoute) -> String {
     let store = format!("store{}", route.contract);
     let path = route.path.replace('"', "");
     match route.method.as_str() {
         "GET" => format!(
             "\tr.GET(\"{path}\", func(c *gin.Context) {{\n\t\t{store}.mu.Lock()\n\t\tdefer {store}.mu.Unlock()\n\t\tc.JSON(http.StatusOK, {store}.items)\n\t}})\n"
         ),
-        "POST" => format!(
-            "\tr.POST(\"{path}\", func(c *gin.Context) {{\n\t\tvar item {}\n\t\tif err := c.ShouldBindJSON(&item); err != nil {{\n\t\t\tc.JSON(http.StatusBadRequest, gin.H{{\"error\": err.Error()}})\n\t\t\treturn\n\t\t}}\n\t\t{store}.mu.Lock()\n\t\t{store}.items = append({store}.items, item)\n\t\t{store}.mu.Unlock()\n\t\tc.JSON(http.StatusCreated, item)\n\t}})\n",
-            route.contract
-        ),
+        "POST" => {
+            let checks = render_go_subset_checks(program, &route.contract, "item");
+            format!(
+                "\tr.POST(\"{path}\", func(c *gin.Context) {{\n\t\tvar item {}\n\t\tif err := c.ShouldBindJSON(&item); err != nil {{\n\t\t\tc.JSON(http.StatusBadRequest, gin.H{{\"error\": err.Error()}})\n\t\t\treturn\n\t\t}}\n{checks}\t\t{store}.mu.Lock()\n\t\t{store}.items = append({store}.items, item)\n\t\t{store}.mu.Unlock()\n\t\tc.JSON(http.StatusCreated, item)\n\t}})\n",
+                route.contract
+            )
+        }
         other => format!("\t// unsupported method {other} for {path}\n"),
     }
+}
+
+fn render_go_subset_checks(program: &Program, contract_name: &str, var: &str) -> String {
+    let Some(contract) = program.contracts.iter().find(|c| c.name == contract_name) else {
+        return String::new();
+    };
+    let mut out = String::new();
+    for field in &contract.fields {
+        let Some(subset) = program
+            .subsets
+            .iter()
+            .find(|s| matches!(&field.ty, TypeExpr::Named(n) if n == &s.name))
+        else {
+            continue;
+        };
+        let Some(pred) = &subset.predicate else {
+            continue;
+        };
+        let field_access = format!("{var}.{}", pascal_case(&field.name));
+        let cond = pred.to_go_check(&field_access);
+        out.push_str(&format!(
+            "\t\tif !({cond}) {{\n\t\t\tc.JSON(http.StatusBadRequest, gin.H{{\"error\": \"field {} failed subset {}\"}})\n\t\t\treturn\n\t\t}}\n",
+            field.name, subset.name
+        ));
+    }
+    out
 }
 
 fn clear_dir_sources(dir: &Path, extensions: &[&str]) -> Result<(), String> {
@@ -848,7 +895,12 @@ fn scrape_table(graph: &ExecutableGraph) -> String {
         .unwrap_or_else(|| "scraped_pages".into())
 }
 
-fn render_template(template: &str, graph: &ExecutableGraph, schema_id: u32) -> String {
+fn render_template(
+    template: &str,
+    program: &Program,
+    graph: &ExecutableGraph,
+    schema_id: u32,
+) -> String {
     let actions =
         serde_json::to_string_pretty(&actions_json(graph)).unwrap_or_else(|_| "[]".into());
     let resource_tables = serde_json::to_string(
@@ -906,6 +958,8 @@ fn render_template(template: &str, graph: &ExecutableGraph, schema_id: u32) -> S
         .link_css
         .clone()
         .unwrap_or_else(|| "a[href]".into());
+    let subset_rules = serde_json::to_string_pretty(&subset_rules_json(program))
+        .unwrap_or_else(|_| "{}".into());
 
     template
         .replace("__PORT__", &graph.http_port.to_string())
@@ -931,6 +985,53 @@ fn render_template(template: &str, graph: &ExecutableGraph, schema_id: u32) -> S
         .replace("__ACTIONS_JSON__", &actions)
         .replace("__RESOURCE_TABLES__", &resource_tables)
         .replace("__ROUTES_JSON__", &routes)
+        .replace("__SUBSET_RULES_JSON__", &subset_rules)
+}
+
+/// Table → field → { kind, lit } for resource/API ingress subset checks.
+fn subset_rules_json(program: &Program) -> serde_json::Value {
+    let mut by_table = serde_json::Map::new();
+    for resource in &program.resources {
+        let Some(contract_name) = &resource.contract else {
+            continue;
+        };
+        let Some(contract) = program.contracts.iter().find(|c| c.name == *contract_name) else {
+            continue;
+        };
+        let mut fields = serde_json::Map::new();
+        for field in &contract.fields {
+            if let Some(rule) = subset_rule_for_field(program, &field.ty) {
+                fields.insert(field.name.clone(), rule);
+            }
+        }
+        if !fields.is_empty() {
+            by_table.insert(
+                resource.table_name(),
+                serde_json::Value::Object(fields),
+            );
+        }
+    }
+    serde_json::Value::Object(by_table)
+}
+
+fn subset_rule_for_field(program: &Program, ty: &TypeExpr) -> Option<serde_json::Value> {
+    let name = match ty {
+        TypeExpr::Named(n) => n.as_str(),
+        TypeExpr::Optional(inner) => return subset_rule_for_field(program, inner),
+        _ => return None,
+    };
+    let subset = program.subsets.iter().find(|s| s.name == name)?;
+    let pred = subset.predicate.as_ref()?;
+    let (kind, lit) = match pred {
+        SubsetPredicate::Contains(lit) => ("contains", lit.as_str()),
+        SubsetPredicate::StartsWith(lit) => ("starts-with", lit.as_str()),
+        SubsetPredicate::EndsWith(lit) => ("ends-with", lit.as_str()),
+    };
+    Some(serde_json::json!({
+        "subset": subset.name,
+        "kind": kind,
+        "lit": lit,
+    }))
 }
 
 fn module_manifest_entry(
@@ -1365,6 +1466,7 @@ class FeedbackApi is service {
             assert!(!source.contains("__SCRAPE_SELECTS_JSON__"));
             assert!(!source.contains("__SCRAPE_TABLE__"));
             assert!(!source.contains("__ACTIONS_JSON__"));
+            assert!(!source.contains("__SUBSET_RULES_JSON__"));
             assert!(!source.contains("__RESOURCE_TABLES__"));
             assert!(!source.contains("__ROUTES_JSON__"));
         }

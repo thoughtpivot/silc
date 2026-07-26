@@ -13,8 +13,8 @@ fn main() {
     match args.next().as_deref() {
         None => {
             println!("silc {}", env!("CARGO_PKG_VERSION"));
-            println!("usage: silc <program.silc|program.raku>");
-            println!("       silc build <program.silc|program.raku>");
+            println!("usage: silc <program.silc>");
+            println!("       silc build <program.silc>");
             println!("       silc init [path]");
         }
         Some("init") => {
@@ -26,7 +26,7 @@ fn main() {
         }
         Some("build") => {
             let Some(path) = args.next() else {
-                eprintln!("silc: usage: silc build <program.silc|program.raku>");
+                eprintln!("silc: usage: silc build <program.silc>");
                 process::exit(1);
             };
             if let Err(err) = build_only(Path::new(&path)) {
@@ -96,15 +96,15 @@ fn compile_common(
     if !entry.exists() {
         return Err(format!("file not found: {}", entry.display()));
     }
-    let supported_extension = entry
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .is_some_and(|ext| matches!(ext, "silc" | "raku"));
-    if !supported_extension {
-        return Err(format!(
-            "expected a .silc or .raku entry file (rename .sil to .silc), got {}",
-            entry.display()
-        ));
+    let ext = entry.extension().and_then(|ext| ext.to_str());
+    if ext != Some("silc") {
+        let hint = match ext {
+            Some("raku") | Some("sil") => {
+                "rename to .silc — Silc does not accept .raku or .sil"
+            }
+            _ => "expected a .silc entry file",
+        };
+        return Err(format!("{hint}, got {}", entry.display()));
     }
 
     let workdir = entry

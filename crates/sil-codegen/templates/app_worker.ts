@@ -13,6 +13,10 @@ const abiVersion = 1;
 const root = import.meta.dir;
 const distDir = join(root, "dist");
 const ACTIONS = __ACTIONS_JSON__;
+const SUBSET_RULES: Record<
+  string,
+  Record<string, { subset: string; kind: string; lit: string }>
+> = __SUBSET_RULES_JSON__;
 const PROCESSOR = "__PROCESSOR_OP__";
 const HAS_LLM = __HAS_LLM__;
 const HAS_SCRAPE = __HAS_SCRAPE__;
@@ -194,6 +198,26 @@ function staticHeaders(pathname: string): Record<string, string> {
   };
 }
 
+function validateSubsetFields(
+  table: string,
+  body: Record<string, unknown>,
+): string | null {
+  const rules = SUBSET_RULES[table];
+  if (!rules) return null;
+  for (const [field, rule] of Object.entries(rules)) {
+    const value = body[field];
+    if (typeof value !== "string") continue;
+    let ok = false;
+    if (rule.kind === "contains") ok = value.includes(rule.lit);
+    else if (rule.kind === "starts-with") ok = value.startsWith(rule.lit);
+    else if (rule.kind === "ends-with") ok = value.endsWith(rule.lit);
+    if (!ok) {
+      return `field ${field} failed subset ${rule.subset}`;
+    }
+  }
+  return null;
+}
+
 async function handleResource(req: Request, pathname: string): Promise<Response | null> {
   for (const action of ACTIONS) {
     const base = action.path.replace(/\/:id$/, "");
@@ -216,12 +240,16 @@ async function handleResource(req: Request, pathname: string): Promise<Response 
       const body = await req.json();
       const id = body.id || crypto.randomUUID();
       const { id: _i, ...rest } = body;
+      const subsetErr = validateSubsetFields(table, rest as Record<string, unknown>);
+      if (subsetErr) return json({ error: subsetErr }, 400);
       db.query(`INSERT INTO ${table} (id, data) VALUES (?, ?)`).run(id, JSON.stringify(rest));
       return json({ id, ...rest }, 201);
     }
     if (action.http_method === "PUT" && isItem) {
       const id = pathname.slice(base.length + 1);
       const body = await req.json();
+      const subsetErr = validateSubsetFields(table, body as Record<string, unknown>);
+      if (subsetErr) return json({ error: subsetErr }, 400);
       db.query(`UPDATE ${table} SET data = ?, updated_at = datetime('now') WHERE id = ?`).run(JSON.stringify(body), id);
       return json({ id, ...body });
     }

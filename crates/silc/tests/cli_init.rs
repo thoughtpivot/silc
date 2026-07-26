@@ -117,6 +117,41 @@ fn init_scaffolds_runnable_dual_surface_app() {
 }
 
 #[test]
+fn rejects_raku_extension() {
+    let root = tempdir();
+    let entry = root.join("main.raku");
+    fs::write(
+        &entry,
+        r#"
+@version("0.2.0")
+class Page is component {
+    method render() { ui::page(ui::heading(:text("x"))) }
+}
+class App is app {
+    route "/" => Page;
+    method serve() {
+        ui::web(:root(App), :port(18088)) ==> ui::terminal(:port(18023))
+    }
+}
+"#,
+    )
+    .unwrap();
+
+    let compile = silc().arg("build").arg(&entry).output().expect("compile");
+    assert!(
+        !compile.status.success(),
+        "expected .raku rejection, got success"
+    );
+    let stderr = String::from_utf8_lossy(&compile.stderr);
+    assert!(
+        stderr.contains(".silc") && (stderr.contains(".raku") || stderr.contains("rename")),
+        "stderr: {stderr}"
+    );
+
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
 fn direct_compile_examples_still_works() {
     let example = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/data_pipeline.silc");
     let root = tempdir();

@@ -3,8 +3,8 @@
 use sil_core::{
     App, CompField, Component, Contract, EmitDecl, EventBinding, Expr, Field, Handler, Method,
     Module, ModuleKind, Param, Pipeline, PipelineStep, Program, QueryBinding, Resource,
-    ResourceKind, ResourceMethod, Route, SlotDecl, Span, Subset, TraitArg, TypeExpr, UiNode,
-    UiTemplate,
+    ResourceKind, ResourceMethod, Route, SlotDecl, Span, Subset, SubsetPredicate, TraitArg,
+    TypeExpr, UiNode, UiTemplate,
 };
 use sil_lexer::{lex, SpannedToken, Token};
 
@@ -87,7 +87,12 @@ impl Parser {
         let predicate = if matches!(self.peek(), Some(Token::Where)) {
             self.advance();
             self.expect_simple(Token::LBrace, "`{` after where")?;
-            Some(self.collect_balanced_brace_text()?)
+            let body = self.collect_balanced_brace_text()?;
+            Some(SubsetPredicate::parse(&body).map_err(|message| ParseError {
+                message,
+                line: start.line,
+                col: start.col,
+            })?)
         } else {
             None
         };
@@ -1605,5 +1610,60 @@ class X is view {
 "#;
         let err = parse(src).unwrap_err();
         assert!(err.message.contains("is view"));
+    }
+
+    #[test]
+    fn parses_subset_where_contains() {
+        let src = r#"
+@version("0.2.0")
+subset Uri of Str where { .contains("://") }
+class Item {
+    has Uri $.url;
+}
+"#;
+        let program = parse(src).expect("parse");
+        assert_eq!(program.subsets.len(), 1);
+        assert_eq!(
+            program.subsets[0].predicate,
+            Some(SubsetPredicate::Contains("://".into()))
+        );
+        program.validate().expect("validate");
+    }
+
+    #[test]
+    fn rejects_unsupported_subset_predicate() {
+        let src = r#"
+subset Uri of Str where { .len > 0 }
+"#;
+        let err = parse(src).unwrap_err();
+        assert!(err.message.contains("unsupported"));
+    }
+
+    #[test]
+    fn validate_rejects_bad_subset_literal() {
+        let src = r#"
+@version("0.2.0")
+subset Uri of Str where { .contains("://") }
+class Product {
+    has Uri $.url;
+}
+class Page is component {
+    method render() {
+        ui::page(ui::heading(:text("x")))
+    }
+    method bad() {
+        Product.new(:url("notauri"));
+    }
+}
+class App is app {
+    route "/" => Page;
+    method serve() {
+        ui::web(:root(App), :port(18088)) ==> ui::terminal(:port(18023))
+    }
+}
+"#;
+        let program = parse(src).expect("parse");
+        let err = program.validate().unwrap_err();
+        assert!(err.contains("does not satisfy subset `Uri`"), "{err}");
     }
 }

@@ -17,8 +17,9 @@ Engine strength catalogs that justify Go / CPython / Bun routing are in
 [ADR-004](ADR-004-runtime-strengths.md).
 
 Surface syntax is Raku-inspired
-([ADR-002](ADR-002-silc-surface-syntax.md)): `.silc` is primary and conforming
-`.raku` files are accepted. `.sil` is not supported.
+([ADR-002](ADR-002-silc-surface-syntax.md)): Silc is an independent intent
+language; `.silc` is the only accepted extension. `.raku` and `.sil` are not
+supported. Pipeline feeds: [ADR-007](ADR-007-pipeline-feeds.md).
 
 The exhaustive 0.2.0 authoring and UI API contract (language constructs,
 executable operations, and the 38-primitive dual-surface catalog) lives in
@@ -215,7 +216,7 @@ other programs emit inspectable stubs.
 
 | Concept | Meaning |
 | --- | --- |
-| Entry file | A `.silc` or conforming `.raku` program |
+| Entry file | A `.silc` program |
 | Workdir | Directory that contains the entry file |
 | `.runtime/` | Generated output under the workdir only |
 
@@ -275,6 +276,8 @@ splitting does not.
 - Deepen OpenTUI terminal fidelity (dialogs, dense tables, chat polish) while preserving surface parity
 - Add typed field views atop the implemented mmap/UDS ABI
 - Add program-level crash recovery and deployment bundles
+- Native `.silc` editor grammar (tree-sitter / TextMate) so highlighting does not
+  depend on temporary Raku TextMate association for `*.silc`
 
 See [`examples/README.md`](../examples/README.md) for standalone example apps
 (`chatApp`, `inventoryApp`). Stub routing fixtures used by compiler tests live

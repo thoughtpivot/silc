@@ -2,22 +2,25 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-25
+- **Updated:** 2026-07-26
 
 ## Context
 
 Silc is an AI-native language: models emit it and humans supervise it. The
 surface needs semantic density, predictable parsing, and useful editor support.
 Raku provides mature declaration forms—subsets, traits, signatures, adverbials,
-and feed operators—without requiring Silc to implement the Raku language.
+and feed operators—that Silc borrows as **surface vocabulary** without
+implementing the Raku language or Rakudo runtime.
 
 ## Decision
 
-Silc is its own language with a **Raku-inspired authoring surface**.
+**Silc is an independent intent language with a Raku-inspired surface.**
 
-- `.silc` is the primary extension.
-- `.raku` is accepted when the program conforms to Silc's supported grammar.
-- `.sil` is not supported.
+- `.silc` is the only accepted source extension.
+- `.raku` and `.sil` are not supported (rename to `.silc`).
 - `silc` defines semantics; Rakudo is not a Silc runtime.
+- Silc is **not** a Raku subset, dialect, or roast-compatible profile. Shared
+  glyphs do not imply shared meaning.
 
 ### Surface mapping
 
@@ -29,7 +32,7 @@ Silc is its own language with a **Raku-inspired authoring surface**.
 | `class … is resource` | Resource (query / mutation) |
 | `class … is app` | App (routes + serve) |
 | traits, units, colon-pair adverbials | Constraint |
-| `==>` feeds | Pipeline |
+| `==>` feeds | Pipeline (see [ADR-007](ADR-007-pipeline-feeds.md)) |
 | `ui::…` / author components in `render()` | UiTemplate / UiNode |
 | inferred Go / Python / Bun assignment | Target |
 
@@ -38,17 +41,46 @@ Silc is its own language with a **Raku-inspired authoring surface**.
 `@domain` is not part of the grammar. Routing derives from module kinds, hard
 constraints, and operation namespaces.
 
-## Selected Raku ideas
+## Selected Raku ideas (retained)
 
-- `subset` + `where` for semantic types
+Silc keeps these compact, model-friendly forms:
+
+- `subset` + closed `where` predicates for semantic types
 - `class` + `has` for schemas
 - `is` traits for module kinds and constraints
 - `method` signatures with unit literals
 - colon-pair options such as `:batch(64)` and `:prefer<CUDA>`
-- `==>` for dataflow
+- `$name` / `$.field` sigils where they distinguish bindings
+- `==>` for dataflow (Silc Pipeline IR — not Rakudo call-threading)
+- `when` / `for` in UI templates
+- namespace-qualified operations (`ns::op`)
 
-Silc does not adopt full Raku OO, junctions, hyperoperators, topicalizers,
-runtime `EVAL`, or multiple synonymous forms for the same intent.
+## Non-goals (do not inherit from Raku)
+
+- Full Raku OO (roles, mixins, inheritance as OO, BUILD, …)
+- Junctions, hyperoperators, topicalizers
+- Custom operators and slangs
+- Runtime metaprogramming / `EVAL`
+- Multiple synonymous forms for the same intent
+- Multiple dispatch
+- Dynamic mixins
+- Roast / Rakudo compatibility
+
+## Subset `where` predicates (v1)
+
+`subset Name of Base where { … }` uses a **closed** predicate language. Unsupported
+bodies are compile errors.
+
+v1 (base must resolve to `Str`):
+
+| Predicate | Meaning |
+| --- | --- |
+| `.contains("lit")` | value contains the literal |
+| `.starts-with("lit")` | value starts with the literal |
+| `.ends-with("lit")` | value ends with the literal |
+
+Predicates are enforced at compile time for known string literals and at
+resource/API ingress for subset-typed `Str` fields.
 
 ## Component / resource / app surface (0.2.0)
 
@@ -121,9 +153,13 @@ The exhaustive agent-facing contract (types, ops, 38-primitive UI catalog) lives
 in [`crates/silc/templates/AGENTS.md`](../crates/silc/templates/AGENTS.md) and is
 mirrored in the root [README](../README.md).
 
+Pipeline feed semantics: [ADR-007](ADR-007-pipeline-feeds.md).
+
 ## Consequences
 
-- Raku highlighters provide a useful editing baseline.
+- Temporary editor association may map `*.silc` to a Raku highlighter for
+  baseline coloring; that is ergonomics only, not language compatibility.
+  A native `.silc` grammar is the intended long-term tooling path.
 - The lexer/parser stay deliberately smaller than Rakudo.
-- A syntactically valid Raku program can still be outside the Silc grammar.
+- A syntactically valid Raku program is almost always outside the Silc grammar.
 - Diagnostics must say when a Raku-looking construct is unsupported.

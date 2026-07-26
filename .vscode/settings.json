@@ -1,6 +1,8 @@
 {
+  // Temporary: *.silc → Raku TextMate for highlighting only.
+  // Native Silc grammar is tracked in docs/ARCHITECTURE.md (future work).
+  // Silc accepts .silc only — do not associate *.raku.
   "files.associations": {
-    "*.silc": "raku",
-    "*.raku": "raku"
+    "*.silc": "raku"
   }
 }
