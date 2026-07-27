@@ -31,49 +31,81 @@ const HOST = new Set<Function>([
 
 type EffectFn = () => void | (() => void);
 type EffectRecord = { deps?: unknown[]; cleanup?: () => void };
-type PendingEffect = { index: number; deps?: unknown[]; fn: EffectFn };
-type HookState = {
+type HookFrame = {
   states: any[];
   index: number;
   effectIndex: number;
-  effects: PendingEffect[];
   effectRecords: EffectRecord[];
 };
+type PendingEffect = { frame: HookFrame; index: number; deps?: unknown[]; fn: EffectFn };
 
-let activeHooks: HookState | null = null;
+let activeHooks: HookFrame | null = null;
 let scheduled: (() => void) | null = null;
 
+// Hook state is scoped per component instance. One shared array would let a
+// route swap read another component's slots by position, so `AdminPage` could
+// read `HomePage`'s array state into a text input.
+const ROOT_FRAME_KEY = "__silc_root__";
+const frames = new Map<string, HookFrame>();
+const componentIds = new WeakMap<Function, number>();
+let nextComponentId = 0;
+let frameCounts: Map<Function, number> | null = null;
+let visitedFrames: Set<string> | null = null;
+let pendingEffects: PendingEffect[] = [];
+
+function componentId(type: Function): number {
+  let id = componentIds.get(type);
+  if (id === undefined) {
+    id = nextComponentId++;
+    componentIds.set(type, id);
+  }
+  return id;
+}
+
+/** Reuse (or create) the frame for `key` and reset its per-draw cursors. */
+function enterFrame(key: string): HookFrame {
+  let frame = frames.get(key);
+  if (!frame) {
+    frame = { states: [], index: 0, effectIndex: 0, effectRecords: [] };
+    frames.set(key, frame);
+  }
+  frame.index = 0;
+  frame.effectIndex = 0;
+  visitedFrames?.add(key);
+  return frame;
+}
+
 export function useState<T>(initial: T): [T, (value: T | ((prev: T) => T)) => void] {
-  const hooks = activeHooks!;
-  const i = hooks.index++;
-  if (hooks.states.length <= i) hooks.states.push(initial);
+  const frame = activeHooks!;
+  const i = frame.index++;
+  if (frame.states.length <= i) frame.states.push(initial);
   const set = (value: T | ((prev: T) => T)) => {
-    const next = typeof value === "function" ? (value as (prev: T) => T)(hooks.states[i]) : value;
-    if (Object.is(hooks.states[i], next)) return;
-    hooks.states[i] = next;
+    const next = typeof value === "function" ? (value as (prev: T) => T)(frame.states[i]) : value;
+    if (Object.is(frame.states[i], next)) return;
+    frame.states[i] = next;
     scheduled?.();
   };
-  return [hooks.states[i] as T, set];
+  return [frame.states[i] as T, set];
 }
 
 export function useEffect(fn: EffectFn, deps?: unknown[]) {
-  const hooks = activeHooks!;
-  const index = hooks.effectIndex++;
-  const previous = hooks.effectRecords[index];
+  const frame = activeHooks!;
+  const index = frame.effectIndex++;
+  const previous = frame.effectRecords[index];
   const changed =
     deps === undefined ||
     previous === undefined ||
     previous.deps === undefined ||
     deps.length !== previous.deps.length ||
     deps.some((value, i) => !Object.is(value, previous.deps![i]));
-  if (changed) hooks.effects.push({ index, deps, fn });
+  if (changed) pendingEffects.push({ frame, index, deps, fn });
 }
 
 export function useRef<T>(initial: T): { current: T } {
-  const hooks = activeHooks!;
-  const i = hooks.index++;
-  if (hooks.states.length <= i) hooks.states.push({ current: initial });
-  return hooks.states[i] as { current: T };
+  const frame = activeHooks!;
+  const i = frame.index++;
+  if (frame.states.length <= i) frame.states.push({ current: initial });
+  return frame.states[i] as { current: T };
 }
 
 function flatten(children: any[]): VChild[] {
@@ -102,9 +134,32 @@ export function h(type: any, props: any = null, ...children: any[]): any {
   const kids = flatten(children.length ? children : fromProps);
   if (typeof type === "function" && !HOST.has(type)) {
     const { children: _ignored, ...rest } = p;
-    return type(rest, ...kids);
+    return renderComponent(type, rest, kids);
   }
   return coreH(type, p, ...kids);
+}
+
+/**
+ * Invoke a function component against its own hook frame, keyed by function
+ * identity plus how many times it has appeared in this draw.
+ */
+function renderComponent(type: Function, props: any, kids: any[]): any {
+  let key: string;
+  if (frameCounts) {
+    const seen = frameCounts.get(type) ?? 0;
+    frameCounts.set(type, seen + 1);
+    key = `${componentId(type)}#${seen}`;
+  } else {
+    key = `${componentId(type)}#0`;
+  }
+  const frame = enterFrame(key);
+  const parent = activeHooks;
+  activeHooks = frame;
+  try {
+    return (type as (props: any, ...kids: any[]) => any)(props, ...kids);
+  } finally {
+    activeHooks = parent;
+  }
 }
 
 export function Fragment(_props: Record<string, unknown>, ...children: VChild[]): VNode {
@@ -130,34 +185,45 @@ function installFetchOriginProxy() {
 
 async function mount(renderer: CliRenderer, App: AppFn) {
   installFetchOriginProxy();
-  const hooks: HookState = {
-    states: [],
-    index: 0,
-    effectIndex: 0,
-    effects: [],
-    effectRecords: [],
-  };
   let drawQueued = false;
 
   const draw = () => {
     while (renderer.root.getChildrenCount() > 0) {
       renderer.root.remove(renderer.root.getChildren()[0]!);
     }
-    activeHooks = hooks;
-    hooks.index = 0;
-    hooks.effectIndex = 0;
-    hooks.effects = [];
+    frameCounts = new Map();
+    visitedFrames = new Set();
+    pendingEffects = [];
+    activeHooks = enterFrame(ROOT_FRAME_KEY);
     const tree = App();
     activeHooks = null;
+    const drawn = visitedFrames;
+    frameCounts = null;
+    visitedFrames = null;
     if (tree) renderer.root.add(tree as any);
-    for (const effect of hooks.effects) {
+    // Components that left the tree are unmounted: drop their state and run
+    // their cleanups so stale fetches and listeners do not linger.
+    for (const [key, frame] of [...frames]) {
+      if (drawn.has(key)) continue;
+      for (const record of frame.effectRecords) {
+        try {
+          record?.cleanup?.();
+        } catch {
+          /* ignore stale cleanup failures */
+        }
+      }
+      frames.delete(key);
+    }
+    const effects = pendingEffects;
+    pendingEffects = [];
+    for (const effect of effects) {
       try {
-        hooks.effectRecords[effect.index]?.cleanup?.();
+        effect.frame.effectRecords[effect.index]?.cleanup?.();
       } catch {
         /* ignore stale cleanup failures */
       }
       const cleanup = effect.fn();
-      hooks.effectRecords[effect.index] = {
+      effect.frame.effectRecords[effect.index] = {
         deps: effect.deps,
         cleanup: typeof cleanup === "function" ? cleanup : undefined,
       };

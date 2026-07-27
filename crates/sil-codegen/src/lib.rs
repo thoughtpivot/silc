@@ -1802,6 +1802,29 @@ service FeedbackApi {
             app.contains("function __truthy"),
             "web app must define the shared __truthy helper"
         );
+        let runtime =
+            fs::read_to_string(output.join("typescript/src/components/terminal/runtime.ts"))
+                .unwrap();
+        assert!(
+            runtime.contains("function renderComponent") && runtime.contains("function enterFrame"),
+            "terminal hooks must be scoped per component instance; a shared state array \
+             lets a route swap read another component's slots"
+        );
+        let terminal = fs::read_to_string(output.join("typescript/src/TerminalApp.tsx")).unwrap();
+        for (surface, source) in [("web", &app), ("terminal", &terminal)] {
+            let lines: Vec<&str> = source.lines().map(str::trim).collect();
+            // A fragment-wrapped `null` is JSX *text*: React prints it and OpenTUI
+            // throws "mount() received an invalid vnode".
+            assert!(
+                !lines.windows(2).any(|w| w[0] == "<>" && w[1] == "null"),
+                "{surface} surface must lower an absent `else` to the JS value `null`, \
+                 never a fragment-wrapped text child"
+            );
+            assert!(
+                lines.iter().any(|line| *line == "null"),
+                "{surface} surface must keep a bare `null` else branch"
+            );
+        }
         assert!(app.contains("HistoryPanel") || app.contains("Chat History"));
         assert!(app.contains("items={messages}"));
         assert!(app.contains("/complete") || app.contains("on_send"));

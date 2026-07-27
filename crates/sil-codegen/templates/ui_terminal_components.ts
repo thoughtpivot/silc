@@ -13,6 +13,12 @@ import {
 
 type Tone = "default" | "muted" | "info" | "success" | "warning" | "danger";
 
+/** Text renderables reject non-strings, so coerce whatever a contract field holds. */
+function asText(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  return typeof value === "string" ? value : String(value);
+}
+
 function toneColor(tone?: Tone): string {
   switch (tone) {
     case "danger":
@@ -194,7 +200,8 @@ export function InputField(props: {
     });
   }
   return h(Input, {
-    value: props.value ?? "",
+    // OpenTUI throws on a non-string value, which tears down the whole surface.
+    value: asText(props.value),
     placeholder: props.placeholder ?? "",
     width: "100%",
     focused: false,
@@ -212,7 +219,7 @@ export function TextareaField(props: {
     return h(Text, { content: props.value || "", fg: "#64748b" });
   }
   return h(Input, {
-    value: props.value ?? "",
+    value: asText(props.value),
     width: "100%",
     onInput: (value: string) => props.onChange?.(value),
     onChange: (value: string) => props.onChange?.(value),
@@ -511,7 +518,7 @@ export function ChatComposer(props: {
     Box,
     { flexDirection: "column", gap: 1, width: "100%" },
     h(Input, {
-      value: props.value ?? "",
+      value: asText(props.value),
       placeholder: props.placeholder ?? "Message…",
       width: "100%",
       onInput: (value: string) => props.onChange?.(value),

@@ -535,14 +535,20 @@ fn render_template(template: &UiTemplate, indent: usize) -> String {
             else_body,
         } => {
             let then = render_template(body, indent + 2);
-            let else_ = else_body
-                .as_ref()
-                .map(|b| render_template(b, indent + 2))
-                .unwrap_or_else(|| format!("{pad}  null"));
             // Wrap branches in fragments so nested `{…}` when/for expressions remain
-            // valid JSX children inside the ternary.
+            // valid JSX children inside the ternary. An absent else stays the bare
+            // JS value `null`; inside a fragment it would become the text "null",
+            // which React prints and OpenTUI rejects as an invalid vnode.
+            let else_ = match else_body {
+                Some(b) => format!(
+                    "{pad}  <>\n{body}\n{pad}  </>",
+                    pad = pad,
+                    body = render_template(b, indent + 2)
+                ),
+                None => format!("{pad}  null"),
+            };
             format!(
-                "{pad}{{({cond}) ? (\n{pad}  <>\n{then}\n{pad}  </>\n{pad}) : (\n{pad}  <>\n{else_}\n{pad}  </>\n{pad})}}",
+                "{pad}{{({cond}) ? (\n{pad}  <>\n{then}\n{pad}  </>\n{pad}) : (\n{else_}\n{pad})}}",
                 pad = pad,
                 cond = when_condition_js(condition),
                 then = then,
