@@ -443,8 +443,12 @@ pub fn run_api(output: &EmitResult, _lock: &RuntimeLock) -> Result<(), String> {
     Ok(())
 }
 
-pub fn run_app(output: &EmitResult, lock: &RuntimeLock) -> Result<(), String> {
-    run_graph(output, lock, None)
+pub fn run_app(
+    output: &EmitResult,
+    lock: &RuntimeLock,
+    attach_terminal: bool,
+) -> Result<(), String> {
+    run_graph(output, lock, None, attach_terminal)
 }
 
 pub fn run_pipeline(
@@ -454,13 +458,15 @@ pub fn run_pipeline(
 ) -> Result<(), String> {
     serde_json::from_str::<serde_json::Value>(input_json)
         .map_err(|error| format!("invalid pipeline input JSON: {error}"))?;
-    run_graph(output, lock, Some(input_json))
+    // Pipeline-only programs have no UI surfaces.
+    run_graph(output, lock, Some(input_json), false)
 }
 
 fn run_graph(
     output: &EmitResult,
     lock: &RuntimeLock,
     pipeline_input: Option<&str>,
+    attach_terminal: bool,
 ) -> Result<(), String> {
     let graph = output
         .graph
@@ -473,8 +479,10 @@ fn run_graph(
         // Fail before spawning any workers. Previously Bun could report READY over
         // UDS and then fail its HTTP bind, leaving the supervisor claiming success.
         ensure_http_port_available(graph.http_port)?;
-        if let Some(port) = graph.terminal_port {
-            ensure_terminal_port_available(port)?;
+        if attach_terminal {
+            if let Some(port) = graph.terminal_port {
+                ensure_terminal_port_available(port)?;
+            }
         }
         if let Some(port) = graph.api_port() {
             ensure_api_port_available(port)?;
@@ -629,7 +637,12 @@ fn run_graph(
         .env("SILC_HTTP_ROUTE", &graph.http_route)
         .env(
             "SILC_TERMINAL_PORT",
-            graph.terminal_port.unwrap_or_default().to_string(),
+            // 0 disables the Bun telnet CLI (see app_worker startTerminal).
+            if attach_terminal {
+                graph.terminal_port.unwrap_or_default().to_string()
+            } else {
+                "0".into()
+            },
         )
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
@@ -699,21 +712,16 @@ fn run_graph(
             graph.http_port, graph.http_route
         );
     }
-    if let Some(port) = graph.terminal_port {
-        // Primary local surface: OpenTUI when a TTY is available (or forced).
+    if graph.terminal_port.is_some() && !attach_terminal {
+        println!("silc: ui::terminal skipped (pass --terminal to attach OpenTUI)");
+    } else if let Some(port) = graph.terminal_port {
+        // Opt-in local surface: OpenTUI when a TTY is available.
         // TCP telnet CLI remains a remote/headless fallback only.
         let terminal_main = output.root.join("typescript/terminal_main.ts");
-        let force_opentui = matches!(
-            std::env::var("SILC_FORCE_OPENTUI").as_deref(),
-            Ok("1") | Ok("true") | Ok("yes")
-        ) || matches!(
-            std::env::var("SILC_TERMINAL_MODE").as_deref(),
-            Ok("opentui") | Ok("force")
-        );
         let has_tty = std::io::IsTerminal::is_terminal(&std::io::stdin())
             || std::io::IsTerminal::is_terminal(&std::io::stdout());
         let mut opentui_attached = false;
-        if terminal_main.is_file() && (has_tty || force_opentui) {
+        if terminal_main.is_file() && has_tty {
             // Classic JSX so TerminalApp lowers to OpenTUI `h`, not React.
             let opentui = Command::new(&lock.bun_bin)
                 .arg("--jsx-runtime=classic")
@@ -749,7 +757,7 @@ fn run_graph(
             );
         } else {
             eprintln!(
-                "silc: OpenTUI skipped (no TTY). Set SILC_FORCE_OPENTUI=1 or run from a real terminal."
+                "silc: OpenTUI skipped (no TTY). Run `silc <program.silc> --terminal` from a real terminal."
             );
         }
         if !opentui_attached {

@@ -171,6 +171,7 @@ fn inventory_app_resources_web_and_terminal_e2e() {
     let log = std::fs::File::create(&log_path).unwrap();
     let mut child = Command::new(silc_bin())
         .arg(example.to_str().unwrap())
+        .arg("--terminal")
         .env("SILC_HTTP_PORT", "18096")
         .env("SILC_TERMINAL_PORT", "18097")
         .stdout(Stdio::from(log.try_clone().unwrap()))

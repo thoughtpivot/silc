@@ -30,10 +30,11 @@ SilcLM and the scraped page content as grounded context.
 ```bash
 silc build main.silc
 silc main.silc
+silc main.silc --terminal
 ```
 
 - Web: `http://127.0.0.1:18110/`
-- Terminal: OpenTUI locally, or `telnet 127.0.0.1 18111`
+- Terminal (with `--terminal`): OpenTUI locally, or `telnet 127.0.0.1 18111`
 - API: `http://127.0.0.1:18110/api/scraped_pages`
 
 Authors never name Bun, Colly, or Playwright — see

@@ -182,6 +182,7 @@ fn chat_assistant_real_completion_e2e() {
     let log = std::fs::File::create(&log_path).unwrap();
     let mut child = Command::new(silc_bin())
         .arg(example.to_str().unwrap())
+        .arg("--terminal")
         .env("SILC_HTTP_PORT", "18090")
         .env("SILC_TERMINAL_PORT", "18091")
         .stdout(Stdio::from(log.try_clone().unwrap()))

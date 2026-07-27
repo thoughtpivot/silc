@@ -36,7 +36,8 @@ application code.
 silc init myapp
 cd myapp
 silc build main.silc          # compile + validate
-silc main.silc                # build and run when mode is runnable
+silc main.silc                # web by default
+silc main.silc --terminal     # also attach OpenTUI (+ telnet fallback)
 ```
 
 Treat compiler diagnostics as authoritative. Prefer `silc build` after each
@@ -95,7 +96,9 @@ Every UI `app` synthesizes both surfaces automatically (web + terminal).
 Authors declare routes only — never `method serve()`, `ui::web`, or `ui::terminal`.
 No component may be web-only or terminal-only. Never write HTML, CSS, React,
 Tailwind, OpenTUI, ShadCN trees, or bundler config in Silc source.
-Override ports at runtime with `SILC_HTTP_PORT` / `SILC_TERMINAL_PORT` if needed.
+`silc main.silc` serves web only; pass `--terminal` (or `SILC_TERMINAL=1`) to
+attach OpenTUI and the telnet CLI. Override ports with `SILC_HTTP_PORT` /
+`SILC_TERMINAL_PORT` when the terminal surface is attached.
 
 ### Shared prop vocabulary
 
@@ -380,13 +383,14 @@ Compiler-owned (do not invent alternatives):
 - `POST /scrape` — explicit scrape ingest when `scrape::*` is present
 - `POST /complete` — chat / `*.complete()` processors
 - `GET|POST|PUT|DELETE /api/{table}` — resource queries/mutations
-- Web: React app served by Bun
-- Terminal: OpenTUI app (local TTY); TCP telnet CLI on the terminal port as remote fallback
+- Web: React app served by Bun (`silc main.silc`)
+- Terminal: OpenTUI + telnet CLI when run with `--terminal` / `SILC_TERMINAL=1`
 
 ## Validation constraints agents must respect
 
 1. UI apps require an `app` declaration with non-empty `route`s; dual-surface
-   web/terminal serving is synthesized (default ports 18088 / 18023).
+   web/terminal serving is synthesized (default ports 18088 / 18023). Runtime
+   attaches the terminal surface only with `--terminal` (or `SILC_TERMINAL=1`).
 2. Every builtin UI node must use catalog props/events; unknown props/events fail.
 3. Closed enums (`:variant`, `:tone`, `:size`) reject unknown tokens.
 4. Resource `query` bindings must reference real resource query methods.

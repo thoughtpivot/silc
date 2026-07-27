@@ -394,11 +394,12 @@ cargo install --path crates/silc --force
 silc init myapp
 cd myapp
 silc build main.silc   # validate + codegen
-silc main.silc         # run (OpenTUI attaches in a real TTY)
+silc main.silc              # run web by default
+silc main.silc --terminal   # also attach OpenTUI (+ telnet)
 
 # web:      http://127.0.0.1:18088  (override SILC_HTTP_PORT)
-# terminal: OpenTUI on the local TTY (primary)
-# fallback: telnet 127.0.0.1 18023  (SILC_TERMINAL_PORT)
+# terminal: silc main.silc --terminal  (or SILC_TERMINAL=1)
+# fallback: telnet 127.0.0.1 18023 when --terminal is set
 ```
 
 `silc init` writes `main.silc`, `AGENTS.md`, `.gitignore`, and a runtime lock,

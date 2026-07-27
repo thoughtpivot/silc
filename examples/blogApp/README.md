@@ -24,9 +24,10 @@ Seeds insert with `INSERT OR IGNORE` using stable ids so admin edits survive res
 
 ```bash
 silc build main.silc
-SILC_HTTP_PORT=18120 SILC_TERMINAL_PORT=18121 silc main.silc
+SILC_HTTP_PORT=18120 silc main.silc
+SILC_HTTP_PORT=18120 SILC_TERMINAL_PORT=18121 silc main.silc --terminal
 ```
 
 - Web: `http://127.0.0.1:18120/`
-- Terminal: OpenTUI locally, or `telnet 127.0.0.1 18121`
+- Terminal (with `--terminal`): OpenTUI locally, or `telnet 127.0.0.1 18121`
 - API: `http://127.0.0.1:18120/api/articles`

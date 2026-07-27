@@ -25,10 +25,11 @@ Persisted in SQLite table `inventory_items` through the
 ```bash
 silc build main.silc
 silc main.silc
+silc main.silc --terminal
 ```
 
 - Web: `http://127.0.0.1:18096/`
-- Terminal: `telnet 127.0.0.1 18097`
+- Terminal (with `--terminal`): OpenTUI locally, or `telnet 127.0.0.1 18097`
 - API: `http://127.0.0.1:18096/api/inventory_items`
 
 The assistant receives a bounded JSON snapshot of the current inventory as

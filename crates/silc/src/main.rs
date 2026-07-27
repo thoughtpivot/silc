@@ -15,7 +15,7 @@ fn main() {
     match args.next().as_deref() {
         None => {
             println!("silc {}", env!("CARGO_PKG_VERSION"));
-            println!("usage: silc <program.silc>");
+            println!("usage: silc <program.silc> [--terminal]");
             println!("       silc build <program.silc>");
             println!("       silc run <program.silc> --input-json '<json>'");
             println!("       silc run <program.silc> --input <file.json>");
@@ -105,12 +105,59 @@ fn main() {
             }
         }
         Some(path) => {
-            if let Err(err) = compile_and_maybe_run(Path::new(path)) {
-                eprintln!("silc: {err}");
-                process::exit(1);
+            let rest: Vec<String> = args.collect();
+            match parse_direct_run_args(path, &rest, env_truthy("SILC_TERMINAL")) {
+                Ok(opts) => {
+                    if let Err(err) = compile_and_maybe_run(&opts.path, opts.attach_terminal) {
+                        eprintln!("silc: {err}");
+                        process::exit(1);
+                    }
+                }
+                Err(err) => {
+                    eprintln!("silc: {err}");
+                    process::exit(1);
+                }
             }
         }
     }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct DirectRunArgs {
+    path: PathBuf,
+    attach_terminal: bool,
+}
+
+/// Parse `silc <program.silc> [--terminal]`. `env_terminal` mirrors `SILC_TERMINAL`.
+fn parse_direct_run_args(
+    path: &str,
+    rest: &[String],
+    env_terminal: bool,
+) -> Result<DirectRunArgs, String> {
+    let mut attach_terminal = env_terminal;
+    for flag in rest {
+        match flag.as_str() {
+            "--terminal" => attach_terminal = true,
+            other if other.starts_with('-') => {
+                return Err(format!(
+                    "unknown option `{other}` (usage: silc <program.silc> [--terminal])"
+                ));
+            }
+            other => {
+                return Err(format!(
+                    "unexpected argument `{other}` (usage: silc <program.silc> [--terminal])"
+                ));
+            }
+        }
+    }
+    Ok(DirectRunArgs {
+        path: PathBuf::from(path),
+        attach_terminal,
+    })
+}
+
+fn env_truthy(name: &str) -> bool {
+    matches!(env::var(name).as_deref(), Ok("1") | Ok("true") | Ok("yes"))
 }
 
 fn compile_and_run_pipeline(entry: &Path, input_json: &str) -> Result<(), String> {
@@ -150,7 +197,7 @@ fn build_only(entry: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn compile_and_maybe_run(entry: &Path) -> Result<(), String> {
+fn compile_and_maybe_run(entry: &Path, attach_terminal: bool) -> Result<(), String> {
     let (_workdir, output, lock) = compile_common(entry)?;
     println!("silc {}", env!("CARGO_PKG_VERSION"));
     println!("entry:    {}", entry.display());
@@ -180,7 +227,7 @@ fn compile_and_maybe_run(entry: &Path) -> Result<(), String> {
                         .into(),
                 )
             } else {
-                supervisor::run_app(&output, &lock)
+                supervisor::run_app(&output, &lock, attach_terminal)
             }
         }
     }
@@ -277,4 +324,49 @@ fn compile_common(
     }
 
     Ok((workdir, output, lock))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn direct_run_defaults_to_web_only() {
+        let opts = parse_direct_run_args("main.silc", &[], false).unwrap();
+        assert_eq!(opts.path, PathBuf::from("main.silc"));
+        assert!(!opts.attach_terminal);
+    }
+
+    #[test]
+    fn direct_run_terminal_flag_attaches() {
+        let opts =
+            parse_direct_run_args("main.silc", &[String::from("--terminal")], false).unwrap();
+        assert!(opts.attach_terminal);
+    }
+
+    #[test]
+    fn direct_run_env_terminal_attaches() {
+        let opts = parse_direct_run_args("main.silc", &[], true).unwrap();
+        assert!(opts.attach_terminal);
+    }
+
+    #[test]
+    fn direct_run_flag_or_env_attaches() {
+        let opts = parse_direct_run_args("app.silc", &[String::from("--terminal")], true).unwrap();
+        assert!(opts.attach_terminal);
+    }
+
+    #[test]
+    fn direct_run_rejects_unknown_flag() {
+        let err =
+            parse_direct_run_args("main.silc", &[String::from("--force")], false).unwrap_err();
+        assert!(err.contains("unknown option `--force`"));
+    }
+
+    #[test]
+    fn direct_run_rejects_extra_positional() {
+        let err =
+            parse_direct_run_args("main.silc", &[String::from("extra.silc")], false).unwrap_err();
+        assert!(err.contains("unexpected argument `extra.silc`"));
+    }
 }

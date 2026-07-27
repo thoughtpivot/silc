@@ -63,6 +63,7 @@ pub fn run(path: Option<&str>) -> Result<(), String> {
     );
     println!();
     println!("next: silc main.silc");
+    println!("      silc main.silc --terminal   # optional OpenTUI");
     Ok(())
 }
 

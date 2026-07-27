@@ -58,5 +58,6 @@ cargo install --path crates/silc --force   # once, from the compiler repo
 
 cd examples/chatApp
 silc build main.silc
-silc main.silc   # OpenTUI attaches in a real TTY; web at the app port
+silc main.silc              # web by default
+silc main.silc --terminal   # also attach OpenTUI (+ telnet fallback)
 ```
