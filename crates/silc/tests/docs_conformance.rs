@@ -1,8 +1,11 @@
 //! Documentation conformance: catalog lines, executable ops, and AGENTS sync.
 //!
 //! Sources of truth remain `UI_COMPONENT_CATALOG` and `EXECUTABLE_OPS` in sil-core.
-//! The AGENTS template and root README must list every entry; tracked example
-//! AGENTS.md files must embed the template common block byte-for-byte.
+//! The AGENTS template must list every catalog entry and executable op. The root
+//! README is a high-level white paper: it must list executable ops, state
+//! dual-surface synthesis, and point agents at AGENTS.md for the full catalog.
+//! Tracked example AGENTS.md files must embed the template common block
+//! byte-for-byte.
 
 use std::fs;
 use std::path::PathBuf;
@@ -34,7 +37,7 @@ fn template_common_block(template: &str) -> &str {
 }
 
 #[test]
-fn ui_catalog_lines_present_in_template_and_readme() {
+fn ui_catalog_lines_present_in_agents_template() {
     let template = read_workspace("crates/silc/templates/AGENTS.md");
     let readme = read_workspace("README.md");
 
@@ -52,15 +55,21 @@ fn ui_catalog_lines_present_in_template_and_readme() {
             spec.name
         );
         assert!(
-            readme.contains(&line),
-            "README missing catalog line for ui::{}:\n{line}",
-            spec.name
-        );
-        assert!(
             line.contains("surfaces: web+terminal"),
             "catalog line must declare dual-surface: {line}"
         );
     }
+
+    // White-paper README points agents at the full catalog rather than
+    // mirroring all 38 prop/event lines.
+    assert!(
+        readme.contains("crates/silc/templates/AGENTS.md"),
+        "README must link the AGENTS template for the full UI catalog"
+    );
+    assert!(
+        readme.contains("UI catalog") || readme.contains("UI primitive"),
+        "README must mention the UI catalog / primitives"
+    );
 }
 
 #[test]
@@ -83,39 +92,41 @@ fn closed_enums_and_dual_surface_invariant_documented() {
     let template = read_workspace("crates/silc/templates/AGENTS.md");
     let readme = read_workspace("README.md");
 
-    for doc in [&template, &readme] {
-        assert!(
-            doc.contains("primary")
-                && doc.contains("secondary")
-                && doc.contains("destructive")
-                && doc.contains("ghost"),
-            "docs must list closed :variant values"
-        );
-        assert!(
-            doc.contains("default")
-                && doc.contains("muted")
-                && doc.contains("info")
-                && doc.contains("success")
-                && doc.contains("warning")
-                && doc.contains("danger"),
-            "docs must list closed :tone values"
-        );
-        assert!(
-            doc.contains("`sm`") && doc.contains("`md`") && doc.contains("`lg`"),
-            "docs must list closed :size values"
-        );
+    // Full closed-enum tables live in AGENTS.md (canonical agent contract).
+    assert!(
+        template.contains("primary")
+            && template.contains("secondary")
+            && template.contains("destructive")
+            && template.contains("ghost"),
+        "AGENTS must list closed :variant values"
+    );
+    assert!(
+        template.contains("default")
+            && template.contains("muted")
+            && template.contains("info")
+            && template.contains("success")
+            && template.contains("warning")
+            && template.contains("danger"),
+        "AGENTS must list closed :tone values"
+    );
+    assert!(
+        template.contains("`sm`") && template.contains("`md`") && template.contains("`lg`"),
+        "AGENTS must list closed :size values"
+    );
+
+    for (label, doc) in [("AGENTS", &template), ("README", &readme)] {
         assert!(
             doc.contains("ui::web") && doc.contains("ui::terminal"),
-            "docs must mention both surfaces"
+            "{label} must mention both surfaces"
         );
         assert!(
             doc.contains("synthesiz") && doc.contains("both"),
-            "docs must state dual-surface serving is synthesized for both surfaces"
+            "{label} must state dual-surface serving is synthesized for both surfaces"
         );
         assert!(
             !doc.contains("declare both surfaces in `serve()`")
                 && !doc.contains("must declare both `ui::web`"),
-            "docs must not require author-declared serve()/ui surface ops"
+            "{label} must not require author-declared serve()/ui surface ops"
         );
     }
 }
@@ -137,6 +148,7 @@ fn removed_author_ops_not_listed_as_runnable() {
             .find("Compiler-synthesized")
             .or_else(|| section.find("Stub-only"))
             .or_else(|| section.find("### Generated"))
+            .or_else(|| section.find("**Boundaries**"))
             .unwrap_or(section.len().min(1200));
         let author_ops = &section[..end];
 

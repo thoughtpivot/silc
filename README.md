@@ -1,349 +1,316 @@
+<p align="center">
+  <img src="assets/brand/thoughtpivot.svg" alt="ThoughtPivot" width="280" />
+</p>
+
 # Silc — Intent-Native Polyglot Application Compiler
 
-ThoughtPivot’s **Silc** (pronounced *silk*) is an independent intent language
-with a Raku-inspired surface and a local Rust compiler. It is not a Raku
-subset. You write a short `.silc` intent program. The compiler validates it,
-routes each module to the right engine, provisions pinned Bun / CPython / Go
-runtimes, emits workers, and runs the app — without asking an LLM to invent
-React, Python, Go, manifests, or glue.
+**Silc** (pronounced *silk*) is ThoughtPivot’s intent language and local Rust
+compiler for building real software applications with far less accidental
+complexity — and far fewer model tokens — than asking an LLM to invent a full
+stack from scratch.
+
+You write a short `.silc` program that declares *what the application is*:
+typed contracts, UI components, resource capabilities, routes, and domain
+pipelines. The compiler validates that intent, routes each module to the right
+engine, provisions pinned runtimes, synthesizes dual-surface UI and
+persistence, and runs a supervised polyglot runtime.
+
+Silc is **open source** from **[ThoughtPivot](https://github.com/thoughtpivot)**.
 
 ```text
 .silc intent  →  Rust compiler  →  Bun · CPython · Go workers  →  mmap IPC + UDS
 ```
 
----
-
-## Status (0.4.0)
-
-Silc is **pre-1.0**. Release 0.4.0 makes runtime mechanics
-compiler-synthesized: authors declare intent (`app` routes, resource
-capabilities, processors, domain ops); the compiler owns dual-surface UI,
-SQLite persistence, and IPC/store staging ([ADR-009](docs/ADR-009-compiler-synthesized-runtime.md)).
-
-**Shipped today**
-
-- Parse → validate → deterministic Tier 1/2 route → codegen
-- Declaration-based `component` / `resource Name for Contract` / `app` routes
-- Dual-surface UI synthesized from `app` (web + terminal; no author `serve()`)
-- Generic resource CRUD over SQLite; optional `text::score` / `llm::complete`
-- Runnable `scrape::*` and closed MiniLM `tensor::*` pipeline
-  ([ADR-006](docs/ADR-006-scrape-namespace.md),
-  [ADR-010](docs/ADR-010-tensor-minilm-pipeline.md))
-- `service::http` API-only programs
-- Runnable `silc init` scaffold; experimental `silc assist` ([ADR-008](docs/ADR-008-recursive-silclm-assist.md))
-- Compiler-owned Bun 1.2.18, CPython 3.12.12, and Go 1.23.6 under `~/.silc/runtimes/`
-- Semantic release automation (release-plz); SemVer 0.x with Conventional Commits
-
-**Removed in 0.4.0 (author source)**
-
-- `method serve()`, author `ui::web` / `ui::terminal` ops, `sink` modules
-- `ipc::*`, `store::*`, and `resource::*` pipelines
-
-**Removed in 0.2.0**
-
-- `PortalKind` profiles (Feedback / LlmChat / Inventory)
-- `is view` and Contract-left-of-`ui::web` portal binding
-- Seeded inventory catalogs and separate component-source `stdlib/`
-
-**Stub-only today**
-
-- Broader pipeline ops (`http::get`, `html::*`, `numpy::*`, `pandas::*`, …)
-  parse, route, and emit inspectable stubs; they do not execute
+The surface is **Raku-inspired**, not Raku-compatible. Source files are
+`.silc` only. Code examples below use GitHub’s `raku` fence solely so syntax
+highlighting renders well.
 
 ---
 
-## Quick start
+## The problem Silc solves
 
-```bash
-cargo install --path crates/silc --force
+Modern AI coding workflows still spend most of their budget on decisions that
+should be deterministic:
 
-silc init myapp
-cd myapp
-silc build main.silc   # runnable dual-surface app
-silc main.silc         # run it (OpenTUI attaches in a real TTY)
+- Which framework should host the UI?
+- How should web and terminal surfaces stay in sync?
+- Where does SQLite wiring live, and who owns migrations?
+- Which language should score text, call a local LLM, crawl a site, or embed a
+  document?
+- How do those processes exchange payloads without reinventing glue every time?
 
-# web:      http://127.0.0.1:18088  (override SILC_HTTP_PORT)
-# terminal: OpenTUI on the local TTY (primary)
-# fallback: telnet 127.0.0.1 18023  (remote TCP CLI; SILC_TERMINAL_PORT)
-```
+Agents and humans repeatedly invent React trees, Python services, Go stores,
+package manifests, IPC schemes, and deployment scaffolding. That inventiveness
+burns tokens, creates drift between runs, and blurs the line between *product
+intent* and *runtime substrate*.
 
-`silc init` writes `main.silc`, `AGENTS.md`, `.gitignore`, and a runtime lock.
-The scaffold is a small note-form app with an author-defined component and an
-`app` route table; dual-surface web/terminal serving is synthesized.
-
-Experimental authoring help (ADR-008) explores Silc examples via a closed-tool
-recursive loop around **silclm**:
-
-```bash
-silc assist "dual-surface notes app with submit" --out notes.silc
-```
-
-OpenTUI is the **primary** terminal surface when stdin/stdout are a TTY (or
-`SILC_FORCE_OPENTUI=1`). The TCP telnet CLI on the terminal port remains a
-remote fallback for non-TTY sessions.
+**Silc’s thesis:** authors and agents should declare intent; the compiler should
+own substrate. Deterministic routing, closed operation registries, and
+compiler-synthesized mechanics shrink the generation surface. Models spend
+tokens on domain meaning — forms, inventory, scrapers, assistants — while Silc
+handles the rest.
 
 ---
 
-## How Silc 0.4.0 works
+## Business cases
 
-```text
-Contracts + Components + Resources + App routes
-        │
-        ▼
-   semantic IR (state, events, queries, actions)
-        │
-        ├─► React web adapter
-        ├─► OpenTUI terminal adapter (+ TCP CLI fallback)
-        ├─► Bun action / resource HTTP
-        ├─► Python processor (score / LLM)
-        └─► Go SQLite persistence
-```
+Silc is for teams that want AI-assisted software creation **at application
+scale**, not just snippet scale:
 
-Authors express intent in Silc. The compiler owns substrates (React, Bun,
-CPython, Go, IPC). Agents and humans edit `.silc` only — never `.runtime/`.
-
-| Construct | Purpose |
+| Business need | What Silc provides |
 | --- | --- |
-| Contract | Typed record schema (`contract Note { has Str $.text; }`) |
-| Component | Reusable UI: props, `has state`, slots, `emit`, handlers, `render()` |
-| Resource | `query` / `mutation` data layer → SQLite CRUD HTTP |
-| App | `route "/path" => Page;` — dual-surface serving is synthesized |
-| Module | Optional `service` / `processor` / `task` pipelines |
+| Dual-surface internal tools | One component tree → web (React/Tailwind) + terminal (OpenTUI) |
+| Operational CRUD apps | Contracts + resource capabilities → SQLite HTTP APIs |
+| Local AI assistants | Grounded `ui::chat` over live data via **silclm** |
+| Content / research ingestion | `scrape::*` crawls without naming Bun, Colly, or Playwright |
+| Embedding pipelines | Closed MiniLM path: scrape → tokenize → infer → SQLite |
+| Agent-authored software | Closed language + compiler oracle → fewer invented substrates |
 
-Built-in primitives (`ui::page`, `ui::button`, `ui::form`, …) are compiler-owned
-catalog entries with web and terminal contracts. Author-defined components live
-in app source. There is no separate component-source stdlib or resolver.
+The economic pitch is simple: **fewer tokens per working application**, because
+framework choice, dual-surface parity, persistence, engine selection, and IPC
+are compiler decisions — not prompt decisions.
 
 ---
 
-## Authoring API (0.4.0)
+## Design principles
 
-This section is the human-facing mirror of the canonical agent contract in
-[`crates/silc/templates/AGENTS.md`](crates/silc/templates/AGENTS.md). Detailed
-semantics live in the ADRs after the API is visible here.
+1. **Intent over substrate.** Authors never write `serve()`, invent React or
+   OpenTUI trees, declare sinks, or wire `ipc::*` / `store::*` pipelines.
+2. **Deterministic compilation.** Tier 1/2 routing cites engine strengths; every
+   decision has provenance.
+3. **Scalable monolith.** One cohesive `.silc` intent model compiles into a
+   supervised cluster of specialized workers (Bun, CPython, Go) that share
+   memory-mapped slots. You author one program; the runtime is polyglot and
+   co-located — not a sprawl of hand-maintained microservices.
+4. **AI-native, compiler-first.** Models emit `.silc`. The compiler is the
+   validation oracle. Assist explores corpus and checks drafts without stuffing
+   the entire authoring contract into the root prompt.
+5. **Pinned, owned runtimes.** Bun, CPython, and Go are checksum-verified into
+   `~/.silc/runtimes/`. Authors and agents do not choose engines.
 
-### Language structure
+---
 
-| Construct | Role |
-| --- | --- |
-| `@version("0.4.0")` | Required exact source-version annotation |
-| `subset Name of Base where { … }` | Semantic type alias; v1 `where` predicates (Str): `.contains` / `.starts-with` / `.ends-with` (ADR-002) |
-| `contract X { has T $.f; }` | **Contract** — typed data schema |
-| `component X` | **Component** — props, `has state`, slots, `emit`, handlers, `render()` |
-| `resource X for Contract` | **Resource** — capability CRUD (`query list;`, `mutation create;`, …) |
-| `app X` | **App** — `route` table (dual-surface serving synthesized) |
-| `service X` / `processor X` / `task X` | Optional workflow modules |
-| `==>` | Pipeline feed between values and `ns::op(...)` calls |
+## How it looks in practice
 
-### Types
+Examples below are Silc 0.4.0 source. GitHub fences use `raku` for highlighting
+only.
 
-Built-in named types: `Str`, `UUID`, `num32`, `num64`, `int32`, `int64`,
-`Bool`, `Int`.
+### 1. A dual-surface notes app
 
-Also valid: contract names, subset names, arrays (`[Product]`), and fixed
-vectors (`Vec[num32; 768]`).
+What `silc init` scaffolds — a form, an app route table, and an optional
+scorer. Dual-surface web/terminal serving and SQLite persistence are
+**synthesized**.
 
-### Expressions and control flow
+```raku
+@version("0.4.0")
 
-Supported in handlers / templates:
+contract Note {
+    has Str $.author;
+    has Str $.text;
+}
 
-- Literals, `$name` / `$.field`, member access, calls, `Type.new(:field(value))`
-- Arithmetic / comparison / boolean ops, unary `!` / `-`
-- Assignment to component state: `$.field = expr;`
-- Lists: `[a, b]`
-- `emit event(payload)`, `navigate("/path")`, `await expr`
-- Template control: `when expr { … } else { … }`, `for expr -> $item { … }`
-
-### Dual-surface UI (required)
-
-Authors write **one** semantic component tree. The compiler lowers it to:
-
-- `ui::web` → React/Tailwind (compiler-owned)
-- `ui::terminal` → OpenTUI (compiler-owned); TCP telnet CLI is a remote fallback
-
-Every UI `app` synthesizes both surfaces automatically (web + terminal).
-Authors never write `method serve()`, `ui::web`, or `ui::terminal` as program
-operations. No component may be web-only or terminal-only. Override ports with
-`SILC_HTTP_PORT` / `SILC_TERMINAL_PORT` if needed.
-
-### Shared prop vocabulary
-
-| Concern | Shape | Closed values / notes |
-| --- | --- | --- |
-| State bind | `:field(name)` | forms, tabs, filters |
-| Display | `:value(expr)` | controlled inputs |
-| Role | `:variant(...)` | `primary` \| `secondary` \| `destructive` \| `ghost` |
-| Tone | `:tone(...)` | `default` \| `muted` \| `info` \| `success` \| `warning` \| `danger` |
-| Size | `:size(...)` | `sm` \| `md` \| `lg` |
-| Capability flags | bare flags | `:disabled`, `:sortable`, `:searchable`, `:selectable`, `:dense`, `:active`, `:submit`, `:dismissible`, `:collapsible` |
-
-Unknown closed tokens are compile errors. `:field` stays a prop pattern;
-`ui::field` is optional chrome around a control.
-
-### Complete UI primitive catalog (38)
-
-Every builtin is dual-surface (`web+terminal`). Lines below are the canonical
-API contract (props / events / slots / children).
-
-#### Shell and navigation
-
-- `ui::page` — props: none; events: none; slots: `app_bar`→`app_bar`, `side_panel`→`side_panel`, `footer`→`footer`; children: anyOf(`stack`, `row`, `grid`, `card`, `heading`, `text`, `form`, `text_input`, `textarea`, `radio_group`, `select`, `checkbox`, `switch`, `field`, `button`, `toolbar`, `chat`, `chat_history`, `search_input`, `filter_bar`, `collection`, `list`, `table`, `badge`, `alert`, `divider`, `section`, `description_list`, `tabs`, `dialog`, `loading`, `empty`, `nav_item`); surfaces: web+terminal
-- `ui::app_bar` — props: `title` (required); events: none; slots: none; children: none; surfaces: web+terminal
-- `ui::side_panel` — props: none; events: none; slots: none; children: anyOf(`nav_item`); surfaces: web+terminal
-- `ui::nav_item` — props: `label` (required), `to?`, `active?` (flag); events: `click`; slots: none; children: none; surfaces: web+terminal
-- `ui::toolbar` — props: none; events: none; slots: none; children: anyOf(`button`); surfaces: web+terminal
-- `ui::footer` — props: none; events: none; slots: none; children: any; surfaces: web+terminal
-
-#### Layout
-
-- `ui::stack` — props: none; events: none; slots: none; children: any; surfaces: web+terminal
-- `ui::row` — props: none; events: none; slots: none; children: any; surfaces: web+terminal
-- `ui::grid` — props: none; events: none; slots: none; children: any; surfaces: web+terminal
-- `ui::card` — props: none; events: none; slots: `actions`→`row`; children: any; surfaces: web+terminal
-- `ui::section` — props: `title?`, `description?`; events: none; slots: none; children: any; surfaces: web+terminal
-- `ui::divider` — props: `label?`; events: none; slots: none; children: none; surfaces: web+terminal
-- `ui::heading` — props: `text` (required), `level?`; events: none; slots: none; children: none; surfaces: web+terminal
-- `ui::text` — props: `text` (required); events: none; slots: none; children: none; surfaces: web+terminal
-
-#### Forms
-
-- `ui::form` — props: none; events: `submit`; slots: none; children: anyOf(`stack`, `row`, `grid`, `card`, `heading`, `text`, `text_input`, `textarea`, `radio_group`, `select`, `checkbox`, `switch`, `field`, `button`, `toolbar`, `badge`, `alert`, `divider`, `section`, `loading`, `empty`); surfaces: web+terminal
-- `ui::text_input` — props: `field?`, `value?`, `label?`, `placeholder?`, `disabled?` (flag); events: `input`, `change`; slots: none; children: none; surfaces: web+terminal
-- `ui::textarea` — props: `field?`, `value?`, `label?`, `disabled?` (flag); events: `input`, `change`; slots: none; children: none; surfaces: web+terminal
-- `ui::radio_group` — props: `field?`, `value?`, `options` (required), `label?`, `disabled?` (flag); events: `change`; slots: none; children: none; surfaces: web+terminal
-- `ui::select` — props: `field?`, `value?`, `options` (required), `label?`, `placeholder?`, `disabled?` (flag); events: `change`; slots: none; children: none; surfaces: web+terminal
-- `ui::checkbox` — props: `field?`, `label` (required), `checked?`, `disabled?` (flag); events: `change`; slots: none; children: none; surfaces: web+terminal
-- `ui::switch` — props: `field?`, `label` (required), `checked?`, `disabled?` (flag); events: `change`; slots: none; children: none; surfaces: web+terminal
-- `ui::field` — props: `label?`, `hint?`, `error?`; events: none; slots: none; children: anyOf(`stack`, `row`, `grid`, `card`, `heading`, `text`, `text_input`, `textarea`, `radio_group`, `select`, `checkbox`, `switch`, `field`, `button`, `toolbar`, `badge`, `alert`, `divider`, `section`, `loading`, `empty`); surfaces: web+terminal
-- `ui::button` — props: `label` (required), `variant?`, `size?`, `submit?` (flag), `active?`, `disabled?` (flag); events: `click`; slots: none; children: none; surfaces: web+terminal
-
-#### Chat and search
-
-- `ui::chat` — props: `field?`, `value?`, `label?`, `placeholder?`, `session?`, `loading?`, `error?`, `context?`, `persona?`; events: `send`; slots: none; children: none; surfaces: web+terminal
-- `ui::chat_history` — props: `title?`, `items?`, `collapsible?` (flag); events: none; slots: none; children: none; surfaces: web+terminal
-- `ui::search_input` — props: `field?`, `value?`, `label?`, `placeholder?`; events: `input`, `submit`; slots: none; children: none; surfaces: web+terminal
-- `ui::filter_bar` — props: none; events: none; slots: none; children: anyOf(`search_input`, `button`, `text_input`); surfaces: web+terminal
-
-#### Data display
-
-- `ui::collection` — props: `items` (required), `empty_text?`; events: none; slots: none; children: any; surfaces: web+terminal
-- `ui::list` — props: `items?`; events: none; slots: none; children: any; surfaces: web+terminal
-- `ui::table` — props: `rows` (required), `columns` (required), `empty_text?`, `filter_field?`, `filter_column?`, `filter_all?`, `sortable?` (flag), `searchable?` (flag), `selectable?` (flag), `dense?` (flag); events: none; slots: none; children: none; surfaces: web+terminal
-- `ui::description_list` — props: `items` (required); events: none; slots: none; children: none; surfaces: web+terminal
-
-#### Feedback and overlays
-
-- `ui::badge` — props: `text` (required), `tone?`; events: none; slots: none; children: none; surfaces: web+terminal
-- `ui::alert` — props: `text` (required), `title?`, `tone?`, `dismissible?` (flag); events: `dismiss`; slots: none; children: none; surfaces: web+terminal
-- `ui::tabs` — props: `field?`, `value?`; events: `change`; slots: none; children: anyOf(`tab`); surfaces: web+terminal
-- `ui::tab` — props: `label` (required), `value` (required); events: none; slots: none; children: any; surfaces: web+terminal
-- `ui::dialog` — props: `open` (required), `title?`; events: `confirm`, `cancel`; slots: none; children: any; surfaces: web+terminal
-- `ui::loading` — props: `text?`; events: none; slots: none; children: none; surfaces: web+terminal
-- `ui::empty` — props: `text?`; events: none; slots: none; children: none; surfaces: web+terminal
-
-### Component / resource / app patterns
-
-```silc
 component HomePage {
+    has state Str $.author = "";
     has state Str $.text = "";
+
     method render() {
         ui::page(
-            :app_bar(ui::app_bar(:title("Notes"))),
-            ui::form(:on(submit(on_submit)),
-                ui::textarea(:field(text), :label("Note")),
-                ui::button(:label("Submit"), :variant(primary), :submit)
+            :app_bar(ui::app_bar(:title("My Silc App"))),
+            :side_panel(ui::side_panel(
+                ui::nav_item(:label("Home"), :to("/"), :active)
+            )),
+            ui::stack(
+                ui::heading(:text("Leave a note"), :level(2)),
+                ui::form(:on(submit(on_submit)),
+                    ui::text_input(:field(author), :label("Author")),
+                    ui::textarea(:field(text), :label("Note")),
+                    ui::toolbar(
+                        ui::button(:label("Submit"), :variant(primary), :submit)
+                    )
+                )
             )
         )
     }
-    method on_submit() { submit(); }
-}
 
-resource Products for Product {
-    query list;
-    mutation create;
+    method on_submit() {
+        submit();
+    }
 }
 
 app MyApp {
     route "/" => HomePage;
 }
+
+processor NoteScorer {
+    method analyze(Note $note) {
+        $note.text ==> text::score()
+    }
+}
 ```
 
-Derived HTTP (compiler-owned): `GET/POST /api/{table}`,
-`GET/PUT/DELETE /api/{table}/:id`.
+**You declared:** schema, UI, routes, scoring intent.
+**Silc synthesizes:** React web + OpenTUI terminal, `POST /submit`, Go/SQLite
+sink, Bun ingress, and mmap staging between workers.
 
-Wire handlers with `:on(click(handler))` / `:on(event => handler)`. Chat that
-must reason over live data uses `ui::chat(:context(...), :persona(...),
-:session(...))`. Local completions use **silclm** — call `llm::complete()` with
-no `:model` (or `:model("silclm")`).
+### 2. Resource CRUD + grounded local chat
 
-### Executable operations
+From [`examples/inventoryApp`](examples/inventoryApp/) — capability-style
+resources become HTTP CRUD; chat is grounded on a live inventory snapshot.
 
-Executable today (registry in [`crates/sil-core/src/operation.rs`](crates/sil-core/src/operation.rs)):
+```raku
+contract InventoryItem {
+    has Str $.id;
+    has Str $.name;
+    has Str $.category;
+    has Str $.location;
+    has Str $.quantity;
+    has Str $.reorder_level;
+    has Str $.notes;
+}
 
-`service::http`, `text::score`, `llm::complete`,
-`scrape::page`, `scrape::site`, `scrape::select`, `scrape::render`,
-`scrape::extract`, `tensor::tokenize`, `tensor::infer`.
+contract ChatRecord {
+    has Str $.prompt;
+    has Str $.reply;
+}
 
-Pipeline-only programs run a closed
-`scrape::page` → `scrape::extract` → `tensor::tokenize` →
-`tensor::infer(:prefer(CPU))` → SQLite path. Their output is a normalized
-`Vec[num32; 384]` using compiler-pinned `minilm-l6-v2`; run with
-`silc run main.silc --input-json '{"url":"https://…"}'`.
+resource InventoryItems for InventoryItem {
+    query list;
+    mutation create;
+    mutation update;
+    mutation delete;
+}
 
-Stub-only namespaces (parse/route/emit, do not run): `http`, `html`,
-`numpy`, `pandas`, `ws`, `sys`, `schema`, `payload`, `json`, plus non-registry
-ops under runnable namespaces. Mixing stub-only ops into a runnable graph is a
-**compile error**. Prefer `scrape::*` over stub `http::get` / `html::*`
-([ADR-006](docs/ADR-006-scrape-namespace.md)).
+component BrowsePage {
+    has state Str $.category_filter = "All";
+    query $.items = InventoryItems.list();
 
-Graph constraints:
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("Inventory"))),
+            :side_panel(ui::side_panel(
+                ui::nav_item(:label("Browse"), :to("/"), :active),
+                ui::nav_item(:label("Admin"), :to("/admin")),
+                ui::nav_item(:label("Assistant"), :to("/assistant"))
+            )),
+            ui::stack(
+                ui::section(
+                    :title("Stock browser"),
+                    :description("Filter by category, or ask the Assistant about live inventory.")
+                ),
+                ui::table(
+                    :rows($.items),
+                    :columns(["name", "category", "location", "quantity", "reorder_level", "notes"]),
+                    :empty_text("No inventory items yet. Add some in Admin."),
+                    :filter_field(category_filter),
+                    :filter_column("category"),
+                    :sortable,
+                    :searchable
+                )
+            )
+        )
+    }
+}
 
-1. UI apps require an `app` with non-empty `route`s; dual-surface web/terminal
-   serving is synthesized by the compiler.
-2. `text::score` and `llm::complete` cannot both appear in one program.
-3. Score/LLM/tensor paths need exactly one processor; SQLite persistence is
-   synthesized (do not declare `sink` / `ipc::*` / `store::*`).
-4. API-only `service::http` programs must not declare processor modules.
-5. `scrape::*` cannot mix with `text::score`; it may feed scraped content into
-   `llm::complete` for grounded SilcLM summaries.
-6. Tensor pipelines are CPU-only, require MiniLM, and emit exactly 384
-   normalized `num32` values.
+# … AdminPage omitted …
 
-### Generated runtime surfaces
+component AssistantPage {
+    has state Str $.prompt = "";
+    query $.items = InventoryItems.list();
 
-- `POST /submit` — form `submit()` handlers (scrape jobs when `scrape::*` present)
-- `POST /scrape` — scrape ingest when `scrape::*` present
-- `POST /complete` — chat / `*.complete()` processors
-- `GET|POST|PUT|DELETE /api/{table}` — resource queries/mutations
-- Web: React app served by Bun
-- Terminal: OpenTUI app (local TTY); TCP telnet CLI on the terminal port as remote fallback
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("Inventory Assistant"))),
+            ui::chat(
+                :value($.prompt),
+                :context($.items),
+                :persona("You are the Inventory Assistant for this Silc inventory app, built on silclm."),
+                :placeholder("Which items are below reorder level?"),
+                :on(send(on_send))
+            )
+        )
+    }
 
-Default fallback ports if omitted: web `18088`, terminal `18023`, API `8080`.
+    method on_send() {
+        Assistant.complete();
+    }
+}
+
+app InventoryApp {
+    route "/" => BrowsePage;
+    route "/admin" => AdminPage;
+    route "/assistant" => AssistantPage;
+}
+
+processor Assistant {
+    method complete(ChatRecord $record) {
+        $record.prompt ==> llm::complete()
+    }
+}
+```
+
+**You declared:** domain model, CRUD capabilities, browse/admin/assistant
+routes, and a local completion processor.
+**Silc synthesizes:** `/api/inventory_items` CRUD, dual-surface UI, silclm
+provisioning, and persistence for chat/processor results.
+
+### 3. Pipeline-only: scrape → embed → store
+
+From [`examples/pipelineApp`](examples/pipelineApp/) — no UI app required. One
+intent file becomes a Bun/CPython/Go ingestion graph.
+
+```raku
+@version("0.4.0")
+
+subset Uri of Str where { .starts-with("http") }
+subset Emb384 of Vec[num32; 384];
+
+contract ArticlePayload {
+    has UUID $.id;
+    has Uri $.url;
+    has Str $.raw_content;
+    has Emb384 $.vector_embedding;
+}
+
+service ArticleIngress {
+    method fetch_article() {
+        target_url
+            ==> scrape::page(:js(false))
+            ==> scrape::extract(:into(ArticlePayload))
+    }
+}
+
+processor Embedder {
+    method embed(ArticlePayload $article) {
+        $article.raw_content
+            ==> tensor::tokenize(:model("minilm-l6-v2"))
+            ==> tensor::infer(:prefer(CPU))
+    }
+}
+```
+
+Run with:
+
+```bash
+silc run main.silc --input-json '{"url":"https://example.com/"}'
+```
 
 ---
 
-## Examples
+## Runtime: why Bun, CPython, and Go
 
-Examples are **standalone Silc projects** (same shape as `silc init`). See
-[`examples/README.md`](examples/README.md).
+Silc does not ask models (or developers) to pick languages. The router assigns
+work from complementary strengths
+([ADR-004](docs/ADR-004-runtime-strengths.md)):
 
-| App | Purpose |
+| Engine | Role in Silc |
 | --- | --- |
-| [`examples/chatApp/`](examples/chatApp/) | Multi-session local chat via **silclm** |
-| [`examples/inventoryApp/`](examples/inventoryApp/) | Inventory CRUD + browse/admin + grounded silclm assistant |
-| [`examples/scraperApp/`](examples/scraperApp/) | URL + depth form; `scrape::site` crawl; results table |
-| [`examples/pipelineApp/`](examples/pipelineApp/) | One-shot scrape → MiniLM/ONNX → SQLite ([ADR-010](docs/ADR-010-tensor-minilm-pipeline.md)) |
+| **Bun** | Generated TypeScript: web UI, terminal UI, HTTP ingress, static scrape helpers |
+| **CPython** | Scoring, local LLM (llama.cpp / silclm), Playwright scrape, ONNX MiniLM |
+| **Go** | SQLite persistence, HTTP APIs, high-concurrency Colly crawls |
 
-Each example `AGENTS.md` embeds the compiler template common block byte-for-byte
-and appends app-specific notes after `<!-- END SILC_AGENTS_TEMPLATE -->`.
-
-Local chat uses **silclm** (Silc's owned model identity; v0 is a pinned Llama
-3.2 3B GGUF). Omit `:model` or pass `:model("silclm")`. See
-[ADR-005](docs/ADR-005-local-llm-complete.md).
-
----
-
-## Architecture
+Engines are pinned and checksum-verified (Bun 1.2.18, CPython 3.12.12,
+Go 1.23.6) under `~/.silc/runtimes/`. There is no PATH override surface and no
+author-facing engine picker.
 
 ```text
 Silc source (.silc)
@@ -354,47 +321,155 @@ Silc source (.silc)
         ▼
    sil-router   Tier 1 (kind + traits) + Tier 2 (namespaces)
         ▼
-   sil-codegen  stub emit  or  runnable workers + dual-surface UI lowering
+   sil-codegen  runnable workers + dual-surface UI lowering
         ▼
    silc supervisor
         ├── Bun  (web + terminal + resource HTTP + static scrape)
-        ├── CPython (scoring / local LLM / Playwright scrape)
-        ├── Go (SQLite persistence / HTTP API / Colly crawl)
+        ├── CPython (scoring / local LLM / Playwright / ONNX)
+        ├── Go (SQLite / HTTP API / Colly crawl)
         └── sil-ipc mmap slots + UDS
 ```
 
-Workspace crates: `sil-core`, `sil-lexer`, `sil-parser`, `sil-router`,
-`sil-codegen`, `sil-ipc`, `silc` (CLI + supervisor), `sil-rlm` (assist loop),
-`sil-training` (provider-neutral silclm dataset harness).
+### Scalable monolith
 
-Per-app output lands in `{workdir}/.runtime/{program}/` (gitignored). Engines
-stay in `~/.silc/runtimes/`. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+A Silc program is a **monolith at the intent layer** and a **supervised polyglot
+runtime** underneath. One file owns the product model. The compiler emits
+specialized workers that scale *within* that model — for example, replica pools
+for CPU-bound scoring — without forcing authors to design a microservice mesh.
+That is the scalable-monolith shape: cohesive product semantics, partitioned
+execution, shared contracts.
+
+### IPC that stays out of your way
+
+Cross-engine data movement uses ThoughtPivot’s **Silc Shared Buffer ABI v1**
+([ADR-001](docs/ADR-001-runtime-and-ipc.md),
+[SILC-IPC-ABI-v1.md](docs/SILC-IPC-ABI-v1.md)):
+
+- **Data plane:** file-backed mmap slots under `.runtime/` (default
+  512 × 16 KiB; larger for pipeline payloads). Magic bytes `SILC`.
+- **Control plane:** small Unix domain socket wakeups
+  (`segment_id`, `offset`, `len`, `schema_id`).
+
+Payloads stay in shared memory between processor and synthesized persistence.
+Workers do not retransmit application bodies over HTTP between those stages.
+ABI v1 carries schema-tagged JSON in the mapped buffer; typed zero-copy field
+views are a future ABI layer, not a current claim.
+
+---
+
+## AI-native authoring and Silc Assist
+
+Silc is designed so language models author **intent programs**, not framework
+scaffolding.
+
+- **In-app intelligence:** `llm::complete` / `ui::chat` run on **silclm**
+  (compiler-pinned local GGUF). Use `:context(...)` to ground answers on live
+  resource data.
+- **Silc Assist (experimental):** `silc assist` is a closed-tool recursive
+  authoring loop around silclm ([ADR-008](docs/ADR-008-recursive-silclm-assist.md)).
+  It searches examples and `AGENTS.md` incrementally, drafts `.silc`, and
+  validates with parse → validate → route — instead of loading the entire
+  authoring corpus into an 8K root window.
+
+```bash
+silc assist "dual-surface notes app with submit" --out notes.silc
+```
+
+Assist is Phase 1: useful, bounded, and experimental. A fine-tuned
+`silclm-assist` model is reserved but not shipped yet. In-app chat and Assist
+remain separate products on the same local model family.
+
+**Token efficiency, concretely:** every framework/engine/persistence decision
+the compiler owns is a decision the model no longer has to negotiate in
+context. Compiler diagnostics then act as a hard oracle — accepted programs
+parse, validate, and route before they run.
+
+---
+
+## Quick start
+
+```bash
+cargo install --path crates/silc --force
+
+silc init myapp
+cd myapp
+silc build main.silc   # validate + codegen
+silc main.silc         # run (OpenTUI attaches in a real TTY)
+
+# web:      http://127.0.0.1:18088  (override SILC_HTTP_PORT)
+# terminal: OpenTUI on the local TTY (primary)
+# fallback: telnet 127.0.0.1 18023  (SILC_TERMINAL_PORT)
+```
+
+`silc init` writes `main.silc`, `AGENTS.md`, `.gitignore`, and a runtime lock,
+then provisions pinned engines on first use.
+
+### Example projects
+
+| App | Purpose |
+| --- | --- |
+| [`examples/chatApp/`](examples/chatApp/) | Multi-session local chat via silclm |
+| [`examples/inventoryApp/`](examples/inventoryApp/) | CRUD + browse/admin + grounded assistant |
+| [`examples/scraperApp/`](examples/scraperApp/) | URL + depth crawl; results table + summaries |
+| [`examples/pipelineApp/`](examples/pipelineApp/) | Scrape → MiniLM/ONNX → SQLite |
+
+See [`examples/README.md`](examples/README.md).
+
+---
+
+## What ships today (0.4.0)
+
+Silc is **pre-1.0**. Release 0.4.0 makes the product rule explicit: authors
+declare intent; the compiler synthesizes runtime mechanics
+([ADR-009](docs/ADR-009-compiler-synthesized-runtime.md)).
+
+Every UI `app` synthesizes **both** surfaces automatically — compiler-owned
+`ui::web` (React/Tailwind) and `ui::terminal` (OpenTUI). Authors declare routes
+only; they never write `method serve()`, `ui::web`, or `ui::terminal` as program
+operations. The full UI primitive catalog (38 dual-surface builtins), closed
+prop enums, and agent rules live in
+[`crates/silc/templates/AGENTS.md`](crates/silc/templates/AGENTS.md).
+
+### Executable operations
+
+Author-facing ops that run today:
+
+`service::http`, `text::score`, `llm::complete`,
+`scrape::page`, `scrape::site`, `scrape::select`, `scrape::render`,
+`scrape::extract`, `tensor::tokenize`, `tensor::infer`.
+
+**Shipped**
+
+- Parse → validate → deterministic Tier 1/2 route → codegen → supervised run
+- Declaration-based `component` / `resource Name for Contract` / `app` routes
+- Dual-surface UI synthesized from `app` (web + terminal)
+- Generic resource CRUD over SQLite
+- `silc init` scaffold and experimental `silc assist`
+- Compiler-owned Bun / CPython / Go under `~/.silc/runtimes/`
+
+**Boundaries**
+
+- Broader pipeline namespaces (`http::*`, `html::*`, `numpy::*`, `pandas::*`, …)
+  are stub-only: they parse/route/emit but do not execute
+- Tensor path is CPU-only MiniLM → exactly 384 normalized `num32` values
+- IPC ABI v1 is schema-tagged JSON in mmap (not typed zero-copy views)
+- No self-contained `silc bundle` deployment artifact yet
+- Assist is experimental; fine-tuned assist weights are not shipped
+
+Authoring contract for agents:
+[`crates/silc/templates/AGENTS.md`](crates/silc/templates/AGENTS.md).
 
 ---
 
 ## For AI agents
 
-`silc init` copies [`crates/silc/templates/AGENTS.md`](crates/silc/templates/AGENTS.md)
-into the project. That file is the operational contract:
+`silc init` copies the agent contract into the project:
 
-- Edit Silc source only; never patch `.runtime/`
-- Prefer components + apps + resources over inventing portal profiles
-- Declare `app` routes; dual-surface web/terminal serving is synthesized
-- Stay inside the compiler-owned UI catalog and runnable op set
+- Edit `.silc` only — never patch `.runtime/`
+- Declare routes; dual-surface serving is synthesized
+- Prefer components + resources over inventing portal profiles or frameworks
+- Stay inside the UI catalog and runnable operation set
 - Validate with `silc build`; report limits instead of escaping to React/OpenTUI
-
----
-
-## Versioning
-
-Silc remains **pre-1.0**. Releases follow SemVer 0.x:
-
-- Breaking language/compiler changes → minor bump (`0.x` → `0.(x+1)`)
-- Backward-compatible features → minor bump
-- Fixes → patch bump
-
-`1.0.0` is reserved for a future stability milestone. Changelog and release PRs
-are managed with [release-plz](release-plz.toml) and Conventional Commits.
 
 ---
 
@@ -406,8 +481,14 @@ cargo check --workspace
 cargo test --workspace -- --test-threads=1
 ```
 
-CI runs fmt, check, lib tests, codegen smoke, scored_form / shopping builds, and
+CI runs fmt, check, library tests, codegen smoke, dual-surface e2e builds, and
 concurrent `/submit` POSTs with SQLite checks.
+
+### Versioning
+
+Pre-1.0 SemVer 0.x: breaking language/compiler changes bump the minor.
+`1.0.0` is reserved for a future stability milestone. Releases use
+[release-plz](release-plz.toml) and Conventional Commits.
 
 ---
 
@@ -415,21 +496,19 @@ concurrent `/submit` POSTs with SQLite checks.
 
 | Doc | Topic |
 | --- | --- |
-| [docs/ADR-INDEX.md](docs/ADR-INDEX.md) | ADR index (decisions, specs, appendices) |
+| [docs/ADR-INDEX.md](docs/ADR-INDEX.md) | Decision index |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Subject model and crate layout |
 | [docs/intent-vs-subjects.md](docs/intent-vs-subjects.md) | Intent authoring vs subject architecture |
 | [docs/ADR-001-runtime-and-ipc.md](docs/ADR-001-runtime-and-ipc.md) | Engines and IPC |
-| [docs/ADR-002-silc-surface-syntax.md](docs/ADR-002-silc-surface-syntax.md) | Language surface (Raku-inspired, not Raku-compatible) |
+| [docs/ADR-002-silc-surface-syntax.md](docs/ADR-002-silc-surface-syntax.md) | Language surface |
 | [docs/ADR-003-declarative-ui.md](docs/ADR-003-declarative-ui.md) | Dual-surface UI policy |
 | [docs/ADR-004-runtime-strengths.md](docs/ADR-004-runtime-strengths.md) | Why Bun / CPython / Go |
 | [docs/ADR-005-local-llm-complete.md](docs/ADR-005-local-llm-complete.md) | Local LLM completions |
-| [docs/ADR-006-scrape-namespace.md](docs/ADR-006-scrape-namespace.md) | `scrape::*` namespace |
-| [docs/ADR-007-pipeline-feeds.md](docs/ADR-007-pipeline-feeds.md) | `==>` pipeline feed semantics |
-| [docs/ADR-008-recursive-silclm-assist.md](docs/ADR-008-recursive-silclm-assist.md) | Recursive `silc assist` / silclm RLM |
-| [docs/ADR-009-compiler-synthesized-runtime.md](docs/ADR-009-compiler-synthesized-runtime.md) | Compiler-synthesized UI / persistence |
+| [docs/ADR-006-scrape-namespace.md](docs/ADR-006-scrape-namespace.md) | `scrape::*` |
+| [docs/ADR-007-pipeline-feeds.md](docs/ADR-007-pipeline-feeds.md) | `==>` semantics |
+| [docs/ADR-008-recursive-silclm-assist.md](docs/ADR-008-recursive-silclm-assist.md) | Silc Assist |
+| [docs/ADR-009-compiler-synthesized-runtime.md](docs/ADR-009-compiler-synthesized-runtime.md) | Synthesized UI / persistence |
 | [docs/ADR-010-tensor-minilm-pipeline.md](docs/ADR-010-tensor-minilm-pipeline.md) | MiniLM embedding pipeline |
-| [docs/subject-first-decision.md](docs/subject-first-decision.md) | Historical benchmark evidence (appendix) |
-| [docs/subject-first-declarators.md](docs/subject-first-declarators.md) | Benchmark harness (appendix) |
 | [docs/SILC-IPC-ABI-v1.md](docs/SILC-IPC-ABI-v1.md) | Shared buffer ABI |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
 
@@ -438,3 +517,6 @@ concurrent `/submit` POSTs with SQLite checks.
 ## License
 
 Apache-2.0 — see [LICENSE](LICENSE).
+
+Maintained by the **[ThoughtPivot](https://github.com/thoughtpivot)** engineering
+team.
