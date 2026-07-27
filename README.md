@@ -412,6 +412,7 @@ then provisions pinned engines on first use.
 | [`examples/inventoryApp/`](examples/inventoryApp/) | CRUD + browse/admin + grounded assistant |
 | [`examples/scraperApp/`](examples/scraperApp/) | URL + depth crawl; results table + summaries |
 | [`examples/pipelineApp/`](examples/pipelineApp/) | Scrape → MiniLM/ONNX → SQLite |
+| [`examples/blogApp/`](examples/blogApp/) | Seeded blog; year/month filters; admin modal CRUD; grounded search |
 
 See [`examples/README.md`](examples/README.md).
 

@@ -1,4 +1,4 @@
-//! Silc 0.2.0 code generation: inspectable stubs and runnable dual-surface apps.
+//! Silc 0.4.0 code generation: inspectable stubs and runnable dual-surface apps.
 
 mod ui_lower;
 
@@ -17,9 +17,12 @@ const SUPERVISOR_SOCKET: &str = "ipc/supervisor.sock";
 const DEFAULT_DB_PATH: &str = "ipc/app.db";
 
 const APP_WORKER_TS: &str = include_str!("../templates/app_worker.ts");
+const PIPELINE_WORKER_TS: &str = include_str!("../templates/pipeline_worker.ts");
 const PROCESSOR_WORKER_PY: &str = include_str!("../templates/processor_worker.py");
 const STORE_WORKER_GO: &str = include_str!("../templates/store_worker.go");
 const LLM_REQUIREMENTS: &str = include_str!("../templates/llm_requirements.txt");
+/// Compiler-owned Python dependencies for a generated tensor runtime.
+pub const TENSOR_REQUIREMENTS: &str = include_str!("../templates/tensor_requirements.txt");
 const STORE_GOMOD: &str = include_str!("../templates/go.mod");
 const SERVICE_HTTP_GO: &str = include_str!("../templates/service_http_worker.go");
 const SERVICE_HTTP_GOMOD: &str = include_str!("../templates/service_http_go.mod");
@@ -117,7 +120,14 @@ pub fn emit(
 
     if mode == ExecutionMode::Runnable {
         let g = graph.as_ref().unwrap();
-        emit_runnable(runtime_root, program, g, schema_id, &mut generated)?;
+        emit_runnable(
+            runtime_root,
+            program,
+            g,
+            schema_id,
+            compiler_version,
+            &mut generated,
+        )?;
     } else {
         for module in &program.modules {
             let decision = decision_for(decisions, module)?;
@@ -202,10 +212,15 @@ pub fn emit(
             "app": g.app_name,
             "root_component": g.root_component,
             "model_ref": g.model_ref,
+            "embedding_dim": g.embedding_dim,
+            "tensor_device": g.tensor_device,
+            "tensor_input_field": g.tensor_input_field,
+            "tensor_output_field": g.tensor_output_field,
             "actions": actions_json(g),
             "resource_tables": g.resource_tables.iter().map(|(name, table)| {
                 serde_json::json!({ "resource": name, "table": table })
             }).collect::<Vec<_>>(),
+            "resource_seeds": resource_seeds_json(program),
             "surfaces": surfaces,
         });
         manifest["http_port"] = serde_json::json!(g.http_port);
@@ -349,6 +364,23 @@ pub fn emit(
                 );
             }
         }
+        if g.is_pipeline_only() {
+            entrypoints.insert(
+                "pipeline_ingress".into(),
+                serde_json::json!("typescript/worker.ts"),
+            );
+            entrypoints.insert("python".into(), serde_json::json!("python/worker.py"));
+            entrypoints.insert("go_source".into(), serde_json::json!("go/worker.go"));
+            entrypoints.insert("go_binary".into(), serde_json::json!("go/worker"));
+            manifest["pipeline"] = serde_json::json!({
+                "input": {"type": "object", "required": ["url"]},
+                "output": {"table": g.sqlite_table, "embedding_field": g.tensor_output_field},
+                "model": g.model_ref,
+                "dimension": g.embedding_dim,
+                "device": g.tensor_device,
+                "slot_capacity": 65_536,
+            });
+        }
         manifest["entrypoints"] = serde_json::Value::Object(entrypoints);
         if g.has_scrape() {
             manifest["scrape"] = scrape_manifest(g);
@@ -395,13 +427,70 @@ fn emit_runnable(
     program: &Program,
     graph: &ExecutableGraph,
     schema_id: u32,
+    compiler_version: &str,
     generated: &mut Vec<PathBuf>,
 ) -> Result<(), String> {
     if graph.has_ui() {
-        emit_ui_app(root, program, graph, schema_id, generated)?;
+        emit_ui_app(root, program, graph, schema_id, compiler_version, generated)?;
     }
     if graph.has_api() {
         emit_service_http(root, program, graph, schema_id, generated)?;
+    }
+    if graph.is_pipeline_only() {
+        emit_pipeline(root, program, graph, schema_id, compiler_version, generated)?;
+    }
+    Ok(())
+}
+
+fn emit_pipeline(
+    root: &Path,
+    program: &Program,
+    graph: &ExecutableGraph,
+    schema_id: u32,
+    compiler_version: &str,
+    generated: &mut Vec<PathBuf>,
+) -> Result<(), String> {
+    clear_dir_sources(&root.join("go"), &["go"])?;
+    clear_dir_sources(&root.join("typescript"), &["ts", "tsx", "js"])?;
+    clear_dir_sources(&root.join("python"), &["py"])?;
+    let files = [
+        (
+            root.join("typescript/worker.ts"),
+            render_template(
+                PIPELINE_WORKER_TS,
+                program,
+                graph,
+                schema_id,
+                compiler_version,
+            ),
+        ),
+        (
+            root.join("python/worker.py"),
+            render_template(
+                PROCESSOR_WORKER_PY,
+                program,
+                graph,
+                schema_id,
+                compiler_version,
+            ),
+        ),
+        (
+            root.join("python/tensor_requirements.txt"),
+            TENSOR_REQUIREMENTS.to_string(),
+        ),
+        (
+            root.join("go/worker.go"),
+            render_template(STORE_WORKER_GO, program, graph, schema_id, compiler_version),
+        ),
+        (root.join("go/go.mod"), STORE_GOMOD.to_string()),
+    ];
+    for (path, contents) in files {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|error| format!("create {}: {error}", parent.display()))?;
+        }
+        fs::write(&path, contents).map_err(|error| format!("write {}: {error}", path.display()))?;
+        generated.push(path);
     }
     Ok(())
 }
@@ -411,6 +500,7 @@ fn emit_ui_app(
     program: &Program,
     graph: &ExecutableGraph,
     schema_id: u32,
+    compiler_version: &str,
     generated: &mut Vec<PathBuf>,
 ) -> Result<(), String> {
     // Drop prior package members so `go build .` cannot see stale sources.
@@ -433,14 +523,14 @@ fn emit_ui_app(
         .map_err(|error| format!("create {}: {error}", ts_dist.display()))?;
     clear_dir_sources(&ts_dist, &["js", "css", "html", "map"])?;
 
-    let app_tsx = ui_lower::render_web_app(program, graph);
-    let terminal_ts = ui_lower::render_terminal_module(program, graph);
-    let terminal_app = ui_lower::render_terminal_app(program, graph);
+    let app_tsx = ui_lower::render_web_app(program, graph, compiler_version);
+    let terminal_ts = ui_lower::render_terminal_module(program, graph, compiler_version);
+    let terminal_app = ui_lower::render_terminal_app(program, graph, compiler_version);
 
     let mut files = vec![
         (
             root.join("typescript/worker.ts"),
-            render_template(APP_WORKER_TS, program, graph, schema_id),
+            render_template(APP_WORKER_TS, program, graph, schema_id, compiler_version),
         ),
         (root.join("typescript/terminal.ts"), terminal_ts),
         (
@@ -607,11 +697,17 @@ fn emit_ui_app(
         ),
         (
             root.join("python/worker.py"),
-            render_template(PROCESSOR_WORKER_PY, program, graph, schema_id),
+            render_template(
+                PROCESSOR_WORKER_PY,
+                program,
+                graph,
+                schema_id,
+                compiler_version,
+            ),
         ),
         (
             root.join("go/worker.go"),
-            render_template(STORE_WORKER_GO, program, graph, schema_id),
+            render_template(STORE_WORKER_GO, program, graph, schema_id, compiler_version),
         ),
         (root.join("go/go.mod"), STORE_GOMOD.to_string()),
     ];
@@ -623,16 +719,16 @@ fn emit_ui_app(
     }
     if graph.has_scrape() {
         if graph.needs_scrape_crawl() {
-            files.push((root.join("go/crawl/worker.go"), SCRAPE_CRAWL_GO.to_string()));
             files.push((
-                root.join("go/crawl/go.mod"),
-                SCRAPE_CRAWL_GOMOD.to_string(),
+                root.join("go/crawl/worker.go"),
+                SCRAPE_CRAWL_GO.replace("__COMPILER_VERSION__", compiler_version),
             ));
+            files.push((root.join("go/crawl/go.mod"), SCRAPE_CRAWL_GOMOD.to_string()));
         }
         if graph.needs_scrape_browser() {
             files.push((
                 root.join("python/browser_worker.py"),
-                SCRAPE_BROWSER_PY.to_string(),
+                SCRAPE_BROWSER_PY.replace("__COMPILER_VERSION__", compiler_version),
             ));
             files.push((
                 root.join("python/scrape_requirements.txt"),
@@ -891,7 +987,12 @@ fn scrape_table(graph: &ExecutableGraph) -> String {
         .iter()
         .map(|(_, table)| table.clone())
         .find(|t| t.contains("scrape") || t == "scraped_pages")
-        .or_else(|| graph.resource_tables.first().map(|(_, t)| t.clone()))
+        .or_else(|| {
+            graph
+                .resource_tables
+                .first()
+                .map(|(_, table)| table.clone())
+        })
         .unwrap_or_else(|| "scraped_pages".into())
 }
 
@@ -900,6 +1001,7 @@ fn render_template(
     program: &Program,
     graph: &ExecutableGraph,
     schema_id: u32,
+    compiler_version: &str,
 ) -> String {
     let actions =
         serde_json::to_string_pretty(&actions_json(graph)).unwrap_or_else(|_| "[]".into());
@@ -958,10 +1060,13 @@ fn render_template(
         .link_css
         .clone()
         .unwrap_or_else(|| "a[href]".into());
-    let subset_rules = serde_json::to_string_pretty(&subset_rules_json(program))
-        .unwrap_or_else(|_| "{}".into());
+    let subset_rules =
+        serde_json::to_string_pretty(&subset_rules_json(program)).unwrap_or_else(|_| "{}".into());
+    let resource_seeds =
+        serde_json::to_string_pretty(&resource_seeds_json(program)).unwrap_or_else(|_| "[]".into());
 
     template
+        .replace("__COMPILER_VERSION__", compiler_version)
         .replace("__PORT__", &graph.http_port.to_string())
         .replace("__ROUTE__", &graph.http_route)
         .replace(
@@ -984,6 +1089,7 @@ fn render_template(
         .replace("__SCRAPE_TABLE__", &scrape_table(graph))
         .replace("__ACTIONS_JSON__", &actions)
         .replace("__RESOURCE_TABLES__", &resource_tables)
+        .replace("__RESOURCE_SEEDS_JSON__", &resource_seeds)
         .replace("__ROUTES_JSON__", &routes)
         .replace("__SUBSET_RULES_JSON__", &subset_rules)
 }
@@ -1005,13 +1111,63 @@ fn subset_rules_json(program: &Program) -> serde_json::Value {
             }
         }
         if !fields.is_empty() {
-            by_table.insert(
-                resource.table_name(),
-                serde_json::Value::Object(fields),
-            );
+            by_table.insert(resource.table_name(), serde_json::Value::Object(fields));
         }
     }
     serde_json::Value::Object(by_table)
+}
+
+/// Idempotent seed rows keyed by table for compiler-owned INSERT OR IGNORE.
+fn resource_seeds_json(program: &Program) -> serde_json::Value {
+    let mut out = Vec::new();
+    for resource in &program.resources {
+        let table = resource.table_name();
+        for seed in &resource.seeds {
+            let mut data = serde_json::Map::new();
+            let mut id = None;
+            let mut created_at = None;
+            for (name, value) in &seed.fields {
+                let json = expr_to_json_value(value);
+                if name == "id" {
+                    id = json.as_str().map(|s| s.to_string());
+                }
+                if name == "published_at" {
+                    created_at = json.as_str().map(|s| s.to_string());
+                }
+                data.insert(name.clone(), json);
+            }
+            let Some(id) = id else {
+                continue;
+            };
+            out.push(serde_json::json!({
+                "table": table,
+                "id": id,
+                "created_at": created_at,
+                "data": serde_json::Value::Object(data),
+            }));
+        }
+    }
+    serde_json::Value::Array(out)
+}
+
+fn expr_to_json_value(expr: &sil_core::Expr) -> serde_json::Value {
+    match expr {
+        sil_core::Expr::String(s) => serde_json::Value::String(s.clone()),
+        sil_core::Expr::Number(n) => {
+            if let Ok(i) = n.parse::<i64>() {
+                serde_json::json!(i)
+            } else if let Ok(f) = n.parse::<f64>() {
+                serde_json::json!(f)
+            } else {
+                serde_json::Value::String(n.clone())
+            }
+        }
+        sil_core::Expr::Bool(b) => serde_json::Value::Bool(*b),
+        sil_core::Expr::List(items) => {
+            serde_json::Value::Array(items.iter().map(expr_to_json_value).collect())
+        }
+        other => serde_json::Value::String(format!("{other:?}")),
+    }
 }
 
 fn subset_rule_for_field(program: &Program, ty: &TypeExpr) -> Option<serde_json::Value> {
@@ -1089,7 +1245,7 @@ fn render_stub(module: &Module, decision: &RouteDecision) -> String {
                 .iter()
                 .map(|name| {
                     format!(
-                        "  async {name}(): Promise<void> {{\n    // TODO: operation is not executable in Silc 0.2.0\n  }}"
+                        "  async {name}(): Promise<void> {{\n    // TODO: operation is not executable in Silc 0.4.0\n  }}"
                     )
                 })
                 .collect::<Vec<_>>()
@@ -1104,7 +1260,7 @@ fn render_stub(module: &Module, decision: &RouteDecision) -> String {
                 .iter()
                 .map(|name| {
                     format!(
-                        "    def {name}(self):\n        # TODO: operation is not executable in Silc 0.2.0\n        pass"
+                        "    def {name}(self):\n        # TODO: operation is not executable in Silc 0.4.0\n        pass"
                     )
                 })
                 .collect::<Vec<_>>()
@@ -1119,7 +1275,7 @@ fn render_stub(module: &Module, decision: &RouteDecision) -> String {
                 .iter()
                 .map(|name| {
                     format!(
-                        "func (m *{}) {}() {{\n\t// TODO: operation is not executable in Silc 0.2.0\n}}",
+                        "func (m *{}) {}() {{\n\t// TODO: operation is not executable in Silc 0.4.0\n}}",
                         module.name,
                         pascal_case(name)
                     )
@@ -1178,6 +1334,14 @@ mod tests {
         std::env::temp_dir().join(format!("silc-{label}-{nonce}"))
     }
 
+    #[test]
+    fn tensor_requirements_are_compiler_owned() {
+        assert!(TENSOR_REQUIREMENTS.contains("onnxruntime=="));
+        assert!(TENSOR_REQUIREMENTS.contains("tokenizers=="));
+        assert!(TENSOR_REQUIREMENTS.contains("numpy=="));
+        assert!(!TENSOR_REQUIREMENTS.contains("torch"));
+    }
+
     fn parse_emit(source: &str, label: &str) -> (Program, EmitResult, PathBuf) {
         let program = sil_parser::parse(source).expect("parse");
         program.validate().expect("validate");
@@ -1189,26 +1353,75 @@ mod tests {
     }
 
     const STUB_SOURCE: &str = r#"
-@version("0.2.0")
-class Payload { has Str $.text; }
-class Ingress is service {
+@version("0.4.0")
+contract Payload { has Str $.text; }
+service Ingress {
     method fetch() { $url ==> http::get() ==> html::extract_body() }
 }
-class Engine is processor {
-    method run(Payload $p) { $p.text ==> tensor::tokenize() }
-}
-class Cache is sink is latency(2ms) {
-    method persist(Payload $p) { $p ==> store::upsert_primary() }
+processor Engine {
+    method run(Payload $p) { $p.text ==> numpy::array() }
 }
 "#;
 
+    const PIPELINE_SOURCE: &str = r#"
+@version("0.4.0")
+subset Uri of Str where { .contains("://") }
+subset Emb384 of Vec[num32; 384];
+contract ArticlePayload {
+    has Uri $.url;
+    has Str $.raw_content;
+    has Emb384 $.vector_embedding;
+}
+service NetworkIngress {
+    method fetch_article() {
+        target_url ==> scrape::page(:js(false)) ==> scrape::extract(:into(ArticlePayload))
+    }
+}
+processor EmbeddingEngine {
+    method generate_vectors(ArticlePayload $article) {
+        $article.raw_content ==> tensor::tokenize(:model("minilm-l6-v2"))
+            ==> tensor::infer(:prefer(CPU))
+    }
+}
+"#;
+
+    #[test]
+    fn emits_pipeline_only_bun_onnx_go_runtime() {
+        let (_program, result, output) = parse_emit(PIPELINE_SOURCE, "tensor-pipeline");
+        let graph = result.graph.as_ref().unwrap();
+        assert!(graph.is_pipeline_only());
+        assert_eq!(graph.processor_op, ProcessorOp::TensorInfer);
+
+        let bun = fs::read_to_string(output.join("typescript/worker.ts")).unwrap();
+        let python = fs::read_to_string(output.join("python/worker.py")).unwrap();
+        let requirements =
+            fs::read_to_string(output.join("python/tensor_requirements.txt")).unwrap();
+        let go = fs::read_to_string(output.join("go/worker.go")).unwrap();
+        let manifest = fs::read_to_string(&result.manifest).unwrap();
+        assert!(bun.contains("fetchExtract"));
+        assert!(bun.contains("maxExtractedBytes"));
+        assert!(python.contains("CPUExecutionProvider"));
+        assert!(python.contains("infer_embedding"));
+        assert!(requirements.contains("onnxruntime=="));
+        assert!(go.contains("modernc.org/sqlite"));
+        assert!(manifest.contains("\"dimension\": 384"));
+        assert!(manifest.contains("\"slot_capacity\": 65536"));
+        for source in [&bun, &python, &go] {
+            assert!(!source.contains("__SCHEMA_ID__"));
+            assert!(!source.contains("__COMPILER_VERSION__"));
+            assert!(source.contains("silc test"));
+            assert!(!source.contains("TODO"));
+        }
+        fs::remove_dir_all(output).ok();
+    }
+
     const FEEDBACK_SOURCE: &str = r#"
-@version("0.2.0")
-class FeedbackRecord {
+@version("0.4.0")
+contract FeedbackRecord {
     has Str $.author;
     has Str $.text;
 }
-class FeedbackPage is component {
+component FeedbackPage {
     has state Str $.author = "";
     has state Str $.text = "";
     method render() {
@@ -1226,32 +1439,23 @@ class FeedbackPage is component {
         submit();
     }
 }
-class FeedbackApp is app {
+app FeedbackApp {
     route "/" => FeedbackPage;
-    method serve() {
-        ui::web(:root(FeedbackApp), :port(18080), :route("/"))
-            ==> ui::terminal(:port(18023))
-    }
 }
-class TextAnalyzer is processor {
+processor TextAnalyzer {
     method analyze(FeedbackRecord $record) {
         $record.text ==> text::score()
-    }
-}
-class FeedbackDb is sink is storage(SQLite) {
-    method persist(FeedbackRecord $record) {
-        $record ==> ipc::publish() ==> store::sqlite(:table(feedback)) ==> store::commit()
     }
 }
 "#;
 
     const CHAT_SOURCE: &str = r#"
-@version("0.2.0")
-class ChatRecord {
+@version("0.4.0")
+contract ChatRecord {
     has Str $.prompt;
     has Str $.reply;
 }
-class ChatPage is component {
+component ChatPage {
     has state Str $.prompt = "";
     has state Str $.active_session = "session-a";
     method render() {
@@ -1277,41 +1481,27 @@ class ChatPage is component {
         Assistant.complete();
     }
 }
-class ChatApp is app {
+app ChatApp {
     route "/" => ChatPage;
-    method serve() {
-        ui::web(:root(ChatApp), :port(18090), :route("/"))
-            ==> ui::terminal(:port(18023))
-    }
 }
-class Assistant is processor {
+processor Assistant {
     method complete(ChatRecord $record) {
         $record.prompt ==> llm::complete()
-    }
-}
-class ChatDb is sink is storage(SQLite) {
-    method persist(ChatRecord $record) {
-        $record ==> ipc::publish() ==> store::sqlite(:table(chats)) ==> store::commit()
     }
 }
 "#;
 
     const RESOURCE_SOURCE: &str = r#"
-@version("0.2.0")
-class Product {
+@version("0.4.0")
+contract Product {
     has Str $.name;
     has num64 $.price;
 }
-class Products is resource {
-    has Str $.table = "products";
-    query list() -> Product {
-        Product ==> resource::list()
-    }
-    mutation create(Product $item) -> Product {
-        $item ==> resource::create()
-    }
+resource Products for Product {
+    query list;
+    mutation create;
 }
-class ShopPage is component {
+component ShopPage {
     query $.products = Products.list();
     method render() {
         ui::page(
@@ -1325,23 +1515,19 @@ class ShopPage is component {
         )
     }
 }
-class ShopApp is app {
+app ShopApp {
     route "/" => ShopPage;
-    method serve() {
-        ui::web(:root(ShopApp), :port(18088), :route("/"))
-            ==> ui::terminal(:port(18023))
-    }
 }
 "#;
 
     const API_SOURCE: &str = r#"
-@version("0.2.0")
-class FeedbackRecord {
+@version("0.4.0")
+contract FeedbackRecord {
     has UUID $.id;
     has Str $.author;
     has Str $.text;
 }
-class FeedbackApi is service {
+service FeedbackApi {
     method list(:$port = 18081) {
         FeedbackRecord ==> service::http(:port(18081), :route("/api/feedback"), :method(GET))
     }
@@ -1360,7 +1546,11 @@ class FeedbackApi is service {
         assert!(manifest.contains("\"manifest_version\": 3"));
         assert!(output.join("typescript/ingress.ts").is_file());
         assert!(output.join("python/engine.py").is_file());
-        assert!(output.join("go/cache.go").is_file());
+        assert!(!output.join("go").read_dir().unwrap().any(|e| {
+            e.ok()
+                .map(|e| e.path().extension().and_then(|x| x.to_str()) == Some("go"))
+                .unwrap_or(false)
+        }));
         fs::remove_dir_all(output).ok();
     }
 
@@ -1372,7 +1562,7 @@ class FeedbackApi is service {
         assert_eq!(graph.processor_op, ProcessorOp::Score);
         assert!(graph.capabilities.web);
         assert!(graph.capabilities.terminal);
-        assert_eq!(graph.sqlite_table, "feedback");
+        assert_eq!(graph.sqlite_table, "feedback_records");
 
         let ts = fs::read_to_string(output.join("typescript/worker.ts")).unwrap();
         let py = fs::read_to_string(output.join("python/worker.py")).unwrap();
@@ -1402,18 +1592,42 @@ class FeedbackApi is service {
             "manifest path must pin OpenTUI for ui::terminal"
         );
         assert!(
-            output.join("typescript/src/components/ui/select.tsx").is_file()
-                && output.join("typescript/src/components/ui/checkbox.tsx").is_file()
-                && output.join("typescript/src/components/ui/switch.tsx").is_file()
-                && output.join("typescript/src/components/ui/field.tsx").is_file()
-                && output.join("typescript/src/components/ui/badge.tsx").is_file()
-                && output.join("typescript/src/components/ui/alert.tsx").is_file()
-                && output.join("typescript/src/components/ui/divider.tsx").is_file()
-                && output.join("typescript/src/components/ui/section.tsx").is_file()
-                && output.join("typescript/src/components/ui/footer.tsx").is_file()
-                && output.join("typescript/src/components/ui/description-list.tsx").is_file()
-                && output.join("typescript/src/components/ui/tabs.tsx").is_file()
-                && output.join("typescript/src/components/ui/dialog.tsx").is_file(),
+            output
+                .join("typescript/src/components/ui/select.tsx")
+                .is_file()
+                && output
+                    .join("typescript/src/components/ui/checkbox.tsx")
+                    .is_file()
+                && output
+                    .join("typescript/src/components/ui/switch.tsx")
+                    .is_file()
+                && output
+                    .join("typescript/src/components/ui/field.tsx")
+                    .is_file()
+                && output
+                    .join("typescript/src/components/ui/badge.tsx")
+                    .is_file()
+                && output
+                    .join("typescript/src/components/ui/alert.tsx")
+                    .is_file()
+                && output
+                    .join("typescript/src/components/ui/divider.tsx")
+                    .is_file()
+                && output
+                    .join("typescript/src/components/ui/section.tsx")
+                    .is_file()
+                && output
+                    .join("typescript/src/components/ui/footer.tsx")
+                    .is_file()
+                && output
+                    .join("typescript/src/components/ui/description-list.tsx")
+                    .is_file()
+                && output
+                    .join("typescript/src/components/ui/tabs.tsx")
+                    .is_file()
+                && output
+                    .join("typescript/src/components/ui/dialog.tsx")
+                    .is_file(),
             "phase-1/2 web primitives must be emitted"
         );
         assert!(
@@ -1422,10 +1636,9 @@ class FeedbackApi is service {
                 .is_file(),
             "dead product-grid asset must not be emitted"
         );
-        let terminal_components = fs::read_to_string(
-            output.join("typescript/src/components/terminal/components.ts"),
-        )
-        .unwrap();
+        let terminal_components =
+            fs::read_to_string(output.join("typescript/src/components/terminal/components.ts"))
+                .unwrap();
         for export in [
             "SelectField",
             "Checkbox",
@@ -1468,6 +1681,7 @@ class FeedbackApi is service {
             assert!(!source.contains("__ACTIONS_JSON__"));
             assert!(!source.contains("__SUBSET_RULES_JSON__"));
             assert!(!source.contains("__RESOURCE_TABLES__"));
+            assert!(!source.contains("__RESOURCE_SEEDS_JSON__"));
             assert!(!source.contains("__ROUTES_JSON__"));
         }
         assert!(ts.contains("HELLO"));
@@ -1517,8 +1731,8 @@ class FeedbackApi is service {
         assert!(manifest.contains("\"execution_mode\": \"runnable\""));
         assert!(manifest.contains("\"manifest_version\": 3"));
         assert!(!manifest.contains("portal_kind"));
-        assert!(manifest.contains("\"http_port\": 18080"));
-        assert!(manifest.contains("\"sqlite_table\": \"feedback\""));
+        assert!(manifest.contains("\"http_port\": 18088"));
+        assert!(manifest.contains("\"sqlite_table\": \"feedback_records\""));
         assert!(manifest.contains("\"surfaces\""));
         assert!(manifest.contains("\"capabilities\""));
         assert!(manifest.contains("text.score") || manifest.contains("\"processor\""));
@@ -1723,8 +1937,8 @@ class FeedbackApi is service {
     }
 
     const SCRAPE_SOURCE: &str = r#"
-@version("0.2.0")
-class ScrapedPage {
+@version("0.4.0")
+contract ScrapedPage {
     has Str $.id;
     has Str $.scrape_id;
     has Str $.scraped_at;
@@ -1738,16 +1952,13 @@ class ScrapedPage {
     has Str $.depth;
     has Str $.status;
 }
-class Pages is resource {
-    has Str $.table = "scraped_pages";
-    query list() -> [ScrapedPage] {
-        ScrapedPage ==> resource::list(:table(scraped_pages))
-    }
+resource ScrapedPages for ScrapedPage {
+    query list;
 }
-class Home is component {
+component Home {
     has state Str $.url = "";
     has state Str $.depth = "2";
-    query $.pages = Pages.list();
+    query $.pages = ScrapedPages.list();
     method render() {
         ui::page(
             :app_bar(ui::app_bar(:title("Scraper"))),
@@ -1762,32 +1973,21 @@ class Home is component {
             )
         )
     }
-    method on_submit() { submit(); Pages.list(); }
+    method on_submit() { submit(); ScrapedPages.list(); }
 }
-class ScraperApp is app {
+app ScraperApp {
     route "/" => Home;
-    method serve() {
-        ui::web(:root(ScraperApp), :port(18110)) ==> ui::terminal(:port(18111))
-    }
 }
-class Crawler is service {
+service Crawler {
     method run() {
         target_url
             ==> scrape::site(:depth(2), :same_host(true), :js(false))
             ==> scrape::select(:css("title"), :as(title))
     }
 }
-class Summarizer is processor {
+processor Summarizer {
     method summarize(ScrapedPage $page) {
         $page.prompt ==> llm::complete()
-    }
-}
-class SummaryDb is sink is storage(SQLite) {
-    method persist(ScrapedPage $page) {
-        $page
-            ==> ipc::publish()
-            ==> store::sqlite(:table(scrape_summaries))
-            ==> store::commit()
     }
 }
 "#;
@@ -1838,14 +2038,17 @@ class SummaryDb is sink is storage(SQLite) {
     }
 
     #[test]
-    fn rejects_legacy_is_view() {
+    fn rejects_legacy_class_declarators() {
         let source = r#"
-@version("0.2.0")
+@version("0.4.0")
 class BadView is view {
     method render() { ui::page() }
 }
 "#;
         let err = sil_parser::parse(source).unwrap_err();
-        assert!(err.message.contains("is view") || err.message.contains("view"));
+        assert!(
+            err.message.contains("legacy `class`"),
+            "expected migration diagnostic, got {err}"
+        );
     }
 }

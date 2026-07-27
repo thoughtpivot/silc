@@ -436,6 +436,7 @@ export function DataTable(props: {
   selectable?: boolean;
   dense?: boolean;
   searchPlaceholder?: string;
+  onSelect?: (row: Record<string, unknown>) => void;
 }) {
   const rows = Array.isArray(props.rows) ? props.rows : [];
   const filtered =
@@ -453,9 +454,24 @@ export function DataTable(props: {
   return h(TextTableRenderable as any, {
     content: [header, ...body],
     showBorders: true,
-    selectable: !!props.selectable,
+    selectable: !!props.selectable || !!props.onSelect,
     width: "100%",
     height: Math.min(filtered.length + 3, props.dense ? 12 : 16),
+    onSelectChange: props.onSelect
+      ? (selection: { startRow?: number; endRow?: number } | number | null) => {
+          let index = -1;
+          if (typeof selection === "number") {
+            index = selection;
+          } else if (selection && typeof selection === "object") {
+            index = typeof selection.startRow === "number" ? selection.startRow : -1;
+          }
+          // Header occupies row 0 in TextTableRenderable content.
+          const dataIndex = index > 0 ? index - 1 : index;
+          if (dataIndex >= 0 && dataIndex < filtered.length) {
+            props.onSelect?.(filtered[dataIndex]!);
+          }
+        }
+      : undefined,
   });
 }
 

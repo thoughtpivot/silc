@@ -1,10 +1,10 @@
-//! Recursive-descent parser for Silc 0.2.0 grammar.
+//! Recursive-descent parser for Silc 0.4.0 grammar.
 
 use sil_core::{
     App, CompField, Component, Contract, EmitDecl, EventBinding, Expr, Field, Handler, Method,
     Module, ModuleKind, Param, Pipeline, PipelineStep, Program, QueryBinding, Resource,
-    ResourceKind, ResourceMethod, Route, SlotDecl, Span, Subset, SubsetPredicate, TraitArg,
-    TypeExpr, UiNode, UiTemplate,
+    ResourceKind, ResourceMethod, ResourceSeed, Route, SlotDecl, Span, Subset, SubsetPredicate,
+    TraitArg, TypeExpr, UiNode, UiTemplate,
 };
 use sil_lexer::{lex, SpannedToken, Token};
 
@@ -67,10 +67,42 @@ impl Parser {
         while self.peek().is_some() {
             match self.peek() {
                 Some(Token::Subset) => program.subsets.push(self.parse_subset()?),
-                Some(Token::Class) => self.parse_class_into(&mut program)?,
+                Some(Token::Contract) => {
+                    self.parse_subject_into(&mut program, ClassKind::Contract, "contract")?
+                }
+                Some(Token::Component) => {
+                    self.parse_subject_into(&mut program, ClassKind::Component, "component")?
+                }
+                Some(Token::Resource) => {
+                    self.parse_subject_into(&mut program, ClassKind::Resource, "resource")?
+                }
+                Some(Token::App) => {
+                    self.parse_subject_into(&mut program, ClassKind::App, "app")?
+                }
+                Some(Token::Service) => self.parse_subject_into(
+                    &mut program,
+                    ClassKind::Module(ModuleKind::Service),
+                    "service",
+                )?,
+                Some(Token::Processor) => self.parse_subject_into(
+                    &mut program,
+                    ClassKind::Module(ModuleKind::Processor),
+                    "processor",
+                )?,
+                Some(Token::Sink) => {
+                    return Err(self.error_here(
+                        "author `sink` declarations are not supported in Silc 0.4.0; remove the sink — persistence is synthesized from the processor",
+                    ))
+                }
+                Some(Token::Task) => self.parse_subject_into(
+                    &mut program,
+                    ClassKind::Module(ModuleKind::Task),
+                    "task",
+                )?,
+                Some(Token::Class) => return Err(self.legacy_class_error()),
                 _ => {
                     return Err(self.error_here(
-                        "unsupported construct; expected `subset` or `class` in Silc grammar",
+                        "unsupported construct; expected `subset`, `contract`, `component`, `resource`, `app`, `service`, `processor`, or `task`",
                     ))
                 }
             }
@@ -107,12 +139,58 @@ impl Parser {
         })
     }
 
-    fn parse_class_into(&mut self, program: &mut Program) -> Result<(), ParseError> {
+    fn legacy_class_error(&self) -> ParseError {
+        let name = self
+            .tokens
+            .get(self.pos + 1)
+            .and_then(|token| match &token.token {
+                Token::Ident(name) => Some(name.as_str()),
+                _ => None,
+            })
+            .unwrap_or("Name");
+        let kind = self
+            .tokens
+            .get(self.pos + 3)
+            .and_then(|token| match &token.token {
+                Token::Component => Some("component"),
+                Token::Resource => Some("resource"),
+                Token::App => Some("app"),
+                Token::Service => Some("service"),
+                Token::Processor => Some("processor"),
+                Token::Sink => Some("sink"),
+                Token::Task => Some("task"),
+                Token::Ident(kind) => match kind.as_str() {
+                    "component" | "resource" | "app" | "service" | "processor" | "sink"
+                    | "task" => Some(kind.as_str()),
+                    // Historical `is view` maps to components (removed in 0.2.0).
+                    "view" => Some("component"),
+                    _ => None,
+                },
+                _ => None,
+            })
+            .unwrap_or("contract");
+        let replacement = format!("{kind} {name} {{ ... }}");
+        self.error_here(&format!(
+            "legacy `class` declarator is not supported in Silc 0.4.0; use `{replacement}`"
+        ))
+    }
+
+    fn parse_subject_into(
+        &mut self,
+        program: &mut Program,
+        kind: ClassKind,
+        keyword: &str,
+    ) -> Result<(), ParseError> {
         let start = self.current_span();
-        self.expect_simple(Token::Class, "`class`")?;
-        let name = self.expect_ident("class name")?;
+        self.advance();
+        let name = self.expect_ident(&format!("{keyword} name"))?;
         let mut traits = Vec::new();
-        let mut kind = ClassKind::Contract;
+        let mut resource_contract = None;
+
+        if matches!(kind, ClassKind::Resource) && matches!(self.peek(), Some(Token::For)) {
+            self.advance();
+            resource_contract = Some(self.expect_ident("contract name after `resource … for`")?);
+        }
 
         while matches!(self.peek(), Some(Token::Is)) {
             self.advance();
@@ -123,30 +201,19 @@ impl Parser {
             } else {
                 String::new()
             };
-            match trait_name.as_str() {
-                "view" => {
-                    return Err(self.error_here(
-                        "`is view` was removed in Silc 0.2.0; use `is component` instead",
-                    ));
-                }
-                "component" => kind = ClassKind::Component,
-                "resource" => kind = ClassKind::Resource,
-                "app" => kind = ClassKind::App,
-                other => {
-                    let parsed = ModuleKind::parse(other);
-                    if parsed != ModuleKind::Unknown {
-                        kind = ClassKind::Module(parsed);
-                    } else {
-                        traits.push(TraitArg {
-                            name: trait_name,
-                            value,
-                        });
-                    }
-                }
+            if matches!(kind, ClassKind::Module(_)) {
+                traits.push(TraitArg {
+                    name: trait_name,
+                    value,
+                });
+            } else {
+                return Err(self.error_here(&format!(
+                    "`{keyword}` does not accept execution trait `is {trait_name}`"
+                )));
             }
         }
 
-        self.expect_simple(Token::LBrace, "`{` after class declaration")?;
+        self.expect_simple(Token::LBrace, &format!("`{{` after {keyword} declaration"))?;
 
         match kind {
             ClassKind::Component => {
@@ -155,7 +222,7 @@ impl Parser {
                 program.components.push(component);
             }
             ClassKind::Resource => {
-                let resource = self.parse_resource_body(name, start)?;
+                let resource = self.parse_resource_body(name, start, resource_contract)?;
                 self.expect_simple(Token::RBrace, "`}` after resource")?;
                 program.resources.push(resource);
             }
@@ -169,7 +236,7 @@ impl Parser {
                 while !matches!(self.peek(), Some(Token::RBrace)) {
                     match self.peek() {
                         Some(Token::Has) => fields.push(self.parse_contract_field()?),
-                        None => return Err(self.error_here("unterminated class body")),
+                        None => return Err(self.error_here("unterminated contract body")),
                         _ => return Err(self.error_here("expected `has` or `}` in contract")),
                     }
                 }
@@ -187,7 +254,7 @@ impl Parser {
                     match self.peek() {
                         Some(Token::Has) => fields.push(self.parse_contract_field()?),
                         Some(Token::Method) => methods.push(self.parse_pipeline_method()?),
-                        None => return Err(self.error_here("unterminated class body")),
+                        None => return Err(self.error_here("unterminated module body")),
                         _ => return Err(self.error_here("expected `has`, `method`, or `}`")),
                     }
                 }
@@ -694,37 +761,70 @@ impl Parser {
         self.finish_pipeline_method(name, params, start)
     }
 
-    fn parse_resource_body(&mut self, name: String, start: Span) -> Result<Resource, ParseError> {
+    fn parse_resource_body(
+        &mut self,
+        name: String,
+        start: Span,
+        contract: Option<String>,
+    ) -> Result<Resource, ParseError> {
+        let contract = contract.ok_or_else(|| {
+            self.error_here(&format!(
+                "resource `{name}` must declare a contract binding: `resource {name} for ContractName {{ … }}`"
+            ))
+        })?;
         let mut methods = Vec::new();
-        let mut table = None;
-        let mut contract = None;
+        let mut seeds = Vec::new();
         while !matches!(self.peek(), Some(Token::RBrace)) {
             match self.peek() {
                 Some(Token::Query) | Some(Token::Mutation) => {
-                    methods.push(self.parse_resource_method()?);
+                    methods.push(self.parse_resource_method(&contract)?);
+                }
+                Some(Token::Seed) => {
+                    seeds.push(self.parse_resource_seed(&contract)?);
                 }
                 Some(Token::Has) => {
-                    // Optional metadata: has Str $.table = "products";
-                    let field = self.parse_contract_field()?;
-                    if field.name == "table" {
-                        table = field.default.map(|d| d.trim_matches('"').to_string());
-                    } else if field.name == "contract" {
-                        contract = field.default.map(|d| d.trim_matches('"').to_string());
-                    }
+                    return Err(self.error_here(
+                        "resource metadata fields are not supported in Silc 0.4.0; use `resource Name for Contract` and capability declarations (`query list;`)",
+                    ));
                 }
-                _ => return Err(self.error_here("expected `query`, `mutation`, `has`, or `}`")),
+                _ => return Err(self.error_here("expected `query`, `mutation`, `seed`, or `}`")),
             }
         }
         Ok(Resource {
             name,
             methods,
-            contract,
-            table,
+            contract: Some(contract),
+            table: None,
+            seeds,
             span: start,
         })
     }
 
-    fn parse_resource_method(&mut self) -> Result<ResourceMethod, ParseError> {
+    fn parse_resource_seed(&mut self, contract: &str) -> Result<ResourceSeed, ParseError> {
+        let start = self.current_span();
+        self.expect_simple(Token::Seed, "`seed`")?;
+        let expr = self.parse_expr()?;
+        self.expect_simple(Token::Semi, "`;` after seed")?;
+        match expr {
+            Expr::New { ty, fields } => {
+                if ty != contract {
+                    return Err(self.error_here(&format!(
+                        "resource seed must construct `{contract}`, got `{ty}.new(...)`"
+                    )));
+                }
+                Ok(ResourceSeed {
+                    contract: ty,
+                    fields,
+                    span: start,
+                })
+            }
+            _ => Err(self.error_here(&format!(
+                "resource seed must be `{contract}.new(:field(value), …);`"
+            ))),
+        }
+    }
+
+    fn parse_resource_method(&mut self, contract: &str) -> Result<ResourceMethod, ParseError> {
         let start = self.current_span();
         let kind = match self.peek() {
             Some(Token::Query) => {
@@ -738,30 +838,36 @@ impl Parser {
             _ => return Err(self.error_here("expected `query` or `mutation`")),
         };
         let name = self.expect_ident("resource method name")?;
-        self.expect_simple(Token::LParen, "`(` after resource method")?;
-        let param_tokens = self.take_balanced_paren_tokens()?;
-        let params = parse_params(&param_tokens);
-        let return_ty = if matches!(self.peek(), Some(Token::Arrow)) {
+
+        // Capability form: `query list;` / `mutation create;`
+        if matches!(self.peek(), Some(Token::Semi)) {
             self.advance();
-            Some(self.parse_type()?)
-        } else {
-            None
-        };
-        self.expect_simple(Token::LBrace, "`{` before resource method body")?;
-        let method = self.finish_pipeline_method(name.clone(), params.clone(), start)?;
-        Ok(ResourceMethod {
-            kind,
-            name,
-            params,
-            return_ty,
-            pipeline: method.pipeline,
-            span: start,
-        })
+            let mut method = ResourceMethod {
+                kind,
+                name,
+                params: vec![],
+                return_ty: None,
+                pipeline: Pipeline { steps: vec![] },
+                span: start,
+                shorthand: true,
+            };
+            method
+                .expand_with_contract(contract)
+                .map_err(|message| self.error_here(&message))?;
+            return Ok(method);
+        }
+
+        if matches!(self.peek(), Some(Token::LParen)) || matches!(self.peek(), Some(Token::LBrace))
+        {
+            return Err(self.error_here(
+                "resource method bodies are not supported in Silc 0.4.0; declare capabilities only (e.g. `query list;` / `mutation create;`)",
+            ));
+        }
+        Err(self.error_here("expected `;` after resource capability name"))
     }
 
     fn parse_app_body(&mut self, name: String, start: Span) -> Result<App, ParseError> {
         let mut routes = Vec::new();
-        let mut serve = None;
         while !matches!(self.peek(), Some(Token::RBrace)) {
             match self.peek() {
                 Some(Token::Route) => {
@@ -783,18 +889,17 @@ impl Parser {
                     });
                 }
                 Some(Token::Method) => {
-                    let method = self.parse_pipeline_method()?;
-                    if method.name == "serve" {
-                        serve = Some(method);
-                    }
+                    return Err(self.error_here(
+                        "app `method serve()` is not supported in Silc 0.4.0; declare routes only — dual-surface web/terminal serving is synthesized by the compiler",
+                    ));
                 }
-                _ => return Err(self.error_here("expected `route`, `method serve`, or `}`")),
+                _ => return Err(self.error_here("expected `route` or `}`")),
             }
         }
         Ok(App {
             name,
             routes,
-            serve,
+            serve: None,
             span: start,
         })
     }
@@ -1408,36 +1513,36 @@ fn parse_step(tokens: &[SpannedToken]) -> Result<PipelineStep, String> {
             }
         }
     }
-    // ns::name(...)
-    if let Some(Token::Ident(ns)) = tokens.first().map(|t| &t.token) {
+    // ns::name(...) — subject keywords may appear as namespaces (`resource::list`).
+    if let Some(ns) = tokens.first().map(|t| &t.token).and_then(ident_like_name) {
         if matches!(tokens.get(1).map(|t| &t.token), Some(Token::DoubleColon)) {
-            if let Some(Token::Ident(name)) = tokens.get(2).map(|t| &t.token) {
+            if let Some(name) = tokens.get(2).map(|t| &t.token).and_then(ident_like_name) {
                 let args = if matches!(tokens.get(3).map(|t| &t.token), Some(Token::LParen)) {
                     parse_call_args(&tokens[4..])?
                 } else {
                     vec![]
                 };
                 return Ok(PipelineStep::Call {
-                    namespace: Some(ns.clone()),
-                    name: name.clone(),
+                    namespace: Some(ns),
+                    name,
                     args,
                 });
             }
         }
         // bare name
         if tokens.len() == 1 {
-            return Ok(PipelineStep::Name(ns.clone()));
+            return Ok(PipelineStep::Name(ns));
         }
         // name(...) without namespace
         if matches!(tokens.get(1).map(|t| &t.token), Some(Token::LParen)) {
             let args = parse_call_args(&tokens[2..])?;
             return Ok(PipelineStep::Call {
                 namespace: None,
-                name: ns.clone(),
+                name: ns,
                 args,
             });
         }
-        return Ok(PipelineStep::Name(ns.clone()));
+        return Ok(PipelineStep::Name(ns));
     }
     Err(format!(
         "unrecognized pipeline step near `{}`",
@@ -1445,25 +1550,39 @@ fn parse_step(tokens: &[SpannedToken]) -> Result<PipelineStep, String> {
     ))
 }
 
-/// Named call args may reuse reserved words (`:route`, `:method`, `:query`, …).
-fn arg_name_from_token(token: &Token) -> Option<String> {
+/// Identifiers and reserved words that are still valid as names / namespaces.
+fn ident_like_name(token: &Token) -> Option<String> {
     match token {
         Token::Ident(n) => Some(n.clone()),
+        Token::Contract => Some("contract".into()),
+        Token::Component => Some("component".into()),
+        Token::Resource => Some("resource".into()),
+        Token::App => Some("app".into()),
+        Token::Service => Some("service".into()),
+        Token::Processor => Some("processor".into()),
+        Token::Sink => Some("sink".into()),
+        Token::Task => Some("task".into()),
+        Token::Class => Some("class".into()),
         Token::Route => Some("route".into()),
         Token::Method => Some("method".into()),
         Token::Query => Some("query".into()),
         Token::Mutation => Some("mutation".into()),
+        Token::Seed => Some("seed".into()),
         Token::State => Some("state".into()),
         Token::Slot => Some("slot".into()),
         Token::Emit => Some("emit".into()),
         Token::Has => Some("has".into()),
-        Token::Class => Some("class".into()),
         Token::For => Some("for".into()),
         Token::When => Some("when".into()),
         Token::Else => Some("else".into()),
         Token::Await => Some("await".into()),
         _ => None,
     }
+}
+
+/// Named call args may reuse reserved words (`:route`, `:method`, `:query`, …).
+fn arg_name_from_token(token: &Token) -> Option<String> {
+    ident_like_name(token)
 }
 
 fn parse_call_args(tokens: &[SpannedToken]) -> Result<Vec<TraitArg>, String> {
@@ -1558,12 +1677,12 @@ mod tests {
     #[test]
     fn parses_component_and_app() {
         let src = r#"
-@version("0.2.0")
-class Product {
+@version("0.4.0")
+contract Product {
     has Str $.name;
     has num64 $.price;
 }
-class ProductCard is component {
+component ProductCard {
     has Product $.product;
     emit add(Product);
     method render() {
@@ -1576,7 +1695,7 @@ class ProductCard is component {
         emit add($.product);
     }
 }
-class ShopPage is component {
+component ShopPage {
     method render() {
         ui::page(
             ProductCard(:product($.product), :on(add => on_add))
@@ -1586,12 +1705,8 @@ class ShopPage is component {
         navigate("/");
     }
 }
-class ShopApp is app {
+app ShopApp {
     route "/" => ShopPage;
-    method serve() {
-        ui::web(:root(ShopApp), :port(18088))
-            ==> ui::terminal(:port(18023))
-    }
 }
 "#;
         let program = parse(src).expect("parse");
@@ -1599,25 +1714,126 @@ class ShopApp is app {
         assert_eq!(program.components.len(), 2);
         assert_eq!(program.apps.len(), 1);
         assert_eq!(program.apps[0].routes[0].component, "ShopPage");
+        assert!(program.apps[0].serve.is_none());
     }
 
     #[test]
-    fn rejects_legacy_view() {
+    fn parses_intent_declarations() {
         let src = r#"
-class X is view {
-    method render() { ui::page() }
+@version("0.4.0")
+contract Record { has Str $.id; }
+component Page { method render() { ui::page() } }
+resource Records for Record {
+    query list;
+    mutation create;
+}
+app Demo {
+    route "/" => Page;
+}
+service Api {}
+processor Worker {}
+task Cleanup {}
+"#;
+        let program = parse(src).expect("parse intent declarations");
+        assert_eq!(program.contracts.len(), 1);
+        assert_eq!(program.components.len(), 1);
+        assert_eq!(program.resources.len(), 1);
+        assert_eq!(program.resources[0].contract.as_deref(), Some("Record"));
+        assert_eq!(program.resources[0].methods.len(), 2);
+        assert_eq!(program.apps.len(), 1);
+        assert_eq!(program.modules.len(), 3);
+    }
+
+    #[test]
+    fn parses_resource_seeds() {
+        let src = r#"
+@version("0.4.0")
+contract Article {
+    has Str $.id;
+    has Str $.title;
+}
+resource Articles for Article {
+    query list;
+    mutation create;
+    seed Article.new(:id("a1"), :title("Hello"));
+    seed Article.new(:id("a2"), :title("World"));
+}
+"#;
+        let program = parse(src).expect("parse seeds");
+        assert_eq!(program.resources[0].seeds.len(), 2);
+        assert_eq!(program.resources[0].seeds[0].contract, "Article");
+        assert_eq!(program.resources[0].seeds[0].fields[0].0, "id");
+        program.validate().expect("validate seeds");
+    }
+
+    #[test]
+    fn rejects_seed_wrong_contract() {
+        let src = r#"
+@version("0.4.0")
+contract Article { has Str $.id; }
+contract Other { has Str $.id; }
+resource Articles for Article {
+    query list;
+    seed Other.new(:id("x"));
 }
 "#;
         let err = parse(src).unwrap_err();
-        assert!(err.message.contains("is view"));
+        assert!(err.message.contains("Article"), "error: {err}");
+    }
+
+    #[test]
+    fn validate_rejects_seed_without_id() {
+        let src = r#"
+@version("0.4.0")
+contract Article {
+    has Str $.id;
+    has Str $.title;
+}
+resource Articles for Article {
+    query list;
+    seed Article.new(:title("Hello"));
+}
+component Page { method render() { ui::page() } }
+app Demo { route "/" => Page; }
+"#;
+        let program = parse(src).expect("parse");
+        let err = program.validate().unwrap_err();
+        assert!(err.contains("id"), "error: {err}");
+    }
+
+    #[test]
+    fn rejects_author_sink_with_migration_diagnostic() {
+        let err = parse("sink Db is storage(SQLite) {}").unwrap_err();
+        assert!(err.message.contains("sink"), "error: {err}");
+        assert!(err.message.contains("0.4.0"), "error: {err}");
+    }
+
+    #[test]
+    fn legacy_class_forms_get_actionable_migration_diagnostics() {
+        let cases = [
+            ("class Record {}", "contract Record { ... }"),
+            ("class Page is component {}", "component Page { ... }"),
+            ("class Records is resource {}", "resource Records { ... }"),
+            ("class Demo is app {}", "app Demo { ... }"),
+            ("class Api is service {}", "service Api { ... }"),
+            ("class Worker is processor {}", "processor Worker { ... }"),
+            ("class Cleanup is task {}", "task Cleanup { ... }"),
+        ];
+        for (source, replacement) in cases {
+            let err = parse(source).unwrap_err();
+            assert!(err.message.contains("legacy `class`"), "error: {err}");
+            assert!(err.message.contains(replacement), "error: {err}");
+        }
+        let sink_err = parse("class Db is sink is storage(SQLite) {}").unwrap_err();
+        assert!(sink_err.message.contains("legacy `class`"), "{sink_err}");
     }
 
     #[test]
     fn parses_subset_where_contains() {
         let src = r#"
-@version("0.2.0")
+@version("0.4.0")
 subset Uri of Str where { .contains("://") }
-class Item {
+contract Item {
     has Uri $.url;
 }
 "#;
@@ -1642,12 +1858,12 @@ subset Uri of Str where { .len > 0 }
     #[test]
     fn validate_rejects_bad_subset_literal() {
         let src = r#"
-@version("0.2.0")
+@version("0.4.0")
 subset Uri of Str where { .contains("://") }
-class Product {
+contract Product {
     has Uri $.url;
 }
-class Page is component {
+component Page {
     method render() {
         ui::page(ui::heading(:text("x")))
     }
@@ -1655,11 +1871,8 @@ class Page is component {
         Product.new(:url("notauri"));
     }
 }
-class App is app {
+app App {
     route "/" => Page;
-    method serve() {
-        ui::web(:root(App), :port(18088)) ==> ui::terminal(:port(18023))
-    }
 }
 "#;
         let program = parse(src).expect("parse");

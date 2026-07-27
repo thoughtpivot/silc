@@ -94,6 +94,8 @@ Every builtin is dual-surface (`web+terminal`).
   (`none` / `any` / `anyOf(...)`).
 - Author components compose catalog nodes and may emit events that parents wire
   with `:on(event => handler)`.
+- `ui::table` accepts `:on(select(handler))`; the handler receives the selected
+  row object on both web and terminal surfaces.
 
 ### Out-of-box components
 

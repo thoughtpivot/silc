@@ -1,9 +1,9 @@
-//! Subject-oriented semantic core of ThoughtPivot Silc 0.2.0.
+//! Semantic core of ThoughtPivot Silc 0.4.0.
 //!
-//! Surface mapping (Raku-inspired Silc, ADR-002):
-//! `class`/`has`/`subset` → Contract, `is service` → Module,
-//! `is component` → Component, `is resource` → Resource, `is app` → App,
-//! traits/units/adverbials → Constraint, `==>` → Pipeline.
+//! Author surface is intent-oriented and declaration-based (`contract`,
+//! `component`, `resource`, `app`, `service`, `processor`, `task`). Internally,
+//! durable concepts are organized as subjects in this crate; subjects are an
+//! implementation architecture, not the language's product identity.
 
 pub mod app;
 pub mod component;
@@ -30,22 +30,28 @@ pub use constraint::TraitArg;
 pub use contract::{Contract, Field, Subset, SubsetPredicate};
 pub use expr::{BinOp, Expr, InterpPart, UnaryOp};
 pub use model_catalog::{
-    is_known_model_id, lookup_model, validate_model_id, ModelCatalogEntry, DEFAULT_LLM_N_CTX,
-    DEFAULT_MODEL_ID, LEGACY_MODEL_ID, MODEL_CATALOG,
+    is_known_embedding_model_id, is_known_model_id, lookup_embedding_model, lookup_model,
+    validate_embedding_model_id, validate_model_id, EmbeddingModelCatalogEntry, ModelArtifact,
+    ModelCatalogEntry, DEFAULT_EMBEDDING_MODEL_ID, DEFAULT_LLM_N_CTX, DEFAULT_MODEL_ID,
+    DEFAULT_TENSOR_INPUT_FIELD, DEFAULT_TENSOR_OUTPUT_FIELD, EMBEDDING_MODEL_CATALOG,
+    LEGACY_MODEL_ID, MINILM_ARTIFACTS, MINILM_EMBEDDING_DIM, MINILM_MODEL_ID, MODEL_CATALOG,
 };
 pub use module::{Method, Module, ModuleKind, Param};
 pub use operation::{
-    classify_program, infer_graph, is_executable_op, ApiRoute, ExecutableGraph, ExecutionMode,
-    ProcessorOp, ScrapeCapabilities, ScrapeSelect, UiCapabilities, DEFAULT_API_PORT,
+    classify_program, infer_graph, is_executable_op, scan_author_calls, ApiRoute, ExecutableGraph,
+    ExecutionMode, ProcessorOp, ScrapeCapabilities, ScrapeSelect, UiCapabilities, DEFAULT_API_PORT,
     DEFAULT_TERMINAL_PORT, DEFAULT_WEB_PORT, EXECUTABLE_OPS,
+};
+pub use pipeline::{Pipeline, PipelineStep};
+pub use program::Program;
+pub use resource::{
+    sink_table_for_contract, snake_case as resource_snake_case, ActionDef, Resource, ResourceKind,
+    ResourceMethod, ResourceSeed,
 };
 pub use scrape_catalog::{
     parse_js_mode, parse_same_host, parse_site_depth, JsMode, DEFAULT_JS_MODE, DEFAULT_SITE_DEPTH,
     JS_MODES, MAX_SITE_DEPTH,
 };
-pub use pipeline::{Pipeline, PipelineStep};
-pub use program::Program;
-pub use resource::{ActionDef, Resource, ResourceKind, ResourceMethod};
 pub use target::Target;
 pub use types::{Span, TypeExpr};
 pub use ui::{
@@ -62,11 +68,15 @@ mod tests {
     fn hand_built_article_pipeline_subjects() {
         let program = sample_article_pipeline();
         assert_eq!(program.contracts.len(), 1);
-        assert_eq!(program.modules.len(), 3);
+        assert_eq!(program.modules.len(), 2);
         assert_eq!(program.modules[0].kind, ModuleKind::Service);
         assert_eq!(program.modules[1].kind, ModuleKind::Processor);
-        assert_eq!(program.modules[2].kind, ModuleKind::Sink);
-        assert!(program.validate().is_ok());
+        // Legacy stub ops (http/html + tensor) must not validate as runnable.
+        let err = program.validate().unwrap_err();
+        assert!(
+            err.contains("scrape::page") || err.contains("ADR-006") || err.contains("stub-only"),
+            "expected ADR-006 / stub mix diagnostic, got {err}"
+        );
     }
 
     #[test]
@@ -81,7 +91,7 @@ mod tests {
 
     pub fn sample_article_pipeline() -> Program {
         Program {
-            version: Some("0.2.0".into()),
+            version: Some("0.4.0".into()),
             subsets: vec![
                 Subset {
                     name: "Uri".into(),
@@ -159,40 +169,6 @@ mod tests {
                                         name: "prefer".into(),
                                         value: "CUDA".into(),
                                     }],
-                                },
-                            ],
-                        },
-                    }],
-                    span: Span::default(),
-                },
-                Module {
-                    name: "RealtimeCache".into(),
-                    kind: ModuleKind::Sink,
-                    traits: vec![
-                        TraitArg {
-                            name: "latency".into(),
-                            value: "2ms".into(),
-                        },
-                        TraitArg {
-                            name: "storage".into(),
-                            value: "MemoryMapped".into(),
-                        },
-                    ],
-                    fields: vec![],
-                    methods: vec![Method {
-                        name: "persist".into(),
-                        params: vec![],
-                        pipeline: Pipeline {
-                            steps: vec![
-                                PipelineStep::Call {
-                                    namespace: Some("ipc".into()),
-                                    name: "share_buffer".into(),
-                                    args: vec![],
-                                },
-                                PipelineStep::Call {
-                                    namespace: Some("store".into()),
-                                    name: "upsert_primary".into(),
-                                    args: vec![],
                                 },
                             ],
                         },

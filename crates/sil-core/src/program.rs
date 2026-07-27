@@ -1,4 +1,4 @@
-//! A Silc 0.2.0 program: contracts, modules, components, resources, and apps.
+//! A Silc 0.4.0 program: contracts, modules, components, resources, and apps.
 
 use crate::app::App;
 use crate::component::{Component, UiTemplate};
@@ -21,6 +21,18 @@ pub struct Program {
 }
 
 impl Program {
+    pub fn validate_source_version(&self, expected: &str) -> Result<(), String> {
+        match self.version.as_deref() {
+            Some(actual) if actual == expected => Ok(()),
+            Some(actual) => Err(format!(
+                "source declares Silc {actual}; migrate to `@version(\"{expected}\")`"
+            )),
+            None => Err(format!(
+                "source is missing a version; add `@version(\"{expected}\")`"
+            )),
+        }
+    }
+
     pub fn all_components(&self) -> impl Iterator<Item = &Component> {
         self.components.iter()
     }
@@ -46,10 +58,7 @@ impl Program {
                 return Err(format!("duplicate module name `{}`", m.name));
             }
             if m.kind == crate::module::ModuleKind::Unknown {
-                return Err(format!(
-                    "module `{}` missing kind trait (is service|processor|sink)",
-                    m.name
-                ));
+                return Err(format!("module `{}` has an unknown subject kind", m.name));
             }
         }
         for component in self.all_components() {
@@ -115,10 +124,15 @@ impl Program {
                 validate_type(&field.ty, &known_types)?;
                 if let Some(default) = &field.default {
                     if let Some(lit) = string_literal_from_default(default) {
-                        check_subset_string(self, &field.ty, &lit, &format!(
-                            "contract `{}` field `{}` default",
-                            contract.name, field.name
-                        ))?;
+                        check_subset_string(
+                            self,
+                            &field.ty,
+                            &lit,
+                            &format!(
+                                "contract `{}` field `{}` default",
+                                contract.name, field.name
+                            ),
+                        )?;
                     }
                 }
             }
@@ -139,10 +153,15 @@ impl Program {
             for field in component.all_fields() {
                 validate_type(&field.ty, &known_types)?;
                 if let Some(Expr::String(lit)) = &field.default {
-                    check_subset_string(self, &field.ty, lit, &format!(
-                        "component `{}` field `{}` default",
-                        component.name, field.name
-                    ))?;
+                    check_subset_string(
+                        self,
+                        &field.ty,
+                        lit,
+                        &format!(
+                            "component `{}` field `{}` default",
+                            component.name, field.name
+                        ),
+                    )?;
                 }
             }
             for query in &component.queries {
@@ -222,14 +241,127 @@ impl Program {
                     ));
                 }
             }
-            if app.serve.is_none() {
-                return Err(format!("app `{}` must declare `method serve()`", app.name));
+        }
+
+        for resource in &self.resources {
+            let Some(contract) = &resource.contract else {
+                return Err(format!(
+                    "resource `{}` must declare `for Contract`",
+                    resource.name
+                ));
+            };
+            if self.contracts.iter().all(|c| c.name != *contract) {
+                return Err(format!(
+                    "resource `{}` references unknown contract `{contract}`",
+                    resource.name
+                ));
+            }
+            if resource.methods.iter().any(|m| m.shorthand) {
+                return Err(format!(
+                    "resource `{}` has unresolved capability declarations",
+                    resource.name
+                ));
+            }
+            let contract_def = self
+                .contracts
+                .iter()
+                .find(|c| c.name == *contract)
+                .expect("contract validated above");
+            let mut seen_seed_ids = std::collections::HashSet::new();
+            for (index, seed) in resource.seeds.iter().enumerate() {
+                if seed.contract != *contract {
+                    return Err(format!(
+                        "resource `{}` seed #{} constructs `{}`, expected `{contract}`",
+                        resource.name,
+                        index + 1,
+                        seed.contract
+                    ));
+                }
+                let mut has_id = false;
+                for (field_name, value) in &seed.fields {
+                    let Some(field) = contract_def.fields.iter().find(|f| f.name == *field_name)
+                    else {
+                        return Err(format!(
+                            "resource `{}` seed #{} has unknown field `{field_name}` for contract `{contract}`",
+                            resource.name,
+                            index + 1
+                        ));
+                    };
+                    if field_name == "id" {
+                        has_id = true;
+                        let Some(id) = value.as_string_literal() else {
+                            return Err(format!(
+                                "resource `{}` seed #{} field `id` must be a string literal",
+                                resource.name,
+                                index + 1
+                            ));
+                        };
+                        if id.is_empty() {
+                            return Err(format!(
+                                "resource `{}` seed #{} field `id` must be non-empty",
+                                resource.name,
+                                index + 1
+                            ));
+                        }
+                        if !seen_seed_ids.insert(id.to_string()) {
+                            return Err(format!(
+                                "resource `{}` has duplicate seed id `{id}`",
+                                resource.name
+                            ));
+                        }
+                    }
+                    if let Some(lit) = value.as_string_literal() {
+                        check_subset_string(
+                            self,
+                            &field.ty,
+                            lit,
+                            &format!(
+                                "resource `{}` seed #{} field `{field_name}`",
+                                resource.name,
+                                index + 1
+                            ),
+                        )?;
+                    }
+                }
+                if !has_id {
+                    return Err(format!(
+                        "resource `{}` seed #{} must include a stable `:id(\"…\")` for idempotent INSERT OR IGNORE",
+                        resource.name,
+                        index + 1
+                    ));
+                }
             }
         }
+
+        reject_author_runtime_mechanics(self)?;
 
         let _graph = crate::operation::infer_graph(self)?;
         Ok(())
     }
+}
+
+fn reject_author_runtime_mechanics(program: &Program) -> Result<(), String> {
+    let mut forbidden = Vec::new();
+    let mut note = |ns: &str, name: &str| {
+        let key = format!("{ns}::{name}");
+        if !forbidden.contains(&key) {
+            forbidden.push(key);
+        }
+    };
+    crate::operation::scan_author_calls(program, |ns, name| match (ns, name) {
+        ("ui", "web") | ("ui", "terminal") => note(ns, name),
+        ("ipc", _) => note(ns, name),
+        ("store", _) => note(ns, name),
+        ("resource", _) => note(ns, name),
+        _ => {}
+    });
+    if forbidden.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "runtime mechanics are compiler-owned in Silc 0.4.0 and must not appear in source ({}); remove `method serve()`, `sink`, `ipc::*`, `store::*`, and `resource::*` pipelines — declare `app` routes, `resource Name for Contract {{ query/mutation; }}`, and processor workflows only",
+        forbidden.join(", ")
+    ))
 }
 
 fn validate_component_template(
@@ -340,10 +472,7 @@ fn subset_predicate_for_type<'a>(
     match ty {
         TypeExpr::Named(name) => {
             let subset = program.subsets.iter().find(|s| s.name == *name)?;
-            subset
-                .predicate
-                .as_ref()
-                .map(|p| (subset.name.as_str(), p))
+            subset.predicate.as_ref().map(|p| (subset.name.as_str(), p))
         }
         TypeExpr::Optional(inner) => subset_predicate_for_type(program, inner),
         _ => None,

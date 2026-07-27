@@ -1,4 +1,4 @@
-//! Silc lexer for the Raku-inspired surface (ADR-002 / 0.2.0).
+//! Silc lexer for the independent intent surface (ADR-002 / 0.4.0).
 
 use logos::Logos;
 
@@ -13,6 +13,22 @@ pub enum Token {
     Subset,
     #[token("class")]
     Class,
+    #[token("contract")]
+    Contract,
+    #[token("component")]
+    Component,
+    #[token("resource")]
+    Resource,
+    #[token("app")]
+    App,
+    #[token("service")]
+    Service,
+    #[token("processor")]
+    Processor,
+    #[token("sink")]
+    Sink,
+    #[token("task")]
+    Task,
     #[token("has")]
     Has,
     #[token("method")]
@@ -27,6 +43,8 @@ pub enum Token {
     Query,
     #[token("mutation")]
     Mutation,
+    #[token("seed")]
+    Seed,
     #[token("slot")]
     Slot,
     #[token("emit")]
@@ -164,11 +182,9 @@ mod tests {
 
     #[test]
     fn lexes_component_keywords() {
-        let tokens = lex("class X is component { has state Str $.q; }").expect("lex");
+        let tokens = lex("component X { has state Str $.q; }").expect("lex");
         assert!(tokens.iter().any(|t| matches!(t.token, Token::State)));
-        assert!(tokens
-            .iter()
-            .any(|t| matches!(&t.token, Token::Ident(s) if s == "component")));
+        assert!(tokens.iter().any(|t| matches!(t.token, Token::Component)));
     }
 
     #[test]

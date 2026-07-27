@@ -37,7 +37,7 @@ implementing the Raku language or Rakudo runtime.
 | `subset` / `where`, `contract` / `has` | Contract |
 | `service …` / `processor …` / `task …` | Module |
 | `component …` | Component (props, state, slots, emit, render) |
-| `resource … for …` | Resource (capability query / mutation) |
+| `resource … for …` | Resource (capability query / mutation; optional `seed`) |
 | `app …` | App (routes; dual-surface serving synthesized) |
 | traits, units, colon-pair adverbials | Constraint |
 | `==>` feeds | Pipeline (see [ADR-007](ADR-007-pipeline-feeds.md)) |
@@ -137,6 +137,7 @@ Template / handler control flow:
 - Navigation: `navigate("/path")`
 - Async: `await expr`
 - Event wiring: `:on(click(handler))`, `:on(submit(handler))`,
+  `:on(select(handler))` on `ui::table` (row payload),
   `:on(remove => on_delete)` (forward author events)
 
 ### Resources
@@ -146,11 +147,20 @@ resource InventoryItems for InventoryItem {
     query list;
     mutation create;
 }
+
+resource Articles for Article {
+    query list;
+    mutation create;
+    mutation update;
+    mutation delete;
+    seed Article.new(:id("article-001"), :title("Hello"));
+}
 ```
 
 Capability declarations expand to conventional CRUD signatures. Derived HTTP:
 `GET/POST /api/{table}`, `GET/PUT/DELETE /api/{table}/:id` (table from the
-resource name).
+resource name). Optional `seed Contract.new(...)` rows are compiler-owned
+idempotent inserts (`INSERT OR IGNORE`) and require a stable `:id("…")`.
 
 ### Apps
 

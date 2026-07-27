@@ -182,7 +182,13 @@ fn tracked_example_agents_embed_template_common_block() {
     let template = read_workspace("crates/silc/templates/AGENTS.md");
     let expected = template_common_block(&template);
 
-    for app in ["chatApp", "inventoryApp", "scraperApp", "pipelineApp"] {
+    for app in [
+        "chatApp",
+        "inventoryApp",
+        "scraperApp",
+        "pipelineApp",
+        "blogApp",
+    ] {
         let agents = read_workspace(&format!("examples/{app}/AGENTS.md"));
         let actual = template_common_block(&agents);
         assert_eq!(
@@ -193,5 +199,56 @@ fn tracked_example_agents_embed_template_common_block() {
             agents.len() > expected.len(),
             "{app}/AGENTS.md must append app-specific guidance after the template block"
         );
+    }
+}
+
+#[test]
+fn canonical_silc_sources_omit_runtime_plumbing() {
+    let roots = [
+        "examples/chatApp/main.silc",
+        "examples/inventoryApp/main.silc",
+        "examples/scraperApp/main.silc",
+        "examples/pipelineApp/main.silc",
+        "crates/silc/templates/main.silc",
+        "crates/silc/tests/fixtures/scored_form.silc",
+        "crates/silc/tests/fixtures/shopping_app.silc",
+        "crates/silc/tests/fixtures/blog_app.silc",
+        "crates/silc/tests/fixtures/data_pipeline.silc",
+        "crates/silc/tests/fixtures/data_pipeline_runnable.silc",
+        "crates/sil-router/tests/fixtures/data_pipeline.silc",
+        "crates/sil-router/tests/fixtures/data_pipeline_runnable.silc",
+    ];
+
+    let forbidden = [
+        "sink ",
+        "method serve(",
+        "ui::web(",
+        "ui::terminal(",
+        "ipc::publish",
+        "store::sqlite",
+        "store::commit",
+        "resource::list",
+        "resource::get",
+        "resource::create",
+        "resource::update",
+        "resource::delete",
+        "is storage",
+        "has $.table",
+        "@version(\"0.3.0\")",
+        "@version(\"0.2.0\")",
+    ];
+
+    for rel in roots {
+        let src = read_workspace(rel);
+        assert!(
+            src.contains("@version(\"0.4.0\")"),
+            "{rel} must declare @version(\"0.4.0\")"
+        );
+        for needle in forbidden {
+            assert!(
+                !src.contains(needle),
+                "{rel} must not contain author runtime plumbing `{needle}`"
+            );
+        }
     }
 }

@@ -740,7 +740,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
         ],
         slots: &[],
         children: ChildPolicy::None,
-        events: &[],
+        events: &[EventSpec { name: "select" }],
         surfaces: BOTH,
     },
     ComponentSpec {

@@ -1,0 +1,572 @@
+#!/usr/bin/env silc
+# Standalone blog app: chronological home, year/month filters, grounded silclm search,
+# and admin CRUD with table-row modal edit. Thirty SilcLM-authored seeds ship with the app.
+@version("0.4.0")
+
+contract Article {
+    has Str $.id;
+    has Str $.title;
+    has Str $.body;
+    has Str $.author;
+    has Str $.published_at;
+    has Str $.year;
+    has Str $.month;
+}
+
+contract ChatRecord {
+    has Str $.prompt;
+    has Str $.reply;
+}
+
+resource Articles for Article {
+    query list;
+    mutation create;
+    mutation update;
+    mutation delete;
+    seed Article.new(
+        :id("article-001"),
+        :title("LLM Assistant Demo"),
+        :body("Local LLM demo for on-device assistants. Simple demo to test AI capabilities."),
+        :author("Ava Chen"),
+        :published_at("2024-01-01"),
+        :year("2024"),
+        :month("January")
+    );
+    seed Article.new(
+        :id("article-002"),
+        :title("Intent Compiler"),
+        :body("Intent compiler vs framework debate. Which is better for AI-powered apps?"),
+        :author("Marcus Reid"),
+        :published_at("2024-02-02"),
+        :year("2024"),
+        :month("February")
+    );
+    seed Article.new(
+        :id("article-003"),
+        :title("Dual-Surface UI"),
+        :body("Dual-surface web and terminal UI. A new frontier for app development."),
+        :author("Sofia Alvarez"),
+        :published_at("2024-03-03"),
+        :year("2024"),
+        :month("March")
+    );
+    seed Article.new(
+        :id("article-004"),
+        :title("SQLite CRUD App"),
+        :body("SQLite resource CRUD apps. Efficient data storage for AI-powered apps."),
+        :author("Jonah Park"),
+        :published_at("2024-04-04"),
+        :year("2024"),
+        :month("April")
+    );
+    seed Article.new(
+        :id("article-005"),
+        :title("Scrape then Embed"),
+        :body("Scrape then embed pipeline. Extracting data from web pages."),
+        :author("Elena Vogt"),
+        :published_at("2024-05-05"),
+        :year("2024"),
+        :month("May")
+    );
+    seed Article.new(
+        :id("article-006"),
+        :title("LLM Assistant"),
+        :body("Local LLM on-device assistants are becoming a norm. Enhanced AI capabilities in smaller devices."),
+        :author("Noah Briggs"),
+        :published_at("2024-06-06"),
+        :year("2024"),
+        :month("June")
+    );
+    seed Article.new(
+        :id("article-007"),
+        :title("Intent Compiler (2)"),
+        :body("Intent compilers simplify app development. Modular frameworks enable seamless integrations."),
+        :author("Priya Nair"),
+        :published_at("2024-07-07"),
+        :year("2024"),
+        :month("July")
+    );
+    seed Article.new(
+        :id("article-008"),
+        :title("Dual-Surface UI (2)"),
+        :body("Dual-surface web and terminal UIs offer flexibility. Endless possibilities for user experience."),
+        :author("Theo Lang"),
+        :published_at("2024-08-08"),
+        :year("2024"),
+        :month("August")
+    );
+    seed Article.new(
+        :id("article-009"),
+        :title("SQLite CRUD Apps"),
+        :body("SQLite resource CRUD apps streamline data storage. Efficient and accessible data management."),
+        :author("Mira Solis"),
+        :published_at("2024-09-09"),
+        :year("2024"),
+        :month("September")
+    );
+    seed Article.new(
+        :id("article-010"),
+        :title("Scrape & Embed"),
+        :body("Scrape data pipelines streamline data collection. Embed data into apps seamlessly."),
+        :author("Owen Blake"),
+        :published_at("2024-10-10"),
+        :year("2024"),
+        :month("October")
+    );
+    seed Article.new(
+        :id("article-011"),
+        :title("LLM on Device"),
+        :body("Local LLMs for on-device assistants."),
+        :author("Ava Chen"),
+        :published_at("2024-11-11"),
+        :year("2024"),
+        :month("November")
+    );
+    seed Article.new(
+        :id("article-012"),
+        :title("Intent Compilers"),
+        :body("Frameworks for intent-based UI."),
+        :author("Marcus Reid"),
+        :published_at("2024-12-12"),
+        :year("2024"),
+        :month("December")
+    );
+    seed Article.new(
+        :id("article-013"),
+        :title("Dual Surface UI"),
+        :body("Web and terminal UI fusion."),
+        :author("Sofia Alvarez"),
+        :published_at("2025-01-13"),
+        :year("2025"),
+        :month("January")
+    );
+    seed Article.new(
+        :id("article-014"),
+        :title("SQLite CRUD"),
+        :body("Apps with SQLite resource CRUD."),
+        :author("Jonah Park"),
+        :published_at("2025-02-14"),
+        :year("2025"),
+        :month("February")
+    );
+    seed Article.new(
+        :id("article-015"),
+        :title("Scrape and Embed"),
+        :body("Pipelines for web data extraction."),
+        :author("Elena Vogt"),
+        :published_at("2025-03-15"),
+        :year("2025"),
+        :month("March")
+    );
+    seed Article.new(
+        :id("article-016"),
+        :title("LLM Local Assistants"),
+        :body("On-device LLMs simplify tasks, reducing latency and improving user experience."),
+        :author("Noah Briggs"),
+        :published_at("2025-04-16"),
+        :year("2025"),
+        :month("April")
+    );
+    seed Article.new(
+        :id("article-017"),
+        :title("Intent Compilers (2)"),
+        :body("Framework vs compiler: A discussion on intent-driven AI development."),
+        :author("Priya Nair"),
+        :published_at("2025-05-17"),
+        :year("2025"),
+        :month("May")
+    );
+    seed Article.new(
+        :id("article-018"),
+        :title("Dual UI"),
+        :body("Simplify app development with a dual-surface web and terminal UI."),
+        :author("Theo Lang"),
+        :published_at("2025-06-18"),
+        :year("2025"),
+        :month("June")
+    );
+    seed Article.new(
+        :id("article-019"),
+        :title("SQLite CRUD (2)"),
+        :body("Efficient app development with SQLite resource CRUD operations."),
+        :author("Mira Solis"),
+        :published_at("2025-07-19"),
+        :year("2025"),
+        :month("July")
+    );
+    seed Article.new(
+        :id("article-020"),
+        :title("Scrape and Embed (2)"),
+        :body("Pipelines for web scraping and seamless embeds."),
+        :author("Owen Blake"),
+        :published_at("2025-08-20"),
+        :year("2025"),
+        :month("August")
+    );
+    seed Article.new(
+        :id("article-021"),
+        :title("LLM on Device (2)"),
+        :body("Local AI on your device, faster and more private."),
+        :author("Ava Chen"),
+        :published_at("2025-09-21"),
+        :year("2025"),
+        :month("September")
+    );
+    seed Article.new(
+        :id("article-022"),
+        :title("Intent vs Framework"),
+        :body("Which one to choose for your next project?"),
+        :author("Marcus Reid"),
+        :published_at("2025-10-22"),
+        :year("2025"),
+        :month("October")
+    );
+    seed Article.new(
+        :id("article-023"),
+        :title("Dual UI (2)"),
+        :body("Web and terminal, side by side, for a better user experience."),
+        :author("Sofia Alvarez"),
+        :published_at("2025-11-23"),
+        :year("2025"),
+        :month("November")
+    );
+    seed Article.new(
+        :id("article-024"),
+        :title("SQLite CRUD (3)"),
+        :body("Simple and fast, for all your database needs."),
+        :author("Jonah Park"),
+        :published_at("2025-12-24"),
+        :year("2025"),
+        :month("December")
+    );
+    seed Article.new(
+        :id("article-025"),
+        :title("Scrape & Embed (2)"),
+        :body("Extract and display data, with ease and simplicity."),
+        :author("Elena Vogt"),
+        :published_at("2026-01-25"),
+        :year("2026"),
+        :month("January")
+    );
+    seed Article.new(
+        :id("article-026"),
+        :title("LLM on-device"),
+        :body("Local AI on the edge, no cloud needed."),
+        :author("Noah Briggs"),
+        :published_at("2026-02-26"),
+        :year("2026"),
+        :month("February")
+    );
+    seed Article.new(
+        :id("article-027"),
+        :title("Intent vs Framework (2)"),
+        :body("Choose wisely for your app's future."),
+        :author("Priya Nair"),
+        :published_at("2026-03-27"),
+        :year("2026"),
+        :month("March")
+    );
+    seed Article.new(
+        :id("article-028"),
+        :title("Dual UI (3)"),
+        :body("Where web meets terminal, where UI meets UX."),
+        :author("Theo Lang"),
+        :published_at("2026-04-28"),
+        :year("2026"),
+        :month("April")
+    );
+    seed Article.new(
+        :id("article-029"),
+        :title("SQLite CRUD (4)"),
+        :body("Store and retrieve with ease, locally."),
+        :author("Mira Solis"),
+        :published_at("2026-05-01"),
+        :year("2026"),
+        :month("May")
+    );
+    seed Article.new(
+        :id("article-030"),
+        :title("Scrape & Embed (3)"),
+        :body("Get data, then display it beautifully."),
+        :author("Owen Blake"),
+        :published_at("2026-06-02"),
+        :year("2026"),
+        :month("June")
+    );
+}
+
+component ArticleCard {
+    has Article $.article;
+
+    method render() {
+        ui::card(
+            ui::heading(:text($.article.title), :level(3)),
+            ui::badge(:text($.article.month), :tone(info)),
+            ui::text(:text($.article.author)),
+            ui::text(:text($.article.published_at)),
+            ui::text(:text($.article.body))
+        )
+    }
+}
+
+component HomePage {
+    has state Str $.year_filter = "All";
+    has state Str $.month_filter = "All";
+    has state Str $.prompt = "";
+    query $.articles = Articles.list();
+
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("Silc Blog"))),
+            :side_panel(ui::side_panel(
+                ui::nav_item(:label("Home"), :to("/"), :active),
+                ui::nav_item(:label("Admin"), :to("/admin"))
+            )),
+            ui::stack(
+                ui::section(
+                    :title("Articles"),
+                    :description("Browse chronologically, filter by year and month, or ask silclm about the live catalog.")
+                ),
+                ui::alert(
+                    :tone(info),
+                    :text("Home and Admin share the articles resource. Seeds load once with stable ids; admin edits persist across restarts.")
+                ),
+                ui::section(
+                    :title("Filters"),
+                    :description("Chip-style year and month filters narrow the card feed."),
+                    ui::radio_group(
+                        :field(year_filter),
+                        :options(["All", "2024", "2025", "2026"]),
+                        :label("Year")
+                    ),
+                    ui::radio_group(
+                        :field(month_filter),
+                        :options(["All", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]),
+                        :label("Month")
+                    )
+                ),
+                ui::section(
+                    :title("Feed"),
+                    :description("Newest articles first."),
+                    when !$.articles {
+                        ui::empty(:text("No articles yet."))
+                    },
+                    when $.year_filter == "All" {
+                        when $.month_filter == "All" {
+                            for $.articles -> $article {
+                                ArticleCard(:article($article))
+                            }
+                        } else {
+                            for $.articles -> $article {
+                                when $article.month == $.month_filter {
+                                    ArticleCard(:article($article))
+                                }
+                            }
+                        }
+                    } else {
+                        when $.month_filter == "All" {
+                            for $.articles -> $article {
+                                when $article.year == $.year_filter {
+                                    ArticleCard(:article($article))
+                                }
+                            }
+                        } else {
+                            for $.articles -> $article {
+                                when $article.year == $.year_filter {
+                                    when $article.month == $.month_filter {
+                                        ArticleCard(:article($article))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                ),
+                ui::section(
+                    :title("Ask about articles"),
+                    :description("Natural-language search grounded on the live article snapshot."),
+                    ui::chat(
+                        :value($.prompt),
+                        :context($.articles),
+                        :persona("You are the Blog Assistant for this Silc blog app, built on silclm. Answer using the live article catalog: titles, authors, dates, and short bodies. Prefer concise citations."),
+                        :placeholder("Which articles cover dual-surface UI?"),
+                        :on(send(on_send))
+                    )
+                )
+            )
+        )
+    }
+
+    method on_send() {
+        Assistant.complete();
+    }
+}
+
+component AdminPage {
+    has state Str $.title = "";
+    has state Str $.body = "";
+    has state Str $.author = "";
+    has state Str $.published_at = "";
+    has state Str $.year = "2026";
+    has state Str $.month = "January";
+    has state Str $.selected_id = "";
+    has state Str $.edit_title = "";
+    has state Str $.edit_body = "";
+    has state Str $.edit_author = "";
+    has state Str $.edit_published_at = "";
+    has state Str $.edit_year = "2026";
+    has state Str $.edit_month = "January";
+    has state Bool $.dialog_open = false;
+    query $.articles = Articles.list();
+
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("Blog Admin"))),
+            :side_panel(ui::side_panel(
+                ui::nav_item(:label("Home"), :to("/")),
+                ui::nav_item(:label("Admin"), :to("/admin"), :active)
+            )),
+            ui::stack(
+                ui::section(
+                    :title("New article"),
+                    :description("Create a post. Year and month drive Home filters."),
+                    ui::form(:on(submit(on_create)),
+                        ui::text_input(:field(title), :label("Title")),
+                        ui::textarea(:field(body), :label("Body")),
+                        ui::text_input(:field(author), :label("Author")),
+                        ui::text_input(:field(published_at), :label("Published at (YYYY-MM-DD)")),
+                        ui::radio_group(
+                            :field(year),
+                            :options(["2024", "2025", "2026"]),
+                            :label("Year")
+                        ),
+                        ui::select(
+                            :field(month),
+                            :options(["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]),
+                            :label("Month")
+                        ),
+                        ui::toolbar(
+                            ui::button(:label("Create"), :variant("primary"), :submit)
+                        )
+                    )
+                ),
+                ui::section(
+                    :title("All articles"),
+                    :description("Click a row to open the full article in a modal for edit or delete."),
+                    ui::table(
+                        :rows($.articles),
+                        :columns(["title", "author", "published_at", "year", "month"]),
+                        :empty_text("No articles yet."),
+                        :sortable,
+                        :searchable,
+                        :selectable,
+                        :on(select(on_select))
+                    )
+                ),
+                ui::dialog(
+                    :open($.dialog_open),
+                    :title("Edit article"),
+                    :on(confirm(on_save)),
+                    :on(cancel(on_cancel)),
+                    ui::stack(
+                        ui::text_input(:field(edit_title), :label("Title")),
+                        ui::textarea(:field(edit_body), :label("Body")),
+                        ui::text_input(:field(edit_author), :label("Author")),
+                        ui::text_input(:field(edit_published_at), :label("Published at")),
+                        ui::radio_group(
+                            :field(edit_year),
+                            :options(["2024", "2025", "2026"]),
+                            :label("Year")
+                        ),
+                        ui::select(
+                            :field(edit_month),
+                            :options(["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]),
+                            :label("Month")
+                        ),
+                        ui::toolbar(
+                            ui::button(
+                                :label("Delete"),
+                                :variant("destructive"),
+                                :on(click(on_delete))
+                            )
+                        )
+                    )
+                )
+            )
+        )
+    }
+
+    method on_create() {
+        Articles.create(Article.new(
+            :title($.title),
+            :body($.body),
+            :author($.author),
+            :published_at($.published_at),
+            :year($.year),
+            :month($.month)
+        ));
+        Articles.list();
+        $.title = "";
+        $.body = "";
+        $.author = "";
+        $.published_at = "";
+        $.year = "2026";
+        $.month = "January";
+    }
+
+    method on_select(Article $article) {
+        $.selected_id = $article.id;
+        $.edit_title = $article.title;
+        $.edit_body = $article.body;
+        $.edit_author = $article.author;
+        $.edit_published_at = $article.published_at;
+        $.edit_year = $article.year;
+        $.edit_month = $article.month;
+        $.dialog_open = true;
+    }
+
+    method on_save() {
+        Articles.update(Article.new(
+            :id($.selected_id),
+            :title($.edit_title),
+            :body($.edit_body),
+            :author($.edit_author),
+            :published_at($.edit_published_at),
+            :year($.edit_year),
+            :month($.edit_month)
+        ));
+        Articles.list();
+        $.dialog_open = false;
+        $.selected_id = "";
+    }
+
+    method on_delete() {
+        Articles.delete(Article.new(
+            :id($.selected_id),
+            :title($.edit_title),
+            :body($.edit_body),
+            :author($.edit_author),
+            :published_at($.edit_published_at),
+            :year($.edit_year),
+            :month($.edit_month)
+        ));
+        Articles.list();
+        $.dialog_open = false;
+        $.selected_id = "";
+    }
+
+    method on_cancel() {
+        $.dialog_open = false;
+        $.selected_id = "";
+    }
+}
+
+app BlogApp {
+    route "/" => HomePage;
+    route "/admin" => AdminPage;
+}
+
+processor Assistant {
+    method complete(ChatRecord $record) {
+        $record.prompt ==> llm::complete()
+    }
+}

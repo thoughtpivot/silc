@@ -1,40 +1,41 @@
-//! Executable operation registry for Silc 0.2.0 runnable programs.
+//! Executable operation registry for Silc 0.4.0 runnable programs.
 
 use crate::app::App;
 use crate::component::Component;
-use crate::model_catalog::{validate_model_id, DEFAULT_MODEL_ID};
+use crate::model_catalog::{
+    validate_embedding_model_id, validate_model_id, DEFAULT_EMBEDDING_MODEL_ID, DEFAULT_MODEL_ID,
+    DEFAULT_TENSOR_INPUT_FIELD, DEFAULT_TENSOR_OUTPUT_FIELD, MINILM_EMBEDDING_DIM,
+};
 use crate::module::{Module, ModuleKind};
 use crate::pipeline::PipelineStep;
 use crate::program::Program;
-use crate::resource::{ActionDef, Resource, ResourceKind};
+use crate::resource::{sink_table_for_contract, ActionDef, Resource, ResourceKind};
 use crate::scrape_catalog::{
     parse_js_mode, parse_same_host, parse_site_depth, JsMode, DEFAULT_JS_MODE, DEFAULT_SITE_DEPTH,
 };
+use crate::types::TypeExpr;
 
-/// Operations Silc 0.2.0 can lower and run.
+/// Author-facing operations Silc 0.4.0 can lower and run.
+/// Runtime-owned surfaces (`ui::web`/`ui::terminal`), IPC/store, and resource CRUD
+/// pipelines are synthesized by the compiler and must not appear in source.
 pub const EXECUTABLE_OPS: &[(&str, &str)] = &[
-    ("ui", "web"),
-    ("ui", "terminal"),
     ("service", "http"),
     ("text", "score"),
     ("llm", "complete"),
-    ("ipc", "publish"),
-    ("store", "sqlite"),
-    ("store", "commit"),
-    ("resource", "list"),
-    ("resource", "get"),
-    ("resource", "create"),
-    ("resource", "update"),
-    ("resource", "delete"),
     ("scrape", "page"),
     ("scrape", "site"),
     ("scrape", "select"),
     ("scrape", "render"),
     ("scrape", "extract"),
+    ("tensor", "tokenize"),
+    ("tensor", "infer"),
 ];
 
 const SUPPORTED_OPS_HELP: &str =
-    "ui::web + ui::terminal with an `is app` root, resources/actions, optional text::score or llm::complete, scrape::*, or service::http API-only";
+    "`app` routes (dual-surface UI synthesized), `resource Name for Contract` capabilities, optional text::score or llm::complete, scrape::*, tensor::tokenize/infer pipeline, or service::http API-only";
+
+const TENSOR_CPU_ONLY: &str =
+    "tensor::infer is CPU-only in Silc 0.4.0; remove :prefer(CUDA) (default/CPU accepted)";
 
 const SCRAPE_MIGRATE_HINT: &str =
     "use scrape::page / scrape::site / scrape::select instead of http::get / html::* (see ADR-006)";
@@ -42,6 +43,13 @@ const SCRAPE_MIGRATE_HINT: &str =
 pub const DEFAULT_TERMINAL_PORT: u16 = 18023;
 pub const DEFAULT_API_PORT: u16 = 8080;
 pub const DEFAULT_WEB_PORT: u16 = 18088;
+
+fn env_u16(name: &str, default: u16) -> u16 {
+    std::env::var(name)
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(default)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExecutionMode {
@@ -63,6 +71,7 @@ pub enum ProcessorOp {
     None,
     Score,
     LlmComplete,
+    TensorInfer,
 }
 
 impl ProcessorOp {
@@ -71,11 +80,16 @@ impl ProcessorOp {
             ProcessorOp::None => "none",
             ProcessorOp::Score => "text.score",
             ProcessorOp::LlmComplete => "llm.complete",
+            ProcessorOp::TensorInfer => "tensor.infer",
         }
     }
 
     pub fn needs_llm(self) -> bool {
         matches!(self, ProcessorOp::LlmComplete)
+    }
+
+    pub fn needs_tensor(self) -> bool {
+        matches!(self, ProcessorOp::TensorInfer)
     }
 }
 
@@ -172,6 +186,14 @@ pub struct ExecutableGraph {
     pub terminal_port: Option<u16>,
     pub api_routes: Vec<ApiRoute>,
     pub model_ref: Option<String>,
+    /// Closed embedding output dimension when `processor_op` is `TensorInfer`.
+    pub embedding_dim: Option<u32>,
+    /// Tensor runtime device (`CPU` only in Silc 0.4.0).
+    pub tensor_device: Option<String>,
+    /// Contract field read by the tensor pipeline (default `raw_content`).
+    pub tensor_input_field: Option<String>,
+    /// Contract field written by `tensor::infer` (default `vector_embedding`).
+    pub tensor_output_field: Option<String>,
     pub actions: Vec<ActionDef>,
     pub resource_tables: Vec<(String, String)>, // (resource_name, table)
     pub root_component: Option<String>,
@@ -195,7 +217,12 @@ impl ExecutableGraph {
     }
 
     pub fn is_scrape_only(&self) -> bool {
-        self.has_scrape() && !self.has_ui() && !self.has_api()
+        self.has_scrape() && !self.has_ui() && !self.has_api() && !self.needs_tensor()
+    }
+
+    /// No UI/API surface — scrape ingest + tensor processor + sink pipeline.
+    pub fn is_pipeline_only(&self) -> bool {
+        !self.has_ui() && !self.has_api() && self.needs_tensor()
     }
 
     pub fn api_port(&self) -> Option<u16> {
@@ -204,6 +231,10 @@ impl ExecutableGraph {
 
     pub fn needs_llm(&self) -> bool {
         self.processor_op.needs_llm() || self.capabilities.llm
+    }
+
+    pub fn needs_tensor(&self) -> bool {
+        self.processor_op.needs_tensor()
     }
 
     pub fn needs_scrape_browser(&self) -> bool {
@@ -256,20 +287,19 @@ fn is_v1_exec_namespace(ns: &str) -> bool {
             | "store"
             | "resource"
             | "scrape"
+            | "tensor"
     )
 }
 
 fn is_legacy_http_html_stub(ns: &str, name: &str) -> bool {
     matches!(
         (ns, name),
-        ("http", "get")
-            | ("html", "extract_body")
-            | ("html", "extract")
-            | ("html", "select")
+        ("http", "get") | ("html", "extract_body") | ("html", "extract") | ("html", "select")
     )
 }
 
-fn scan_calls(program: &Program, mut f: impl FnMut(&str, &str)) {
+/// Scan author-written pipelines (modules, optional legacy serve, resources).
+pub fn scan_author_calls(program: &Program, mut f: impl FnMut(&str, &str)) {
     for module in &program.modules {
         for method in &module.methods {
             for step in &method.pipeline.steps {
@@ -318,7 +348,7 @@ pub fn classify_program(program: &Program) -> Result<ExecutionMode, String> {
     let mut saw_exec = false;
     let mut saw_unknown_ns = false;
     let mut saw_legacy_http_html = false;
-    scan_calls(program, |ns, name| {
+    scan_author_calls(program, |ns, name| {
         if is_executable_op(ns, name) {
             saw_exec = true;
         } else if is_known_namespace(ns) {
@@ -329,7 +359,9 @@ pub fn classify_program(program: &Program) -> Result<ExecutionMode, String> {
         }
     });
 
-    if saw_exec && saw_unknown_ns {
+    let declaration_runnable = !program.apps.is_empty() || !program.resources.is_empty();
+
+    if (saw_exec || declaration_runnable) && saw_unknown_ns {
         if saw_legacy_http_html {
             return Err(format!(
                 "cannot mix stub-only and executable operations; {SCRAPE_MIGRATE_HINT}"
@@ -339,7 +371,7 @@ pub fn classify_program(program: &Program) -> Result<ExecutionMode, String> {
             "cannot mix stub-only and executable operations; supported runnable ops: {SUPPORTED_OPS_HELP}"
         ));
     }
-    if saw_exec {
+    if saw_exec || declaration_runnable {
         for module in &program.modules {
             for method in &module.methods {
                 for step in &method.pipeline.steps {
@@ -351,7 +383,7 @@ pub fn classify_program(program: &Program) -> Result<ExecutionMode, String> {
                     {
                         if is_v1_exec_namespace(ns) && !is_executable_op(ns, name) {
                             return Err(format!(
-                                "operation `{ns}::{name}` is not executable in Silc 0.2.0"
+                                "operation `{ns}::{name}` is not executable in Silc 0.4.0"
                             ));
                         }
                     }
@@ -407,6 +439,81 @@ fn resolve_model_ref(
         }
     }
     Ok(DEFAULT_MODEL_ID.into())
+}
+
+fn resolve_embedding_model_ref(
+    model_from_op: Option<String>,
+) -> Result<&'static crate::model_catalog::EmbeddingModelCatalogEntry, String> {
+    let id = model_from_op.unwrap_or_else(|| DEFAULT_EMBEDDING_MODEL_ID.into());
+    validate_embedding_model_id(&id)
+}
+
+fn embedding_dim_of_type(program: &Program, ty: &TypeExpr) -> Option<u32> {
+    match ty {
+        TypeExpr::Vec {
+            elem,
+            len: Some(len),
+        } if elem == "num32" || elem == "Num32" => Some(*len as u32),
+        TypeExpr::Named(name) => {
+            program
+                .subsets
+                .iter()
+                .find(|s| s.name == *name)
+                .and_then(|subset| match &subset.base {
+                    TypeExpr::Vec {
+                        elem,
+                        len: Some(len),
+                    } if elem == "num32" || elem == "Num32" => Some(*len as u32),
+                    _ => None,
+                })
+        }
+        _ => None,
+    }
+}
+
+fn validate_tensor_contract(program: &Program, scrape: &ScrapeCapabilities) -> Result<(), String> {
+    let contract_name = scrape
+        .extract_into
+        .as_deref()
+        .or_else(|| program.contracts.first().map(|c| c.name.as_str()))
+        .ok_or_else(|| {
+            "tensor pipeline requires a Contract with raw_content and vector_embedding".to_string()
+        })?;
+    let contract = program
+        .contracts
+        .iter()
+        .find(|c| c.name == contract_name)
+        .ok_or_else(|| format!("tensor pipeline references unknown contract `{contract_name}`"))?;
+
+    let has_input = contract
+        .fields
+        .iter()
+        .any(|f| f.name == DEFAULT_TENSOR_INPUT_FIELD);
+    if !has_input {
+        return Err(format!(
+            "tensor pipeline contract `{contract_name}` must declare `{DEFAULT_TENSOR_INPUT_FIELD}`"
+        ));
+    }
+
+    let output = contract
+        .fields
+        .iter()
+        .find(|f| f.name == DEFAULT_TENSOR_OUTPUT_FIELD)
+        .ok_or_else(|| {
+            format!(
+                "tensor pipeline contract `{contract_name}` must declare `{DEFAULT_TENSOR_OUTPUT_FIELD}`"
+            )
+        })?;
+
+    if let Some(dim) = embedding_dim_of_type(program, &output.ty) {
+        if dim != MINILM_EMBEDDING_DIM {
+            return Err(format!(
+                "tensor pipeline embedding dimension must be {MINILM_EMBEDDING_DIM} (got {dim} on `{DEFAULT_TENSOR_OUTPUT_FIELD}`)"
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 fn derive_actions(resources: &[Resource]) -> Vec<ActionDef> {
@@ -473,6 +580,8 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
     let mut saw_terminal = false;
     let mut saw_score = false;
     let mut saw_llm = false;
+    let mut saw_tokenize = false;
+    let mut saw_infer = false;
     let mut saw_publish = false;
     let mut saw_sqlite = false;
     let mut saw_commit = false;
@@ -481,6 +590,9 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
     let mut terminal_port: Option<u16> = None;
     let mut sqlite_table = "app_data".to_string();
     let mut model_from_op: Option<String> = None;
+    let mut embedding_model_from_op: Option<String> = None;
+    let mut tensor_prefer: Option<String> = None;
+    let mut tokenize_before_infer = false;
     let mut app_root: Option<String> = None;
     let mut api_routes: Vec<ApiRoute> = Vec::new();
     let mut last_contract: Option<String> = None;
@@ -492,6 +604,7 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
     };
 
     let mut scan_pipeline = |steps: &[PipelineStep]| -> Result<(), String> {
+        let mut saw_tokenize_in_pipeline = false;
         for step in steps {
             match step {
                 PipelineStep::Name(name) => {
@@ -560,6 +673,48 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
                             }
                         }
                     }
+                    ("tensor", "tokenize") => {
+                        saw_tokenize = true;
+                        saw_tokenize_in_pipeline = true;
+                        for arg in args {
+                            if arg.name == "model" {
+                                let model = normalize_ident(&arg.value);
+                                if let Some(existing) = &embedding_model_from_op {
+                                    if existing != &model {
+                                        return Err(format!(
+                                            "tensor::tokenize and tensor::infer must use the same model (got `{existing}` and `{model}`)"
+                                        ));
+                                    }
+                                }
+                                embedding_model_from_op = Some(model);
+                            }
+                        }
+                    }
+                    ("tensor", "infer") => {
+                        saw_infer = true;
+                        if saw_tokenize_in_pipeline {
+                            tokenize_before_infer = true;
+                        }
+                        for arg in args {
+                            match arg.name.as_str() {
+                                "model" => {
+                                    let model = normalize_ident(&arg.value);
+                                    if let Some(existing) = &embedding_model_from_op {
+                                        if existing != &model {
+                                            return Err(format!(
+                                                "tensor::tokenize and tensor::infer must use the same model (got `{existing}` and `{model}`)"
+                                            ));
+                                        }
+                                    }
+                                    embedding_model_from_op = Some(model);
+                                }
+                                "prefer" => {
+                                    tensor_prefer = Some(normalize_ident(&arg.value));
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
                     ("ipc", "publish") => saw_publish = true,
                     ("store", "sqlite") => {
                         saw_sqlite = true;
@@ -608,9 +763,8 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
                                 _ => {}
                             }
                         }
-                        let css = css.ok_or_else(|| {
-                            "scrape::select requires :css(...)".to_string()
-                        })?;
+                        let css =
+                            css.ok_or_else(|| "scrape::select requires :css(...)".to_string())?;
                         scrape.selects.push(ScrapeSelect { css, as_field });
                     }
                     ("scrape", "render") => {
@@ -659,14 +813,31 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
         }
     }
 
+    // Apps imply dual-surface UI; ports/surfaces are compiler-owned defaults.
+    if !program.apps.is_empty() {
+        saw_ui_web = true;
+        saw_terminal = true;
+        http_port = env_u16("SILC_HTTP_PORT", DEFAULT_WEB_PORT);
+        terminal_port = Some(env_u16("SILC_TERMINAL_PORT", DEFAULT_TERMINAL_PORT));
+        if app_root.is_none() {
+            app_root = program.apps.first().map(|a| a.name.clone());
+        }
+        if let Some(default_app) = program.apps.first() {
+            if let Some(route) = default_app.default_route() {
+                http_route = route.path.clone();
+            }
+        }
+    }
+
     let has_ui = saw_ui_web || saw_terminal;
     let has_api = !api_routes.is_empty();
     let has_scrape = scrape.active();
-    if !has_ui && !has_api && !has_scrape {
+    let has_tensor = saw_tokenize || saw_infer;
+    if !has_ui && !has_api && !has_scrape && !has_tensor {
         // Resource-only or processor pipelines without surface — still runnable if we have resources + app.
         if program.apps.is_empty() && program.resources.is_empty() {
             return Err(format!(
-                "runnable program must declare ui::web/ui::terminal, an `is app`, scrape::*, or service::http; {SUPPORTED_OPS_HELP}"
+                "runnable program must declare an `app`, scrape::*, tensor::*, or service::http; {SUPPORTED_OPS_HELP}"
             ));
         }
     }
@@ -704,9 +875,9 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
         program.apps.first().cloned()
     };
 
-    if has_ui || !program.apps.is_empty() {
+    if has_ui {
         let app = app.clone().ok_or_else(|| {
-            "UI programs require an `is app` class with routes and `method serve()`".to_string()
+            "UI programs require an `app` declaration with at least one route".to_string()
         })?;
         if app.routes.is_empty() {
             return Err(format!(
@@ -714,21 +885,9 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
                 app.name
             ));
         }
-        if app.serve.is_none() {
-            return Err(format!("app `{}` must declare `method serve()`", app.name));
-        }
-        if !saw_ui_web {
-            return Err("UI apps must call `ui::web(:root(...))` in `serve()`".into());
-        }
-        if !saw_terminal {
-            return Err(
-                "UI apps must also call `ui::terminal(:port(...))` — dual-surface is required"
-                    .into(),
-            );
-        }
         if let (Some(tp), hp) = (terminal_port, http_port) {
             if tp == hp {
-                return Err("ui::terminal port must differ from ui::web port".into());
+                return Err("terminal port must differ from web port".into());
             }
         }
         for route in &app.routes {
@@ -742,48 +901,121 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
         }
     }
 
+    if saw_tokenize != saw_infer {
+        return Err(
+            "tensor pipelines require tensor::tokenize ==> tensor::infer in one processor method"
+                .into(),
+        );
+    }
+    if saw_infer && !tokenize_before_infer {
+        return Err(
+            "tensor pipelines require tensor::tokenize before tensor::infer in the same method"
+                .into(),
+        );
+    }
+    if let Some(prefer) = &tensor_prefer {
+        if prefer.eq_ignore_ascii_case("CUDA") {
+            return Err(TENSOR_CPU_ONLY.into());
+        }
+        if !prefer.eq_ignore_ascii_case("CPU") {
+            return Err(format!(
+                "unsupported tensor::infer :prefer({prefer}); Silc 0.4.0 accepts CPU only"
+            ));
+        }
+    }
+
     let processor_op = if saw_score && saw_llm {
         return Err("cannot mix text::score and llm::complete in one program".into());
+    } else if (saw_score || saw_llm) && saw_infer {
+        return Err(
+            "cannot mix text::score/llm::complete with tensor::infer in one program".into(),
+        );
     } else if saw_score {
         ProcessorOp::Score
     } else if saw_llm {
         ProcessorOp::LlmComplete
+    } else if saw_infer {
+        ProcessorOp::TensorInfer
     } else {
         ProcessorOp::None
     };
 
-    let model_ref = if processor_op.needs_llm() {
-        Some(resolve_model_ref(&processors, model_from_op)?)
-    } else {
-        None
-    };
+    let (model_ref, embedding_dim, tensor_device, tensor_input_field, tensor_output_field) =
+        if processor_op.needs_llm() {
+            (
+                Some(resolve_model_ref(&processors, model_from_op)?),
+                None,
+                None,
+                None,
+                None,
+            )
+        } else if processor_op.needs_tensor() {
+            let entry = resolve_embedding_model_ref(embedding_model_from_op)?;
+            validate_tensor_contract(program, &scrape)?;
+            (
+                Some(entry.id.to_string()),
+                Some(entry.dimension),
+                Some("CPU".into()),
+                Some(DEFAULT_TENSOR_INPUT_FIELD.into()),
+                Some(DEFAULT_TENSOR_OUTPUT_FIELD.into()),
+            )
+        } else {
+            (None, None, None, None, None)
+        };
 
-    // Optional classic processor/sink — not required when resources handle persistence.
+    // Persistence is synthesized from the processor — authors never declare sinks.
+    let mut synthesized_sink = String::new();
     if processor_op != ProcessorOp::None {
         if processors.len() != 1 {
             return Err(
-                "programs using text::score or llm::complete need exactly one processor".into(),
-            );
-        }
-        if sinks.len() != 1 {
-            return Err("programs using text::score or llm::complete need exactly one sink".into());
-        }
-        if !(saw_publish && saw_sqlite && saw_commit) {
-            return Err(
-                "processor pipelines require ipc::publish ==> store::sqlite ==> store::commit"
+                "programs using text::score, llm::complete, or tensor::infer need exactly one processor"
                     .into(),
             );
         }
-        let sink = sinks[0];
-        let has_sqlite_trait = sink.traits.iter().any(|t| {
-            t.name.eq_ignore_ascii_case("storage")
-                && t.value.to_ascii_lowercase().contains("sqlite")
-        });
-        if !has_sqlite_trait {
-            return Err(format!(
-                "sink `{}` must declare `is storage(SQLite)`",
-                sink.name
-            ));
+        if !sinks.is_empty() {
+            return Err(
+                "author `sink` modules are not supported in Silc 0.4.0; remove them — the compiler synthesizes SQLite persistence"
+                    .into(),
+            );
+        }
+        let processor = processors[0];
+        let contract = processor
+            .methods
+            .iter()
+            .find_map(|m| {
+                m.params.iter().find_map(|p| match &p.ty {
+                    Some(TypeExpr::Named(name))
+                        if program.contracts.iter().any(|c| c.name == *name) =>
+                    {
+                        Some(name.clone())
+                    }
+                    _ => None,
+                })
+            })
+            .or_else(|| program.contracts.first().map(|c| c.name.clone()))
+            .ok_or_else(|| {
+                "processor programs need a Contract parameter so persistence can be synthesized"
+                    .to_string()
+            })?;
+        sqlite_table = sink_table_for_contract(&contract);
+        synthesized_sink = format!("{}Db", contract);
+        let _ = (saw_publish, saw_sqlite, saw_commit); // legacy scan flags unused in 0.4.0
+    }
+
+    if processor_op.needs_tensor() {
+        if !has_scrape || !scrape.page || !scrape.extract {
+            return Err(
+                "tensor pipeline programs require a scrape service with scrape::page and scrape::extract"
+                    .into(),
+            );
+        }
+        if services.len() != 1 {
+            return Err("tensor pipeline programs need exactly one service module".into());
+        }
+        if has_ui || has_api {
+            return Err(
+                "tensor pipeline programs are pipeline-only (no UI or service::http)".into(),
+            );
         }
     }
 
@@ -849,8 +1081,12 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
             .first()
             .map(|m| m.name.clone())
             .unwrap_or_default(),
-        sink: sinks.first().map(|m| m.name.clone()).unwrap_or_default(),
-        http_port: if has_ui {
+        sink: if synthesized_sink.is_empty() {
+            sinks.first().map(|m| m.name.clone()).unwrap_or_default()
+        } else {
+            synthesized_sink
+        },
+        http_port: if has_ui || saw_ui_web {
             http_port
         } else {
             api_routes
@@ -863,6 +1099,10 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
         terminal_port,
         api_routes,
         model_ref,
+        embedding_dim,
+        tensor_device,
+        tensor_input_field,
+        tensor_output_field,
         actions,
         resource_tables,
         root_component,
@@ -872,18 +1112,347 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::Span;
+    use crate::constraint::TraitArg;
+    use crate::contract::{Contract, Field, Subset, SubsetPredicate};
+    use crate::module::{Method, Module, ModuleKind, Param};
+    use crate::pipeline::{Pipeline, PipelineStep};
+    use crate::program::Program;
+    use crate::types::{Span, TypeExpr};
+
+    fn runnable_tensor_pipeline() -> Program {
+        Program {
+            version: Some("0.4.0".into()),
+            subsets: vec![
+                Subset {
+                    name: "Uri".into(),
+                    base: TypeExpr::Named("Str".into()),
+                    predicate: Some(SubsetPredicate::Contains("://".into())),
+                    span: Span::default(),
+                },
+                Subset {
+                    name: "Emb384".into(),
+                    base: TypeExpr::Vec {
+                        elem: "num32".into(),
+                        len: Some(384),
+                    },
+                    predicate: None,
+                    span: Span::default(),
+                },
+            ],
+            contracts: vec![Contract {
+                name: "ArticlePayload".into(),
+                fields: vec![
+                    Field::new("id", TypeExpr::Named("UUID".into())),
+                    Field::new("url", TypeExpr::Named("Uri".into())),
+                    Field::new("raw_content", TypeExpr::Named("Str".into())),
+                    Field::new("vector_embedding", TypeExpr::Named("Emb384".into())),
+                ],
+                span: Span::default(),
+            }],
+            modules: vec![
+                Module {
+                    name: "NetworkIngress".into(),
+                    kind: ModuleKind::Service,
+                    traits: vec![],
+                    fields: vec![],
+                    methods: vec![Method {
+                        name: "fetch_article".into(),
+                        params: vec![],
+                        pipeline: Pipeline {
+                            steps: vec![
+                                PipelineStep::Name("target_url".into()),
+                                PipelineStep::Call {
+                                    namespace: Some("scrape".into()),
+                                    name: "page".into(),
+                                    args: vec![TraitArg {
+                                        name: "js".into(),
+                                        value: "false".into(),
+                                    }],
+                                },
+                                PipelineStep::Call {
+                                    namespace: Some("scrape".into()),
+                                    name: "extract".into(),
+                                    args: vec![TraitArg {
+                                        name: "into".into(),
+                                        value: "ArticlePayload".into(),
+                                    }],
+                                },
+                            ],
+                        },
+                    }],
+                    span: Span::default(),
+                },
+                Module {
+                    name: "EmbeddingEngine".into(),
+                    kind: ModuleKind::Processor,
+                    traits: vec![],
+                    fields: vec![],
+                    methods: vec![Method {
+                        name: "generate_vectors".into(),
+                        params: vec![Param {
+                            name: "article".into(),
+                            ty: Some(TypeExpr::Named("ArticlePayload".into())),
+                            named: false,
+                            default: None,
+                        }],
+                        pipeline: Pipeline {
+                            steps: vec![
+                                PipelineStep::FieldAccess {
+                                    base: "article".into(),
+                                    field: "raw_content".into(),
+                                },
+                                PipelineStep::Call {
+                                    namespace: Some("tensor".into()),
+                                    name: "tokenize".into(),
+                                    args: vec![],
+                                },
+                                PipelineStep::Call {
+                                    namespace: Some("tensor".into()),
+                                    name: "infer".into(),
+                                    args: vec![TraitArg {
+                                        name: "model".into(),
+                                        value: "minilm-l6-v2".into(),
+                                    }],
+                                },
+                            ],
+                        },
+                    }],
+                    span: Span::default(),
+                },
+            ],
+            components: vec![],
+            resources: vec![],
+            apps: vec![],
+        }
+    }
+
+    fn legacy_stub_pipeline() -> Program {
+        Program {
+            version: Some("0.4.0".into()),
+            subsets: vec![],
+            contracts: vec![Contract {
+                name: "ArticlePayload".into(),
+                fields: vec![
+                    Field::new("raw_content", TypeExpr::Named("Str".into())),
+                    Field::new(
+                        "vector_embedding",
+                        TypeExpr::Vec {
+                            elem: "num32".into(),
+                            len: Some(768),
+                        },
+                    ),
+                ],
+                span: Span::default(),
+            }],
+            modules: vec![
+                Module {
+                    name: "NetworkIngress".into(),
+                    kind: ModuleKind::Service,
+                    traits: vec![],
+                    fields: vec![],
+                    methods: vec![Method {
+                        name: "fetch".into(),
+                        params: vec![],
+                        pipeline: Pipeline {
+                            steps: vec![
+                                PipelineStep::Call {
+                                    namespace: Some("http".into()),
+                                    name: "get".into(),
+                                    args: vec![],
+                                },
+                                PipelineStep::Call {
+                                    namespace: Some("html".into()),
+                                    name: "extract_body".into(),
+                                    args: vec![],
+                                },
+                            ],
+                        },
+                    }],
+                    span: Span::default(),
+                },
+                Module {
+                    name: "EmbeddingEngine".into(),
+                    kind: ModuleKind::Processor,
+                    traits: vec![],
+                    fields: vec![],
+                    methods: vec![Method {
+                        name: "run".into(),
+                        params: vec![],
+                        pipeline: Pipeline {
+                            steps: vec![
+                                PipelineStep::Call {
+                                    namespace: Some("tensor".into()),
+                                    name: "tokenize".into(),
+                                    args: vec![],
+                                },
+                                PipelineStep::Call {
+                                    namespace: Some("tensor".into()),
+                                    name: "infer".into(),
+                                    args: vec![],
+                                },
+                            ],
+                        },
+                    }],
+                    span: Span::default(),
+                },
+            ],
+            components: vec![],
+            resources: vec![],
+            apps: vec![],
+        }
+    }
 
     #[test]
-    fn executable_ops_include_resources() {
-        assert!(is_executable_op("resource", "list"));
-        assert!(is_executable_op("ui", "web"));
+    fn executable_ops_are_author_facing_workflows() {
+        assert!(is_executable_op("llm", "complete"));
+        assert!(is_executable_op("text", "score"));
         assert!(is_executable_op("scrape", "page"));
         assert!(is_executable_op("scrape", "site"));
         assert!(is_executable_op("scrape", "select"));
         assert!(is_executable_op("scrape", "render"));
         assert!(is_executable_op("scrape", "extract"));
-        assert!(!is_executable_op("tensor", "infer"));
+        assert!(is_executable_op("tensor", "tokenize"));
+        assert!(is_executable_op("tensor", "infer"));
+        assert!(!is_executable_op("ui", "web"));
+        assert!(!is_executable_op("resource", "list"));
+        assert!(!is_executable_op("ipc", "publish"));
+        assert!(!is_executable_op("store", "sqlite"));
+        assert!(!is_executable_op("http", "get"));
+        assert!(!is_executable_op("html", "extract_body"));
+    }
+
+    #[test]
+    fn processor_op_tensor_infer_helpers() {
+        assert_eq!(ProcessorOp::TensorInfer.as_str(), "tensor.infer");
+        assert!(ProcessorOp::TensorInfer.needs_tensor());
+        assert!(!ProcessorOp::TensorInfer.needs_llm());
+        assert!(!ProcessorOp::Score.needs_tensor());
+        assert!(!ProcessorOp::LlmComplete.needs_tensor());
+        assert!(!ProcessorOp::None.needs_tensor());
+    }
+
+    #[test]
+    fn classifies_runnable_tensor_pipeline() {
+        let program = runnable_tensor_pipeline();
+        assert_eq!(classify_program(&program).unwrap(), ExecutionMode::Runnable);
+        let graph = infer_graph(&program).unwrap().expect("graph");
+        assert!(graph.is_pipeline_only());
+        assert!(graph.needs_tensor());
+        assert!(!graph.has_ui());
+        assert!(!graph.has_api());
+        assert!(graph.has_scrape());
+        assert!(graph.scrape.page);
+        assert!(graph.scrape.extract);
+        assert_eq!(graph.processor_op, ProcessorOp::TensorInfer);
+        assert_eq!(graph.model_ref.as_deref(), Some("minilm-l6-v2"));
+        assert_eq!(graph.embedding_dim, Some(384));
+        assert_eq!(graph.tensor_device.as_deref(), Some("CPU"));
+        assert_eq!(graph.tensor_input_field.as_deref(), Some("raw_content"));
+        assert_eq!(
+            graph.tensor_output_field.as_deref(),
+            Some("vector_embedding")
+        );
+        assert_eq!(graph.service, "NetworkIngress");
+        assert_eq!(graph.processor, "EmbeddingEngine");
+        assert_eq!(graph.sink, "ArticlePayloadDb");
+        assert_eq!(graph.sqlite_table, "article_payloads");
+    }
+
+    #[test]
+    fn rejects_cuda_prefer_with_cpu_only_diagnostic() {
+        let mut program = runnable_tensor_pipeline();
+        if let PipelineStep::Call { args, .. } =
+            &mut program.modules[1].methods[0].pipeline.steps[2]
+        {
+            args.push(TraitArg {
+                name: "prefer".into(),
+                value: "CUDA".into(),
+            });
+        }
+        let err = infer_graph(&program).unwrap_err();
+        assert!(
+            err.contains("CPU-only") && err.contains("CUDA"),
+            "expected CPU-only diagnostic, got {err}"
+        );
+    }
+
+    #[test]
+    fn accepts_explicit_cpu_prefer() {
+        let mut program = runnable_tensor_pipeline();
+        if let PipelineStep::Call { args, .. } =
+            &mut program.modules[1].methods[0].pipeline.steps[2]
+        {
+            args.push(TraitArg {
+                name: "prefer".into(),
+                value: "CPU".into(),
+            });
+        }
+        let graph = infer_graph(&program).unwrap().expect("graph");
+        assert_eq!(graph.tensor_device.as_deref(), Some("CPU"));
+    }
+
+    #[test]
+    fn rejects_author_sink_modules() {
+        let mut program = runnable_tensor_pipeline();
+        program.modules.push(Module {
+            name: "EmbeddingDb".into(),
+            kind: ModuleKind::Sink,
+            traits: vec![TraitArg {
+                name: "storage".into(),
+                value: "SQLite".into(),
+            }],
+            fields: vec![],
+            methods: vec![],
+            span: Span::default(),
+        });
+        let err = infer_graph(&program).unwrap_err();
+        assert!(
+            err.contains("sink") && err.contains("synthesizes"),
+            "expected author sink rejection, got {err}"
+        );
+    }
+
+    #[test]
+    fn rejects_legacy_http_html_mix_with_adr006() {
+        let program = legacy_stub_pipeline();
+        let err = classify_program(&program).unwrap_err();
+        assert!(
+            err.contains("scrape::page") || err.contains("ADR-006"),
+            "expected ADR-006 migration diagnostic, got {err}"
+        );
+        assert!(!is_executable_op("http", "get"));
+        assert!(!is_executable_op("html", "extract"));
+    }
+
+    #[test]
+    fn rejects_unknown_embedding_model() {
+        let mut program = runnable_tensor_pipeline();
+        if let PipelineStep::Call { args, .. } =
+            &mut program.modules[1].methods[0].pipeline.steps[2]
+        {
+            args[0].value = "not-a-model".into();
+        }
+        let err = infer_graph(&program).unwrap_err();
+        assert!(
+            err.contains("unknown embedding model") || err.contains("not-a-model"),
+            "expected model catalog rejection, got {err}"
+        );
+    }
+
+    #[test]
+    fn rejects_wrong_embedding_dimension() {
+        let mut program = runnable_tensor_pipeline();
+        program.subsets[1].name = "Emb768".into();
+        program.subsets[1].base = TypeExpr::Vec {
+            elem: "num32".into(),
+            len: Some(768),
+        };
+        program.contracts[0].fields[3].ty = TypeExpr::Named("Emb768".into());
+        let err = infer_graph(&program).unwrap_err();
+        assert!(
+            err.contains("384") && err.contains("768"),
+            "expected dimension diagnostic, got {err}"
+        );
     }
 
     #[test]
@@ -898,6 +1467,7 @@ mod tests {
                     return_ty: None,
                     pipeline: crate::pipeline::Pipeline { steps: vec![] },
                     span: Span::default(),
+                    shorthand: false,
                 },
                 crate::resource::ResourceMethod {
                     kind: ResourceKind::Mutation,
@@ -906,10 +1476,12 @@ mod tests {
                     return_ty: None,
                     pipeline: crate::pipeline::Pipeline { steps: vec![] },
                     span: Span::default(),
+                    shorthand: false,
                 },
             ],
             contract: Some("Product".into()),
             table: Some("products".into()),
+            seeds: vec![],
             span: Span::default(),
         };
         let actions = derive_actions(&[resource]);

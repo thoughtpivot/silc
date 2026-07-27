@@ -43,6 +43,10 @@ impl Corpus {
             include_str!("../../../examples/pipelineApp/main.silc"),
         );
         corpus.insert(
+            "example/blogApp/main.silc",
+            include_str!("../../../examples/blogApp/main.silc"),
+        );
+        corpus.insert(
             "fixture/scored_form.silc",
             include_str!("../../silc/tests/fixtures/scored_form.silc"),
         );
@@ -125,8 +129,7 @@ impl Corpus {
             .to_string_lossy()
             .replace('\\', "/");
         let id = format!("extra/{rel}");
-        let body = fs::read_to_string(path)
-            .map_err(|e| format!("read {}: {e}", path.display()))?;
+        let body = fs::read_to_string(path).map_err(|e| format!("read {}: {e}", path.display()))?;
         self.insert(id, body);
         Ok(1)
     }
@@ -207,7 +210,10 @@ mod tests {
     fn builtin_has_agents_and_examples() {
         let c = Corpus::builtin();
         assert!(c.get("agents").unwrap().contains("Silc"));
-        assert!(c.get("example/chatApp/main.silc").unwrap().contains("@version"));
+        assert!(c
+            .get("example/chatApp/main.silc")
+            .unwrap()
+            .contains("@version"));
         assert!(c.len() >= 8);
     }
 

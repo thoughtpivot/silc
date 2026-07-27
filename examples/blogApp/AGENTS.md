@@ -412,10 +412,13 @@ Compiler-owned (do not invent alternatives):
 8. Validate with `silc build`; report errors instead of patching `.runtime/`.
 <!-- END SILC_AGENTS_TEMPLATE -->
 
-## App-specific notes (scraperApp)
+## App-specific notes (blogApp)
 
-- Dual-surface UI synthesized from routes: URL + crawl depth form, results table on `scraped_pages`.
-- Resource: `ScrapedPages for ScrapedPage`.
-- Pipeline: `scrape::site(...)` + `scrape::select`; processor `Summarizer` uses `llm::complete()`.
-- Persistence is synthesized — no author `sink` / `ipc` / `store` pipelines.
-- Never hand-edit `.runtime/` or name Colly/Playwright in `.silc`.
+- Routes: `/` home feed + filters + grounded silclm chat; `/admin` CRUD table with row-select modal.
+- Resource: `Articles for Article` with thirty declarative `seed Article.new(...)` rows (SilcLM-authored, stable ids).
+- Home filters use year/month radio groups with conditional card rendering.
+- Admin: `ui::table(:selectable, :on(select(on_select)))` opens `ui::dialog` for edit/delete.
+- Assistant chat is inline on Home via `ui::chat(:context($.articles), :persona(...))`.
+- Dual-surface UI is synthesized from `app BlogApp` routes.
+- Default model: `llm::complete()` with no `:model` (silclm).
+- Never hand-edit `.runtime/` or invent Ollama/OpenAI paths.

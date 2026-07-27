@@ -41,7 +41,7 @@ Authors may declare:
 | `@version("0.4.0")` | Exact source-version match with the compiler |
 | `contract` / `subset` | Domain schemas |
 | `component` | UI units (`render()`, state, events) |
-| `resource Name for Contract { query …; mutation …; }` | Capability CRUD (no method bodies) |
+| `resource Name for Contract { query …; mutation …; seed …; }` | Capability CRUD (no method bodies); optional idempotent seeds |
 | `app { route … }` | Route table only |
 | `service` / `processor` / `task` | Optional workflows |
 | Author `EXECUTABLE_OPS` | `service::http`, `text::score`, `llm::complete`, `scrape::*`, `tensor::*` |
@@ -60,7 +60,7 @@ Authors may declare:
 | From author intent | Synthesized runtime |
 | --- | --- |
 | `app` with routes | Dual-surface web (React/Tailwind) + terminal (OpenTUI); default ports 18088 / 18023; override via `SILC_HTTP_PORT` / `SILC_TERMINAL_PORT` |
-| `resource Name for Contract` capabilities | HTTP CRUD + SQLite table wiring |
+| `resource Name for Contract` capabilities (+ optional `seed`) | HTTP CRUD + SQLite table wiring + idempotent seed inserts |
 | Processor + Contract (`text::score`, `llm::complete`, `tensor::infer`) | Go/SQLite sink and IPC/store staging |
 | Pipeline-only graph | Ingress via `silc run --input-json` / `--input`; larger mmap payload slots when needed |
 

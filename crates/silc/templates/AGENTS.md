@@ -159,7 +159,7 @@ API contract (props / events / slots / children).
 
 - `ui::collection` — props: `items` (required), `empty_text?`; events: none; slots: none; children: any; surfaces: web+terminal
 - `ui::list` — props: `items?`; events: none; slots: none; children: any; surfaces: web+terminal
-- `ui::table` — props: `rows` (required), `columns` (required), `empty_text?`, `filter_field?`, `filter_column?`, `filter_all?`, `sortable?` (flag), `searchable?` (flag), `selectable?` (flag), `dense?` (flag); events: none; slots: none; children: none; surfaces: web+terminal
+- `ui::table` — props: `rows` (required), `columns` (required), `empty_text?`, `filter_field?`, `filter_column?`, `filter_all?`, `sortable?` (flag), `searchable?` (flag), `selectable?` (flag), `dense?` (flag); events: `select`; slots: none; children: none; surfaces: web+terminal
 - `ui::description_list` — props: `items` (required); events: none; slots: none; children: none; surfaces: web+terminal
 
 #### Feedback and overlays
@@ -250,6 +250,48 @@ resource Products for Product {
 
 Derived HTTP (compiler-owned): `GET/POST /api/{table}`,
 `GET/PUT/DELETE /api/{table}/:id`.
+
+### Resource seeds (idempotent)
+
+```silc
+resource Articles for Article {
+    query list;
+    mutation create;
+    mutation update;
+    mutation delete;
+    seed Article.new(
+        :id("article-001"),
+        :title("Hello"),
+        :body("Short body."),
+        :author("Ada"),
+        :published_at("2026-01-15"),
+        :year("2026"),
+        :month("January")
+    );
+}
+```
+
+Seeds are compiler-owned `INSERT OR IGNORE` rows. Every seed must construct the
+resource contract and include a stable `:id("…")` string so restarts never
+overwrite admin edits.
+
+### Table row select
+
+```silc
+ui::table(
+    :rows($.articles),
+    :columns(["title", "author"]),
+    :selectable,
+    :on(select(on_select))
+)
+
+method on_select(Article $article) {
+    $.selected_id = $article.id;
+}
+```
+
+`:on(select(…))` passes the clicked/activated row object to the handler on both
+web and terminal surfaces.
 
 ### Chat with silclm
 

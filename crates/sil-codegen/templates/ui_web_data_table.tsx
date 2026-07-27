@@ -81,6 +81,7 @@ export function DataTable({
   selectable = false,
   dense = false,
   searchPlaceholder = "Search…",
+  onSelect,
   className,
 }: {
   rows: Row[];
@@ -94,6 +95,7 @@ export function DataTable({
   selectable?: boolean;
   dense?: boolean;
   searchPlaceholder?: string;
+  onSelect?: (row: Row) => void;
   className?: string;
 }) {
   const [sortColumn, setSortColumn] = React.useState<string | null>(null);
@@ -103,6 +105,7 @@ export function DataTable({
   const [facetValue, setFacetValue] = React.useState(filterAll);
 
   const cellPadding = dense ? "px-3 py-1.5" : "px-4 py-3";
+  const rowsAreInteractive = selectable || !!onSelect;
 
   function toggleRowSelection(key: string) {
     setSelectedIds((current) => {
@@ -111,6 +114,11 @@ export function DataTable({
       else next.add(key);
       return next;
     });
+  }
+
+  function handleRowClick(row: Row, key: string) {
+    if (onSelect) onSelect(row);
+    if (selectable) toggleRowSelection(key);
   }
 
   function toggleSort(column: string) {
@@ -241,10 +249,10 @@ export function DataTable({
                 <tr
                   key={key}
                   aria-selected={selectable ? selected : undefined}
-                  onClick={selectable ? () => toggleRowSelection(key) : undefined}
+                  onClick={rowsAreInteractive ? () => handleRowClick(row as Row, key) : undefined}
                   className={cn(
                     "border-b border-border/60 transition last:border-b-0 hover:bg-background/60",
-                    selectable && "cursor-pointer",
+                    rowsAreInteractive && "cursor-pointer",
                     selected && "bg-primary/10"
                   )}
                 >
