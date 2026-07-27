@@ -1,8 +1,0 @@
-{
-  // Silc has a native TextMate grammar in editors/vscode-silc.
-  // Install it with: ./editors/vscode-silc/install.sh
-  // Silc accepts .silc only — do not associate *.raku.
-  "files.associations": {
-    "*.silc": "silc"
-  }
-}
