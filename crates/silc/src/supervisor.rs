@@ -4,8 +4,8 @@ use crate::runtimes::RuntimeLock;
 use sil_codegen::EmitResult;
 use sil_core::ProcessorOp;
 use sil_ipc::{
-    read_frame, write_frame, ControlFrame, SlotPool, DEFAULT_PAYLOAD_CAPACITY, DEFAULT_SLOT_COUNT,
-    HEADER_SIZE,
+    read_frame, read_frame_opt, write_frame, ControlFrame, SlotPool, DEFAULT_PAYLOAD_CAPACITY,
+    DEFAULT_SLOT_COUNT, HEADER_SIZE,
 };
 use std::collections::HashMap;
 use std::fs;
@@ -253,6 +253,42 @@ pub fn build_llm_python(lock: &RuntimeLock, runtime_root: &Path) -> Result<PathB
     Ok(python)
 }
 
+/// Install the compiler-pinned CPU ONNX adapter in an isolated tensor venv.
+pub fn build_tensor_python(lock: &RuntimeLock, runtime_root: &Path) -> Result<PathBuf, String> {
+    let python_dir = runtime_root.join("python");
+    let requirements = python_dir.join("tensor_requirements.txt");
+    if !requirements.is_file() {
+        return Err(
+            "missing compiler-generated python/tensor_requirements.txt for tensor::infer".into(),
+        );
+    }
+    let venv = python_dir.join(".venv-tensor");
+    let python = venv.join("bin/python");
+    if !python.is_file() {
+        let output = Command::new(&lock.python_bin)
+            .args(["-m", "venv"])
+            .arg(&venv)
+            .output()
+            .map_err(|e| format!("failed to create tensor::infer Python environment: {e}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "Silc tensor Python environment creation failed:\n{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+    }
+    let status = Command::new(&python)
+        .args(["-m", "pip", "install", "--disable-pip-version-check", "-r"])
+        .arg(&requirements)
+        .status()
+        .map_err(|e| format!("failed to install tensor::infer Python dependencies: {e}"))?;
+    if !status.success() {
+        return Err("Silc install of compiler-pinned ONNX dependencies failed".into());
+    }
+    Ok(python)
+}
+
 /// Build the compiler-owned Colly crawl binary for `scrape::site` (ADR-006).
 pub fn build_scrape_crawl(lock: &RuntimeLock, runtime_root: &Path) -> Result<PathBuf, String> {
     let crawl_dir = runtime_root.join("go/crawl");
@@ -306,7 +342,9 @@ pub fn build_scrape_python(lock: &RuntimeLock, runtime_root: &Path) -> Result<Pa
         );
     }
     if !python_dir.join("browser_worker.py").is_file() {
-        return Err("missing compiler-generated python/browser_worker.py for scrape browser".into());
+        return Err(
+            "missing compiler-generated python/browser_worker.py for scrape browser".into(),
+        );
     }
     // Prefer a scrape-specific venv so llm and browser deps stay isolated.
     let venv = python_dir.join(".venv-scrape");
@@ -354,7 +392,7 @@ pub fn run_api(output: &EmitResult, _lock: &RuntimeLock) -> Result<(), String> {
     let graph = output
         .graph
         .as_ref()
-        .ok_or_else(|| "program is not executable in Silc 0.2.0".to_string())?;
+        .ok_or_else(|| "program is not executable in Silc 0.4.0".to_string())?;
     if !graph.is_api_only() {
         return Err("run_api requires an API-only service::http program".into());
     }
@@ -406,21 +444,41 @@ pub fn run_api(output: &EmitResult, _lock: &RuntimeLock) -> Result<(), String> {
 }
 
 pub fn run_app(output: &EmitResult, lock: &RuntimeLock) -> Result<(), String> {
+    run_graph(output, lock, None)
+}
+
+pub fn run_pipeline(
+    output: &EmitResult,
+    lock: &RuntimeLock,
+    input_json: &str,
+) -> Result<(), String> {
+    serde_json::from_str::<serde_json::Value>(input_json)
+        .map_err(|error| format!("invalid pipeline input JSON: {error}"))?;
+    run_graph(output, lock, Some(input_json))
+}
+
+fn run_graph(
+    output: &EmitResult,
+    lock: &RuntimeLock,
+    pipeline_input: Option<&str>,
+) -> Result<(), String> {
     let graph = output
         .graph
         .as_ref()
-        .ok_or_else(|| "program is not executable in Silc 0.2.0".to_string())?;
+        .ok_or_else(|| "program is not executable in Silc 0.4.0".to_string())?;
     if graph.is_api_only() {
         return run_api(output, lock);
     }
-    // Fail before spawning any workers. Previously Bun could report READY over
-    // UDS and then fail its HTTP bind, leaving the supervisor claiming success.
-    ensure_http_port_available(graph.http_port)?;
-    if let Some(port) = graph.terminal_port {
-        ensure_terminal_port_available(port)?;
-    }
-    if let Some(port) = graph.api_port() {
-        ensure_api_port_available(port)?;
+    if !graph.is_pipeline_only() {
+        // Fail before spawning any workers. Previously Bun could report READY over
+        // UDS and then fail its HTTP bind, leaving the supervisor claiming success.
+        ensure_http_port_available(graph.http_port)?;
+        if let Some(port) = graph.terminal_port {
+            ensure_terminal_port_available(port)?;
+        }
+        if let Some(port) = graph.api_port() {
+            ensure_api_port_available(port)?;
+        }
     }
     let ipc_dir = output.root.join("ipc");
     let data_dir = output.root.join("data");
@@ -459,11 +517,16 @@ pub fn run_app(output: &EmitResult, lock: &RuntimeLock) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
 
+    let payload_capacity = if graph.is_pipeline_only() {
+        65_536
+    } else {
+        DEFAULT_PAYLOAD_CAPACITY
+    };
     let pool = Arc::new(Mutex::new(SlotPool::create(
         &ipc_dir,
         output.schema_id,
         DEFAULT_SLOT_COUNT,
-        DEFAULT_PAYLOAD_CAPACITY,
+        payload_capacity,
     )?));
     let workers: Arc<Mutex<HashMap<String, WorkerPool>>> = Arc::new(Mutex::new(HashMap::new()));
     let pending: Arc<Mutex<HashMap<String, Pending>>> = Arc::new(Mutex::new(HashMap::new()));
@@ -491,7 +554,11 @@ pub fn run_app(output: &EmitResult, lock: &RuntimeLock) -> Result<(), String> {
     };
 
     // LLM weights load once; deterministic scoring can scale with CPU.
-    let python_replicas = if graph.needs_llm() { 1 } else { 16 };
+    let python_replicas = if graph.needs_llm() || graph.needs_tensor() {
+        1
+    } else {
+        16
+    };
     const GO_REPLICAS: usize = 1;
     let model_path = if graph.needs_llm() {
         Some(crate::models::ensure_model(
@@ -500,6 +567,16 @@ pub fn run_app(output: &EmitResult, lock: &RuntimeLock) -> Result<(), String> {
                 .as_deref()
                 .ok_or_else(|| "llm chat graph missing model_ref".to_string())?,
         )?)
+    } else if graph.needs_tensor() {
+        Some(
+            crate::models::ensure_embedding_model(
+                graph
+                    .model_ref
+                    .as_deref()
+                    .ok_or_else(|| "tensor graph missing model_ref".to_string())?,
+            )?
+            .model_path,
+        )
     } else {
         None
     };
@@ -558,10 +635,7 @@ pub fn run_app(output: &EmitResult, lock: &RuntimeLock) -> Result<(), String> {
         .stderr(Stdio::inherit());
     if graph.has_scrape() {
         if graph.needs_scrape_crawl() {
-            bun_cmd.env(
-                "SILC_SCRAPE_CRAWL_BIN",
-                output.root.join("go/crawl/worker"),
-            );
+            bun_cmd.env("SILC_SCRAPE_CRAWL_BIN", output.root.join("go/crawl/worker"));
         }
         if graph.needs_scrape_browser() {
             bun_cmd.env(
@@ -574,11 +648,50 @@ pub fn run_app(output: &EmitResult, lock: &RuntimeLock) -> Result<(), String> {
             );
         }
     }
+    if let Some(input_json) = pipeline_input {
+        bun_cmd.env("SILC_PIPELINE_INPUT_JSON", input_json);
+    }
     let bun_child = bun_cmd
         .spawn()
         .map_err(|e| format!("failed to spawn Silc Bun worker: {e}"))?;
     children.push(bun_child);
     wait_for_pool(&workers, "bun", 1, Duration::from_secs(30))?;
+
+    if graph.is_pipeline_only() {
+        if pipeline_input.is_none() {
+            return Err(
+                "pipeline-only programs require `silc run <program.silc> --input-json <json>`"
+                    .into(),
+            );
+        }
+        let status = children
+            .last_mut()
+            .ok_or_else(|| "pipeline ingress process missing".to_string())?
+            .wait()
+            .map_err(|error| format!("wait for pipeline ingress: {error}"))?;
+        stop.store(true, Ordering::SeqCst);
+        let _ = UnixStream::connect(&socket_path);
+        let _ = accept_workers.join();
+        if let Ok(map) = workers.lock() {
+            for pool in map.values() {
+                for writer in &pool.writers {
+                    if let Ok(mut writer) = writer.lock() {
+                        let _ = write_frame(&mut *writer, &ControlFrame::Shutdown {});
+                    }
+                }
+            }
+        }
+        for child in &mut children {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        let _ = fs::remove_file(&socket_path);
+        return if status.success() {
+            Ok(())
+        } else {
+            Err(format!("pipeline ingress exited with {status}"))
+        };
+    }
 
     if graph.capabilities.web {
         println!(
@@ -787,15 +900,24 @@ fn handle_client(
     }
 
     loop {
-        match read_frame(&mut reader) {
-            Ok(ControlFrame::Ingest {
+        let frame = match read_frame_opt(&mut reader) {
+            // Worker closed its socket at a frame boundary (normal shutdown).
+            Ok(None) => break,
+            Ok(Some(frame)) => frame,
+            Err(err) => {
+                eprintln!("silc: worker role={role} frame decode error: {err}");
+                break;
+            }
+        };
+        match frame {
+            ControlFrame::Ingest {
                 request_id,
                 author,
                 text,
                 session_id,
                 context,
                 persona,
-            }) if role == "bun" => {
+            } if role == "bun" => {
                 // Keep the Bun reader hot: slot acquire / notify must not block
                 // reading the next INGEST frames off the UDS.
                 let workers = Arc::clone(&workers);
@@ -822,13 +944,13 @@ fn handle_client(
                     }
                 });
             }
-            Ok(ControlFrame::Ack {
+            ControlFrame::Ack {
                 request_id,
                 segment_id,
                 seq,
                 result,
                 ..
-            }) => on_ack(
+            } => on_ack(
                 &workers,
                 &pending,
                 &pool,
@@ -838,21 +960,17 @@ fn handle_client(
                 result,
                 processor_op,
             )?,
-            Ok(ControlFrame::Error {
+            ControlFrame::Error {
                 request_id,
                 message,
                 ..
-            }) => {
+            } => {
                 if let Some(id) = request_id {
                     fail_pending(&pending, &id, message)?;
                 }
             }
-            Ok(ControlFrame::Shutdown {}) => break,
-            Err(err) => {
-                eprintln!("silc: worker role={role} frame decode error: {err}");
-                break;
-            }
-            Ok(_) => {}
+            ControlFrame::Shutdown {} => break,
+            _ => {}
         }
     }
     Ok(())
@@ -887,6 +1005,12 @@ fn start_ingest(
             "text": text,
             "summary": "",
             "score": 0.0,
+        }),
+        ProcessorOp::TensorInfer => serde_json::json!({
+            "id": id,
+            "url": author,
+            "raw_content": text,
+            "vector_embedding": [],
         }),
         ProcessorOp::None => serde_json::json!({
             "id": id,
@@ -1104,6 +1228,15 @@ fn spawn_workers(
             ));
         }
         path
+    } else if graph.needs_tensor() {
+        let path = output.root.join("python/.venv-tensor/bin/python");
+        if !path.is_file() {
+            return Err(format!(
+                "tensor::infer Python environment missing at {} (run `silc build`)",
+                path.display()
+            ));
+        }
+        path
     } else {
         lock.python_bin.clone()
     };
@@ -1120,7 +1253,16 @@ fn spawn_workers(
             })
             .stderr(Stdio::inherit());
         if let Some(path) = model_path {
-            command.env("SILC_MODEL_PATH", path);
+            if graph.needs_tensor() {
+                command.env("SILC_TENSOR_MODEL_PATH", path);
+                let tokenizer = path
+                    .parent()
+                    .ok_or_else(|| "tensor model path has no parent".to_string())?
+                    .join("tokenizer.json");
+                command.env("SILC_TENSOR_TOKENIZER_PATH", tokenizer);
+            } else {
+                command.env("SILC_MODEL_PATH", path);
+            }
         }
         if let Some(id) = graph.model_ref.as_deref() {
             command.env("SILC_MODEL_ID", id);

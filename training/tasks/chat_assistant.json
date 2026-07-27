@@ -1,6 +1,6 @@
 {
   "id": "chat_assistant",
   "category": "chat",
-  "description": "Build a multi-session local chat assistant using llm::complete with silclm (or omit :model). Include session create/select UI, ui::chat, history, and SQLite persistence of chat turns. Serve both ui::web and ui::terminal.",
+  "description": "Build a multi-session local chat assistant using llm::complete with silclm (or omit :model). Include session create/select UI, ui::chat, and history. Declare app routes only — do not write serve(), ui::web, ui::terminal, sink, or ipc/store pipelines; dual-surface serving and SQLite persistence are synthesized.",
   "tags": ["chat", "silclm", "llm::complete", "sessions"]
 }

@@ -161,18 +161,14 @@ mod tests {
         let accepted = dir.join("accepted.jsonl");
         let rejected = dir.join("rejected.jsonl");
 
-        let valid = r#"@version("0.2.0")
-class Note { has Str $.text; }
-class NotePage is component {
+        let valid = r#"@version("0.4.0")
+contract Note { has Str $.text; }
+component NotePage {
     has state Str $.text = "";
     method render() { ui::page(ui::heading(:text("Hi"), :level(1))) }
 }
-class NoteApp is app {
+app NoteApp {
     route "/" => NotePage;
-    method serve() {
-        ui::web(:root(NoteApp), :port(18080), :route("/"))
-            ==> ui::terminal(:port(18023))
-    }
 }
 "#;
         let lines = [

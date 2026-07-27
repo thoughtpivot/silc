@@ -14,4 +14,4 @@ pub mod tools;
 pub use complete::{Completer, ScriptedCompleter};
 pub use corpus::Corpus;
 pub use session::{run_assist, AssistError, AssistResult};
-pub use tools::{Budgets, BudgetStats};
+pub use tools::{BudgetStats, Budgets};

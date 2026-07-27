@@ -1,16 +1,16 @@
 #!/usr/bin/env silc
-# Starter Silc 0.2.0 app — edit this file; do not edit .runtime/
-@version("0.2.0")
+# Starter Silc 0.4.0 app — edit this file; do not edit .runtime/
+@version("0.4.0")
 
-# Contract: typed record shape shared by UI, processor, and store.
-class Note {
+# Contract: typed record shape shared by UI and processor.
+contract Note {
     has Str $.author;
     has Str $.text;
 }
 
 # Author-defined component: local state, events, and a render tree.
 # The same tree lowers to both web and terminal — never write React/OpenTUI.
-class HomePage is component {
+component HomePage {
     has state Str $.author = "";
     has state Str $.text = "";
 
@@ -38,28 +38,14 @@ class HomePage is component {
     }
 }
 
-# App: explicit routes + dual-surface serve (web and terminal are required).
-class MyApp is app {
+# App: routes only — dual-surface web/terminal serving is synthesized.
+app MyApp {
     route "/" => HomePage;
-
-    method serve() {
-        ui::web(:root(MyApp), :port(18080), :route("/"))
-            ==> ui::terminal(:port(18023))
-    }
 }
 
-# Optional processor / sink — scoring + SQLite persistence.
-class NoteScorer is processor {
+# Optional processor — scoring + synthesized SQLite persistence.
+processor NoteScorer {
     method analyze(Note $note) {
         $note.text ==> text::score()
-    }
-}
-
-class NoteDb is sink is storage(SQLite) {
-    method persist(Note $note) {
-        $note
-            ==> ipc::publish()
-            ==> store::sqlite(:table(notes))
-            ==> store::commit()
     }
 }

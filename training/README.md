@@ -45,7 +45,7 @@ provisioning). Pass `--no-emit` to stop after classify (faster; tier 2).
   "task_id": "scored_form",
   "category": "form",
   "task": "…",
-  "agents_md_version": "0.3.0",
+  "agents_md_version": "0.4.0",
   "prompt": "You are silclm…",
   "prompt_sha256": "…",
   "target_model": "silclm"
@@ -59,7 +59,7 @@ provisioning). Pass `--no-emit` to stop after classify (faster; tier 2).
   "prompt_id": "prompt-scored_form",
   "prompt": "optional full prompt text",
   "task": "optional task text",
-  "completion": "```silc\n@version(\"0.3.0\")\n…\n```",
+  "completion": "```silc\n@version(\"0.4.0\")\n…\n```",
   "model": "optional-generator-id",
   "category": "form"
 }
@@ -71,11 +71,12 @@ Accepted rows include `program`, `program_sha256`, `execution_mode`,
 `validation_tier`, and `target_model: "silclm"`. Rejected rows keep the raw
 `completion` plus structured `stage`/`error` for future repair training.
 
-## Subject-first declarator benchmark
+## Historical declarator benchmark (`subject-first-bench`)
 
-Reproduce the historical class-is vs subject-first comparison. Silc 0.4.0
-teaches subject-first syntax; the harness still scores both variants through
-the product parser. See
+Reproduce the historical class-is vs direct-declaration comparison. The
+harness name keeps the 0.3.0 “subject-first” label for continuity; Silc 0.4.0
+product guidance uses **direct declarations** / intent surface (see
+[docs/intent-vs-subjects.md](../docs/intent-vs-subjects.md)). Evidence docs:
 [docs/subject-first-declarators.md](../docs/subject-first-declarators.md) and
 [docs/subject-first-decision.md](../docs/subject-first-decision.md).
 
@@ -91,7 +92,7 @@ cargo run -p sil-training -- subject-first-bench \
 Repeat `--trials` for each JSONL input. Each row uses:
 
 ```json
-{"task_id":"components","variant":"subject-first","completion":"@version(\"0.3.0\")\n…","repair_turns":0}
+{"task_id":"components","variant":"subject-first","completion":"@version(\"0.4.0\")\n…","repair_turns":0}
 ```
 
 The command reports overall and task-family first-pass rates, repair turns,

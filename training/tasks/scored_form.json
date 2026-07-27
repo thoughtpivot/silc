@@ -1,6 +1,6 @@
 {
   "id": "scored_form",
   "category": "form",
-  "description": "Build a dual-surface feedback form app with author, text, and rating fields. On submit, score the text with text::score and persist to SQLite via ipc::publish, store::sqlite, and store::commit. Use is component + is app with ui::web and ui::terminal.",
+  "description": "Build a dual-surface feedback form app with author, text, and rating fields. On submit, score the text with text::score in a processor. Declare component + app routes only — do not write serve(), ui::web, ui::terminal, sink, or ipc/store pipelines; the compiler synthesizes dual-surface serving and SQLite persistence.",
   "tags": ["form", "text::score", "sqlite", "dual-surface"]
 }

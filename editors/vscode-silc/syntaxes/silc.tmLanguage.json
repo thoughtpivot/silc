@@ -1,0 +1,254 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Silc",
+  "scopeName": "source.silc",
+  "patterns": [
+    { "include": "#comment" },
+    { "include": "#annotation" },
+    { "include": "#route" },
+    { "include": "#declaration" },
+    { "include": "#method-declaration" },
+    { "include": "#seed-declaration" },
+    { "include": "#named-member" },
+    { "include": "#namespaced-call" },
+    { "include": "#string" },
+    { "include": "#keyword" },
+    { "include": "#constant" },
+    { "include": "#unit-literal" },
+    { "include": "#number" },
+    { "include": "#colon-pair" },
+    { "include": "#variable" },
+    { "include": "#property-access" },
+    { "include": "#builtin-type" },
+    { "include": "#static-call" },
+    { "include": "#call" },
+    { "include": "#type-name" },
+    { "include": "#operator" }
+  ],
+  "repository": {
+    "comment": {
+      "patterns": [
+        {
+          "name": "comment.line.shebang.silc",
+          "match": "^#!.*$"
+        },
+        {
+          "name": "comment.line.number-sign.silc",
+          "begin": "#",
+          "end": "$",
+          "beginCaptures": {
+            "0": { "name": "punctuation.definition.comment.silc" }
+          }
+        }
+      ]
+    },
+
+    "annotation": {
+      "match": "(@)([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "punctuation.definition.annotation.silc" },
+        "2": { "name": "entity.name.function.decorator.silc" }
+      }
+    },
+
+    "route": {
+      "match": "\\b(route)\\b\\s*(\"(?:[^\"\\\\]|\\\\.)*\")?\\s*(=>)?\\s*([A-Za-z_][A-Za-z0-9_]*)?",
+      "captures": {
+        "1": { "name": "keyword.control.route.silc" },
+        "2": { "name": "string.quoted.double.silc" },
+        "3": { "name": "keyword.operator.arrow.silc" },
+        "4": { "name": "entity.name.type.silc" }
+      }
+    },
+
+    "declaration": {
+      "match": "\\b(subset|class|contract|component|resource|app|service|processor|sink|task)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "storage.type.declaration.silc" },
+        "2": { "name": "entity.name.type.silc" }
+      }
+    },
+
+    "method-declaration": {
+      "match": "\\b(method)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "storage.type.function.silc" },
+        "2": { "name": "entity.name.function.silc" }
+      }
+    },
+
+    "seed-declaration": {
+      "match": "\\b(seed)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "keyword.other.member.silc" },
+        "2": { "name": "entity.name.type.silc" }
+      }
+    },
+
+    "named-member": {
+      "match": "\\b(emit|query|mutation|slot)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "keyword.other.member.silc" },
+        "2": { "name": "entity.name.function.silc" }
+      }
+    },
+
+    "namespaced-call": {
+      "match": "\\b([a-z_][A-Za-z0-9_]*)(::)([A-Za-z_][A-Za-z0-9_]*)",
+      "captures": {
+        "1": { "name": "support.class.namespace.silc" },
+        "2": { "name": "punctuation.separator.namespace.silc" },
+        "3": { "name": "support.function.builtin.silc" }
+      }
+    },
+
+    "string": {
+      "name": "string.quoted.double.silc",
+      "begin": "\"",
+      "end": "\"",
+      "beginCaptures": {
+        "0": { "name": "punctuation.definition.string.begin.silc" }
+      },
+      "endCaptures": {
+        "0": { "name": "punctuation.definition.string.end.silc" }
+      },
+      "patterns": [
+        { "name": "constant.character.escape.silc", "match": "\\\\." }
+      ]
+    },
+
+    "keyword": {
+      "patterns": [
+        {
+          "name": "keyword.control.silc",
+          "match": "\\b(when|else|for|await|route)\\b"
+        },
+        {
+          "name": "keyword.other.member.silc",
+          "match": "\\b(has|method|query|mutation|seed|slot|emit|state)\\b"
+        },
+        {
+          "name": "storage.modifier.silc",
+          "match": "\\b(is|of|where)\\b"
+        },
+        {
+          "name": "storage.type.declaration.silc",
+          "match": "\\b(subset|class|contract|component|resource|app|service|processor|sink|task)\\b"
+        }
+      ]
+    },
+
+    "constant": {
+      "name": "constant.language.silc",
+      "match": "\\b(true|false)\\b"
+    },
+
+    "unit-literal": {
+      "name": "constant.numeric.unit.silc",
+      "match": "\\b[0-9]+(?:ms|s|MB|GB|rps|ops)\\b"
+    },
+
+    "number": {
+      "name": "constant.numeric.silc",
+      "match": "\\b[0-9]+(?:\\.[0-9]+)?\\b"
+    },
+
+    "colon-pair": {
+      "patterns": [
+        {
+          "comment": "Named argument with a value, e.g. :label(\"Save\")",
+          "match": "(?<!:)(:)([a-z_][A-Za-z0-9_]*)(?=\\s*\\()",
+          "captures": {
+            "1": { "name": "punctuation.definition.colonpair.silc" },
+            "2": { "name": "entity.other.attribute-name.silc" }
+          }
+        },
+        {
+          "comment": "Valueless boolean flag, e.g. :sortable, :submit",
+          "match": "(?<!:)(:)([a-z_][A-Za-z0-9_]*)\\b(?!:)",
+          "captures": {
+            "1": { "name": "punctuation.definition.colonpair.silc" },
+            "2": { "name": "entity.other.attribute-name.silc" }
+          }
+        }
+      ]
+    },
+
+    "variable": {
+      "patterns": [
+        {
+          "match": "(\\$)(\\.)([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "punctuation.definition.variable.silc" },
+            "2": { "name": "punctuation.accessor.silc" },
+            "3": { "name": "variable.other.member.silc" }
+          }
+        },
+        {
+          "match": "(\\$)([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "punctuation.definition.variable.silc" },
+            "2": { "name": "variable.other.silc" }
+          }
+        }
+      ]
+    },
+
+    "property-access": {
+      "patterns": [
+        {
+          "match": "(\\.)([A-Za-z_][A-Za-z0-9_]*)\\s*(?=\\()",
+          "captures": {
+            "1": { "name": "punctuation.accessor.silc" },
+            "2": { "name": "entity.name.function.silc" }
+          }
+        },
+        {
+          "match": "(\\.)([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": { "name": "punctuation.accessor.silc" },
+            "2": { "name": "variable.other.property.silc" }
+          }
+        }
+      ]
+    },
+
+    "builtin-type": {
+      "name": "support.type.builtin.silc",
+      "match": "\\b(Str|UUID|Bool|Int|num32|num64|int32|int64)\\b"
+    },
+
+    "static-call": {
+      "match": "\\b([A-Z][A-Za-z0-9_]*)\\s*(\\.)\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*(?=\\()",
+      "captures": {
+        "1": { "name": "entity.name.type.silc" },
+        "2": { "name": "punctuation.accessor.silc" },
+        "3": { "name": "entity.name.function.silc" }
+      }
+    },
+
+    "call": {
+      "match": "\\b([a-z_][A-Za-z0-9_]*)\\s*(?=\\()",
+      "captures": {
+        "1": { "name": "entity.name.function.silc" }
+      }
+    },
+
+    "type-name": {
+      "name": "entity.name.type.silc",
+      "match": "\\b[A-Z][A-Za-z0-9_]*\\b"
+    },
+
+    "operator": {
+      "patterns": [
+        { "name": "keyword.operator.feed.silc", "match": "==>" },
+        { "name": "keyword.operator.arrow.silc", "match": "=>|->" },
+        { "name": "keyword.operator.comparison.silc", "match": "==|!=|<=|>=" },
+        { "name": "keyword.operator.logical.silc", "match": "&&|\\|\\||!" },
+        { "name": "keyword.operator.comparison.silc", "match": "<|>" },
+        { "name": "keyword.operator.assignment.silc", "match": "=" },
+        { "name": "keyword.operator.arithmetic.silc", "match": "[+\\-*/]" }
+      ]
+    }
+  }
+}

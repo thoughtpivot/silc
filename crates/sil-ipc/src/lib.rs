@@ -187,10 +187,23 @@ pub fn write_frame<W: Write>(writer: &mut W, frame: &ControlFrame) -> Result<(),
 }
 
 pub fn read_frame<R: Read>(reader: &mut R) -> Result<ControlFrame, String> {
+    read_frame_opt(reader)?.ok_or_else(|| "read frame length: connection closed".to_string())
+}
+
+/// Like [`read_frame`], but returns `Ok(None)` when the peer closed the
+/// connection cleanly at a frame boundary (EOF before any length bytes).
+pub fn read_frame_opt<R: Read>(reader: &mut R) -> Result<Option<ControlFrame>, String> {
     let mut len_buf = [0u8; 4];
-    reader
-        .read_exact(&mut len_buf)
-        .map_err(|e| format!("read frame length: {e}"))?;
+    let mut filled = 0;
+    while filled < len_buf.len() {
+        match reader.read(&mut len_buf[filled..]) {
+            Ok(0) if filled == 0 => return Ok(None),
+            Ok(0) => return Err("read frame length: connection closed mid-frame".into()),
+            Ok(n) => filled += n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(format!("read frame length: {e}")),
+        }
+    }
     let len = u32::from_le_bytes(len_buf) as usize;
     let mut ver_buf = [0u8; 2];
     reader
@@ -204,7 +217,9 @@ pub fn read_frame<R: Read>(reader: &mut R) -> Result<ControlFrame, String> {
     reader
         .read_exact(&mut payload)
         .map_err(|e| format!("read frame payload: {e}"))?;
-    serde_json::from_slice(&payload).map_err(|e| format!("decode frame: {e}"))
+    serde_json::from_slice(&payload)
+        .map(Some)
+        .map_err(|e| format!("decode frame: {e}"))
 }
 
 #[derive(Debug)]
@@ -478,6 +493,21 @@ mod tests {
         write_frame(&mut buf, &frame).unwrap();
         let decoded = read_frame(&mut buf.as_slice()).unwrap();
         assert_eq!(decoded, frame);
+    }
+
+    #[test]
+    fn read_frame_opt_returns_none_on_clean_eof() {
+        // Peer closed the socket at a frame boundary: normal disconnect.
+        let empty: &[u8] = &[];
+        assert_eq!(read_frame_opt(&mut &*empty).unwrap(), None);
+    }
+
+    #[test]
+    fn read_frame_opt_errors_on_mid_frame_eof() {
+        // EOF after partial length prefix is a real protocol error.
+        let partial: &[u8] = &[1, 0];
+        let err = read_frame_opt(&mut &*partial).unwrap_err();
+        assert!(err.contains("mid-frame"), "unexpected error: {err}");
     }
 
     #[test]

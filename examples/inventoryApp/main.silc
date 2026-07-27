@@ -1,8 +1,8 @@
 #!/usr/bin/env silc
 # Standalone inventory app: browse, admin CRUD, and silclm grounded on live stock.
-@version("0.2.0")
+@version("0.4.0")
 
-class InventoryItem {
+contract InventoryItem {
     has Str $.id;
     has Str $.name;
     has Str $.category;
@@ -12,32 +12,19 @@ class InventoryItem {
     has Str $.notes;
 }
 
-class ChatRecord {
+contract ChatRecord {
     has Str $.prompt;
     has Str $.reply;
 }
 
-class Inventory is resource {
-    has Str $.table = "inventory_items";
-
-    query list() -> [InventoryItem] {
-        InventoryItem ==> resource::list(:table(inventory_items))
-    }
-
-    mutation create(InventoryItem $item) {
-        $item ==> resource::create(:table(inventory_items))
-    }
-
-    mutation update(InventoryItem $item) {
-        $item ==> resource::update(:table(inventory_items))
-    }
-
-    mutation delete(InventoryItem $item) {
-        $item ==> resource::delete(:table(inventory_items))
-    }
+resource InventoryItems for InventoryItem {
+    query list;
+    mutation create;
+    mutation update;
+    mutation delete;
 }
 
-class ItemCard is component {
+component ItemCard {
     has InventoryItem $.item;
     emit remove(InventoryItem);
 
@@ -62,9 +49,9 @@ class ItemCard is component {
     }
 }
 
-class BrowsePage is component {
+component BrowsePage {
     has state Str $.category_filter = "All";
-    query $.items = Inventory.list();
+    query $.items = InventoryItems.list();
 
     method render() {
         ui::page(
@@ -104,14 +91,14 @@ class BrowsePage is component {
     }
 }
 
-class AdminPage is component {
+component AdminPage {
     has state Str $.name = "";
     has state Str $.category = "Electronics";
     has state Str $.location = "";
     has state Str $.quantity = "0";
     has state Str $.reorder_level = "0";
     has state Str $.notes = "";
-    query $.items = Inventory.list();
+    query $.items = InventoryItems.list();
 
     method render() {
         ui::page(
@@ -156,7 +143,7 @@ class AdminPage is component {
     }
 
     method on_create() {
-        Inventory.create(InventoryItem.new(
+        InventoryItems.create(InventoryItem.new(
             :name($.name),
             :category($.category),
             :location($.location),
@@ -164,7 +151,7 @@ class AdminPage is component {
             :reorder_level($.reorder_level),
             :notes($.notes)
         ));
-        Inventory.list();
+        InventoryItems.list();
         $.name = "";
         $.category = "Electronics";
         $.location = "";
@@ -174,14 +161,14 @@ class AdminPage is component {
     }
 
     method on_delete(InventoryItem $item) {
-        Inventory.delete($item);
-        Inventory.list();
+        InventoryItems.delete($item);
+        InventoryItems.list();
     }
 }
 
-class AssistantPage is component {
+component AssistantPage {
     has state Str $.prompt = "";
-    query $.items = Inventory.list();
+    query $.items = InventoryItems.list();
 
     method render() {
         ui::page(
@@ -216,28 +203,14 @@ class AssistantPage is component {
     }
 }
 
-class InventoryApp is app {
+app InventoryApp {
     route "/" => BrowsePage;
     route "/admin" => AdminPage;
     route "/assistant" => AssistantPage;
-
-    method serve() {
-        ui::web(:root(InventoryApp), :port(18096), :route("/"))
-            ==> ui::terminal(:port(18097))
-    }
 }
 
-class Assistant is processor {
+processor Assistant {
     method complete(ChatRecord $record) {
         $record.prompt ==> llm::complete()
-    }
-}
-
-class ChatDb is sink is storage(SQLite) {
-    method persist(ChatRecord $record) {
-        $record
-            ==> ipc::publish()
-            ==> store::sqlite(:table(chats))
-            ==> store::commit()
     }
 }

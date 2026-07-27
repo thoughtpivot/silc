@@ -17,6 +17,9 @@ pub struct CheckResult {
 pub fn check_source(source: &str, emit_dir: Option<&Path>) -> Result<CheckResult, String> {
     let program = sil_parser::parse(source).map_err(|error| format!("parse: {error}"))?;
     program
+        .validate_source_version(env!("CARGO_PKG_VERSION"))
+        .map_err(|error| format!("version: {error}"))?;
+    program
         .validate()
         .map_err(|error| format!("validate: {error}"))?;
     let decisions = route_program(&program);
@@ -75,20 +78,16 @@ pub fn extract_program(completion: &str) -> String {
 mod tests {
     use super::*;
 
-    const VALID: &str = r#"@version("0.2.0")
-class Note { has Str $.text; }
-class NotePage is component {
+    const VALID: &str = r#"@version("0.4.0")
+contract Note { has Str $.text; }
+component NotePage {
     has state Str $.text = "";
     method render() {
         ui::page(ui::heading(:text("Hi"), :level(1)))
     }
 }
-class NoteApp is app {
+app NoteApp {
     route "/" => NotePage;
-    method serve() {
-        ui::web(:root(NoteApp), :port(18080), :route("/"))
-            ==> ui::terminal(:port(18023))
-    }
 }
 "#;
 
@@ -107,7 +106,7 @@ class NoteApp is app {
 
     #[test]
     fn extracts_fenced_silc() {
-        let raw = "Here you go:\n```silc\n@version(\"0.2.0\")\nclass X {}\n```\n";
-        assert_eq!(extract_program(raw), "@version(\"0.2.0\")\nclass X {}");
+        let raw = "Here you go:\n```silc\n@version(\"0.4.0\")\ncontract X {}\n```\n";
+        assert_eq!(extract_program(raw), "@version(\"0.4.0\")\ncontract X {}");
     }
 }

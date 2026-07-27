@@ -31,9 +31,8 @@ impl SubsetPredicate {
                 Self::HELP
             ));
         };
-        let lit = parse_paren_string_literal(rest).map_err(|e| {
-            format!("invalid `{kind}` predicate: {e}; {}", Self::HELP)
-        })?;
+        let lit = parse_paren_string_literal(rest)
+            .map_err(|e| format!("invalid `{kind}` predicate: {e}; {}", Self::HELP))?;
         Ok(match kind {
             "contains" => Self::Contains(lit),
             "starts-with" => Self::StartsWith(lit),

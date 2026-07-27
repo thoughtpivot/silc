@@ -1,15 +1,15 @@
-@version("0.2.0")
+@version("0.4.0")
 
 # Shopping application without a Shopping/Inventory portal profile.
 # Empty product DB; admin CRUD; storefront; persistent cart; dual surfaces.
 
-class Product {
+contract Product {
     has Str $.id;
     has Str $.name;
     has num64 $.price;
 }
 
-class CartItem {
+contract CartItem {
     has Str $.id;
     has Str $.product_id;
     has Str $.name;
@@ -17,39 +17,19 @@ class CartItem {
     has Int $.quantity;
 }
 
-class Products is resource {
-    has Str $.table = "products";
-
-    query list() -> [Product] {
-        Product ==> resource::list(:table(products))
-    }
-
-    mutation create(Product $item) {
-        $item ==> resource::create(:table(products))
-    }
-
-    mutation delete(Product $item) {
-        $item ==> resource::delete(:table(products))
-    }
+resource Products for Product {
+    query list;
+    mutation create;
+    mutation delete;
 }
 
-class Cart is resource {
-    has Str $.table = "cart_items";
-
-    query list() -> [CartItem] {
-        CartItem ==> resource::list(:table(cart_items))
-    }
-
-    mutation add(CartItem $item) {
-        $item ==> resource::create(:table(cart_items))
-    }
-
-    mutation remove(CartItem $item) {
-        $item ==> resource::delete(:table(cart_items))
-    }
+resource CartItems for CartItem {
+    query list;
+    mutation add;
+    mutation remove;
 }
 
-class ProductCard is component {
+component ProductCard {
     has Product $.product;
     emit add(Product);
 
@@ -66,7 +46,7 @@ class ProductCard is component {
     }
 }
 
-class StorefrontPage is component {
+component StorefrontPage {
     query $.products = Products.list();
 
     method render() {
@@ -90,12 +70,12 @@ class StorefrontPage is component {
     }
 
     method on_add(Product $product) {
-        Cart.add($product);
+        CartItems.add($product);
     }
 }
 
-class CartPage is component {
-    query $.lines = Cart.list();
+component CartPage {
+    query $.lines = CartItems.list();
     has state num64 $.total = 0;
 
     method render() {
@@ -121,11 +101,11 @@ class CartPage is component {
     }
 
     method on_remove(CartItem $line) {
-        Cart.remove($line);
+        CartItems.remove($line);
     }
 }
 
-class AdminPage is component {
+component AdminPage {
     has state Str $.name = "";
     has state Str $.price = "0";
     query $.products = Products.list();
@@ -169,13 +149,8 @@ class AdminPage is component {
     }
 }
 
-class ShoppingApp is app {
+app ShoppingApp {
     route "/" => StorefrontPage;
     route "/cart" => CartPage;
     route "/admin" => AdminPage;
-
-    method serve() {
-        ui::web(:root(ShoppingApp), :port(18094), :route("/"))
-            ==> ui::terminal(:port(18095))
-    }
 }

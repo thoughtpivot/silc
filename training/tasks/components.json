@@ -1,6 +1,6 @@
 {
   "id": "components",
   "category": "ui",
-  "description": "Author a Silc 0.2.0 app that demonstrates component props, local state, click handlers, and dual-surface UI (ui::web + ui::terminal). Include an app bar and a simple page with a heading and button that updates state.",
+  "description": "Author a Silc 0.4.0 app that demonstrates component props, local state, click handlers, and dual-surface UI via app routes only (compiler synthesizes web + terminal). Include an app bar and a simple page with a heading and button that updates state. Do not write serve(), ui::web, or ui::terminal.",
   "tags": ["components", "state", "events", "dual-surface"]
 }

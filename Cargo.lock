@@ -699,7 +699,7 @@ checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
 name = "sil-codegen"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "serde_json",
  "sil-core",
@@ -710,11 +710,11 @@ dependencies = [
 
 [[package]]
 name = "sil-core"
-version = "0.2.0"
+version = "0.4.0"
 
 [[package]]
 name = "sil-ipc"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "memmap2",
  "serde",
@@ -723,14 +723,14 @@ dependencies = [
 
 [[package]]
 name = "sil-lexer"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "logos",
 ]
 
 [[package]]
 name = "sil-parser"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "sil-core",
  "sil-lexer",
@@ -738,7 +738,7 @@ dependencies = [
 
 [[package]]
 name = "sil-rlm"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "regex",
  "serde",
@@ -749,7 +749,7 @@ dependencies = [
 
 [[package]]
 name = "sil-router"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "sil-core",
  "sil-parser",
@@ -757,7 +757,7 @@ dependencies = [
 
 [[package]]
 name = "sil-training"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "hex",
  "serde",
@@ -772,7 +772,7 @@ dependencies = [
 
 [[package]]
 name = "silc"
-version = "0.2.0"
+version = "0.4.0"
 dependencies = [
  "dirs",
  "flate2",

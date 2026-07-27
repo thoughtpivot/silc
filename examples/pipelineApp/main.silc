@@ -1,0 +1,29 @@
+@version("0.4.0")
+
+# One-shot static-page ingestion: Bun fetch/extract → CPython ONNX → Go SQLite.
+
+subset Uri of Str where { .starts-with("http") }
+subset Emb384 of Vec[num32; 384];
+
+contract ArticlePayload {
+    has UUID $.id;
+    has Uri $.url;
+    has Str $.raw_content;
+    has Emb384 $.vector_embedding;
+}
+
+service ArticleIngress {
+    method fetch_article() {
+        target_url
+            ==> scrape::page(:js(false))
+            ==> scrape::extract(:into(ArticlePayload))
+    }
+}
+
+processor Embedder {
+    method embed(ArticlePayload $article) {
+        $article.raw_content
+            ==> tensor::tokenize(:model("minilm-l6-v2"))
+            ==> tensor::infer(:prefer(CPU))
+    }
+}

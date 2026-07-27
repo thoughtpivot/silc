@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 pub use crate::schema::{PromptRecord, TaskSeed};
 
 const TARGET_MODEL: &str = "silclm";
-const AGENTS_MD_VERSION: &str = "0.2.0";
+const AGENTS_MD_VERSION: &str = "0.4.0";
 
 pub fn load_tasks(tasks_dir: &Path) -> Result<Vec<TaskSeed>, String> {
     if !tasks_dir.is_dir() {
@@ -63,7 +63,7 @@ pub fn build_prompt_records(agents_md: &str, tasks: &[TaskSeed]) -> Vec<PromptRe
 
 pub fn format_prompt(agents_md: &str, task: &str) -> String {
     format!(
-        r#"You are silclm, Silc's local language model. Write a complete, valid Silc 0.2.0 program for the task below.
+        r#"You are silclm, Silc's local language model. Write a complete, valid Silc 0.4.0 program for the task below.
 
 Follow the project guidance exactly. Output only a Silc program (optionally in a ```silc fence). Do not invent React, package.json, Ollama, or hand-edited `.runtime/` files.
 

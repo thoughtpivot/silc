@@ -35,7 +35,7 @@ jobs:
       - name: Cargo test
         run: cargo test --workspace --lib -- --test-threads=1
 
-      - name: Codegen smoke (0.2.0 apps)
+      - name: Codegen smoke (0.4.0 apps)
         run: |
           cargo test -p sil-codegen emits_runnable_feedback_app
           cargo test -p sil-codegen emits_chat_app_with_llm_processor
@@ -46,6 +46,8 @@ jobs:
           cargo build -p silc
           ./target/debug/silc build examples/chatApp/main.silc
           ./target/debug/silc build examples/inventoryApp/main.silc
+          ./target/debug/silc build examples/scraperApp/main.silc
+          ./target/debug/silc build examples/pipelineApp/main.silc
 
       - name: Dual-surface end-to-end
         run: |
@@ -71,6 +73,38 @@ jobs:
           kill -KILL $PID || true
           wait $PID || true
           test -f crates/silc/tests/fixtures/.runtime/scored_form/data/app.db
+
+  pipeline-integration:
+    name: scraper + ONNX pipeline integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: System packages
+        run: sudo apt-get update && sudo apt-get install -y unzip
+
+      - name: Cache Silc runtimes, models, and wheels
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.silc
+            ~/.cache/pip
+          key: silc-0.4.0-onnx-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('crates/sil-codegen/templates/*requirements.txt', 'crates/sil-core/src/model_catalog.rs') }}
+
+      - name: Build all standalone examples
+        run: |
+          cargo build -p silc
+          ./target/debug/silc build examples/chatApp/main.silc
+          ./target/debug/silc build examples/inventoryApp/main.silc
+          ./target/debug/silc build examples/scraperApp/main.silc
+          ./target/debug/silc build examples/pipelineApp/main.silc
+
+      - name: Local HTTP to ONNX to SQLite
+        run: cargo test -p silc --test pipeline_e2e -- --ignored --test-threads=1
 
   release-plz:
     name: release-plz

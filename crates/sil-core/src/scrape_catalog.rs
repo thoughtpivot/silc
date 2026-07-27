@@ -34,7 +34,11 @@ impl JsMode {
 }
 
 pub fn parse_js_mode(raw: &str) -> Result<JsMode, String> {
-    let v = raw.trim().trim_matches('"').trim_matches('\'').to_ascii_lowercase();
+    let v = raw
+        .trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .to_ascii_lowercase();
     match v.as_str() {
         "false" | "0" | "no" | "off" => Ok(JsMode::False),
         "auto" => Ok(JsMode::Auto),
@@ -48,9 +52,9 @@ pub fn parse_js_mode(raw: &str) -> Result<JsMode, String> {
 
 pub fn parse_site_depth(raw: &str) -> Result<u32, String> {
     let v = raw.trim().trim_matches('"').trim_matches('\'');
-    let depth: u32 = v
-        .parse()
-        .map_err(|_| format!("invalid scrape :depth(`{raw}`); expected integer 1..{MAX_SITE_DEPTH}"))?;
+    let depth: u32 = v.parse().map_err(|_| {
+        format!("invalid scrape :depth(`{raw}`); expected integer 1..{MAX_SITE_DEPTH}")
+    })?;
     if depth == 0 || depth > MAX_SITE_DEPTH {
         return Err(format!(
             "scrape :depth must be between 1 and {MAX_SITE_DEPTH} (got {depth})"
@@ -60,7 +64,11 @@ pub fn parse_site_depth(raw: &str) -> Result<u32, String> {
 }
 
 pub fn parse_same_host(raw: &str) -> Result<bool, String> {
-    let v = raw.trim().trim_matches('"').trim_matches('\'').to_ascii_lowercase();
+    let v = raw
+        .trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .to_ascii_lowercase();
     match v.as_str() {
         "true" | "1" | "yes" | "on" => Ok(true),
         "false" | "0" | "no" | "off" => Ok(false),

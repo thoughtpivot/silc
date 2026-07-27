@@ -1,6 +1,6 @@
 {
   "id": "shopping_crud",
   "category": "resources",
-  "description": "Build a shopping-style app with is resource tables for products (and optionally cart items), list/create/update/delete actions, dual-surface UI routes, and no inventing of portal profiles. Persist via Silc resources over SQLite.",
+  "description": "Build a shopping-style app with `resource Name for Contract` capability declarations (query list; mutation create/update/delete;), dual-surface UI via app routes only, and no inventing of portal profiles. Do not write resource method bodies, sink, or ipc/store pipelines — persistence is synthesized.",
   "tags": ["resources", "crud", "shopping", "dual-surface"]
 }

@@ -1,0 +1,29 @@
+@version("0.4.0")
+
+# Runnable closed tensor pipeline (scrape → embed → SQLite).
+
+subset Uri of Str where { .contains("://") }
+subset Emb384 of Vec[num32; 384];
+
+contract ArticlePayload {
+    has UUID $.id;
+    has Uri $.url;
+    has Str $.raw_content;
+    has Emb384 $.vector_embedding;
+}
+
+service NetworkIngress {
+    method fetch_article() {
+        target_url
+            ==> scrape::page(:js(false))
+            ==> scrape::extract(:into(ArticlePayload))
+    }
+}
+
+processor EmbeddingEngine {
+    method generate_vectors(ArticlePayload $article) {
+        $article.raw_content
+            ==> tensor::tokenize(:model("minilm-l6-v2"))
+            ==> tensor::infer(:prefer(CPU))
+    }
+}

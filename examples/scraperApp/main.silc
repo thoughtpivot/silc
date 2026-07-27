@@ -1,8 +1,8 @@
 #!/usr/bin/env silc
 # scraperApp — enter a URL and crawl depth; Silc scrapes the site and shows results.
-@version("0.2.0")
+@version("0.4.0")
 
-class ScrapedPage {
+contract ScrapedPage {
     has Str $.id;
     has Str $.scrape_id;
     has Str $.scraped_at;
@@ -17,27 +17,17 @@ class ScrapedPage {
     has Str $.status;
 }
 
-class Pages is resource {
-    has Str $.table = "scraped_pages";
-
-    query list() -> [ScrapedPage] {
-        ScrapedPage ==> resource::list(:table(scraped_pages))
-    }
-
-    mutation create(ScrapedPage $item) {
-        $item ==> resource::create(:table(scraped_pages))
-    }
-
-    mutation delete(ScrapedPage $item) {
-        $item ==> resource::delete(:table(scraped_pages))
-    }
+resource ScrapedPages for ScrapedPage {
+    query list;
+    mutation create;
+    mutation delete;
 }
 
-class ScraperHome is component {
+component ScraperHome {
     has state Str $.url = "";
     has state Str $.depth = "2";
     has state Str $.status = "";
-    query $.pages = Pages.list();
+    query $.pages = ScrapedPages.list();
 
     method render() {
         ui::page(
@@ -84,21 +74,16 @@ class ScraperHome is component {
     method on_submit() {
         $.status = "Scraping…";
         submit();
-        Pages.list();
+        ScrapedPages.list();
         $.status = "Done.";
     }
 }
 
-class ScraperApp is app {
+app ScraperApp {
     route "/" => ScraperHome;
-
-    method serve() {
-        ui::web(:root(ScraperApp), :port(18110), :route("/"))
-            ==> ui::terminal(:port(18111))
-    }
 }
 
-class Crawler is service {
+service Crawler {
     method run() {
         target_url
             ==> scrape::site(:depth(2), :same_host(true), :js(auto))
@@ -107,17 +92,8 @@ class Crawler is service {
     }
 }
 
-class Summarizer is processor {
+processor Summarizer {
     method summarize(ScrapedPage $page) {
         $page.prompt ==> llm::complete()
-    }
-}
-
-class SummaryDb is sink is storage(SQLite) {
-    method persist(ScrapedPage $page) {
-        $page
-            ==> ipc::publish()
-            ==> store::sqlite(:table(scrape_summaries))
-            ==> store::commit()
     }
 }

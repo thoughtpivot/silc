@@ -1,6 +1,6 @@
 # scraperApp
 
-Standalone Silc 0.2.0 scraping application:
+Standalone Silc 0.4.0 scraping application:
 
 - Enter a **website URL** and **crawl depth** (1–10)
 - Silc runs `scrape::site` (Go Colly) with optional Playwright escalation (`:js(auto)`)

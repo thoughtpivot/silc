@@ -81,20 +81,22 @@ pub fn route_module(module: &Module) -> RouteDecision {
             Target::Python,
             if has(&["llm"]) {
                 "tier1: processor+llm → Python (local LLM / llama.cpp)".to_string()
+            } else if has(&["tensor"]) {
+                "tier1: processor+tensor → Python (ONNX Runtime CPU embedding)".to_string()
             } else {
                 "tier1: processor+data/ML/text → Python (scientific/ML and text scoring)"
                     .to_string()
             },
         )
-    } else if module.kind == ModuleKind::Processor
-        && has_scrape_op(&["render", "extract"])
-    {
+    } else if module.kind == ModuleKind::Processor && has_scrape_op(&["render", "extract"]) {
         (
             Target::Python,
             "tier1: processor+scrape render/extract → Python (Playwright browser, ADR-006)"
                 .to_string(),
         )
-    } else if module.kind == ModuleKind::Service && has(&["service"]) && !has(&["ui", "html", "scrape"])
+    } else if module.kind == ModuleKind::Service
+        && has(&["service"])
+        && !has(&["ui", "html", "scrape"])
     {
         (
             Target::Go,
@@ -147,10 +149,17 @@ pub fn route_module(module: &Module) -> RouteDecision {
     } else if has(&["tensor", "numpy", "pandas", "text", "llm"]) {
         (
             Target::Python,
-            format!(
-                "tier2: namespaces [{}] → Python (scientific/ML/text/llm)",
-                namespaces.join(", ")
-            ),
+            if has(&["tensor"]) {
+                format!(
+                    "tier2: namespaces [{}] → Python (ONNX Runtime CPU embedding)",
+                    namespaces.join(", ")
+                )
+            } else {
+                format!(
+                    "tier2: namespaces [{}] → Python (scientific/ML/text/llm)",
+                    namespaces.join(", ")
+                )
+            },
         )
     } else if has(&["store", "ipc", "sys"]) {
         (
@@ -190,16 +199,49 @@ mod tests {
     use sil_core::{Method, Module, ModuleKind, Pipeline, PipelineStep, Program, Span};
 
     #[test]
-    fn routes_article_pipeline_three_ways() {
+    fn routes_article_pipeline_service_and_processor() {
         let source = include_str!("../tests/fixtures/data_pipeline.silc");
         let program = sil_parser::parse(source).expect("parse example");
         let decisions = route_program(&program);
+        assert_eq!(decisions.len(), 2);
         assert_eq!(decisions[0].target, Target::Bun);
         assert_eq!(decisions[1].target, Target::Python);
-        assert_eq!(decisions[2].target, Target::Go);
         assert!(decisions
             .iter()
             .all(|decision| !decision.provenance.is_empty()));
+    }
+
+    #[test]
+    fn routes_runnable_tensor_pipeline_without_author_sink() {
+        let source = include_str!("../tests/fixtures/data_pipeline_runnable.silc");
+        let program = sil_parser::parse(source).expect("parse runnable pipeline");
+        let decisions = route_program(&program);
+        assert_eq!(decisions.len(), 2);
+        assert_eq!(decisions[0].module, "NetworkIngress");
+        assert_eq!(decisions[0].target, Target::Bun);
+        assert!(
+            decisions[0].provenance.contains("scrape") || decisions[0].provenance.contains("Bun"),
+            "expected scrape→Bun provenance, got {}",
+            decisions[0].provenance
+        );
+        assert_eq!(decisions[1].module, "EmbeddingEngine");
+        assert_eq!(decisions[1].target, Target::Python);
+        assert!(
+            decisions[1].provenance.contains("ONNX") && decisions[1].provenance.contains("CPU"),
+            "expected ONNX CPU provenance, got {}",
+            decisions[1].provenance
+        );
+
+        // Fixture must also classify as the closed runnable tensor graph with synthesized sink.
+        let graph = sil_core::infer_graph(&program)
+            .expect("infer")
+            .expect("runnable graph");
+        assert!(graph.is_pipeline_only());
+        assert_eq!(graph.processor_op, sil_core::ProcessorOp::TensorInfer);
+        assert_eq!(graph.model_ref.as_deref(), Some("minilm-l6-v2"));
+        assert_eq!(graph.embedding_dim, Some(384));
+        assert_eq!(graph.sink, "ArticlePayloadDb");
+        assert_eq!(graph.sqlite_table, "article_payloads");
     }
 
     #[test]
@@ -237,57 +279,48 @@ mod tests {
     }
 
     #[test]
-    fn routes_ui_web_service_to_bun() {
+    fn routes_score_processor_to_python() {
         let source = r#"
-@version("1.0")
-class FeedbackRecord { has Str $.author; has Str $.text; }
-class WebPortal is service {
-    method listen(:$port = 18080) {
-        FeedbackRecord ==> ui::web(:port(18080), :route("/"))
-    }
+@version("0.4.0")
+contract FeedbackRecord { has Str $.author; has Str $.text; }
+component Page {
+    method render() { ui::page(ui::text(:text("x"))) }
 }
-class TextAnalyzer is processor {
+app FeedbackApp {
+    route "/" => Page;
+}
+processor TextAnalyzer {
     method analyze(FeedbackRecord $record) { $record.text ==> text::score() }
-}
-class FeedbackDb is sink is latency(5ms) is storage(SQLite) {
-    method persist(FeedbackRecord $record) {
-        $record ==> ipc::publish() ==> store::sqlite(:table(feedback)) ==> store::commit()
-    }
 }
 "#;
         let program = sil_parser::parse(source).expect("parse");
         let decisions = route_program(&program);
-        assert_eq!(decisions[0].target, Target::Bun);
-        assert_eq!(decisions[1].target, Target::Python);
-        assert_eq!(decisions[2].target, Target::Go);
+        assert_eq!(decisions.len(), 1);
+        assert_eq!(decisions[0].target, Target::Python);
+        let graph = sil_core::infer_graph(&program)
+            .expect("infer")
+            .expect("runnable graph");
+        assert_eq!(graph.sink, "FeedbackRecordDb");
     }
 
     #[test]
     fn routes_llm_processor_to_python() {
         let source = r#"
-@version("0.2.0")
-class ChatRecord { has Str $.prompt; has Str $.reply; }
-class ChatPage is component {
+@version("0.4.0")
+contract ChatRecord { has Str $.prompt; has Str $.reply; }
+component ChatPage {
     has state Str $.prompt = "";
     method render() {
         ui::page(ui::chat(:value($.prompt), :on(send(on_send))))
     }
     method on_send() { Assistant.complete(); }
 }
-class ChatApp is app {
+app ChatApp {
     route "/" => ChatPage;
-    method serve() {
-        ui::web(:root(ChatApp), :port(18090)) ==> ui::terminal(:port(18091))
-    }
 }
-class Assistant is processor {
+processor Assistant {
     method complete(ChatRecord $record) {
         $record.prompt ==> llm::complete(:model("silclm"))
-    }
-}
-class ChatDb is sink is storage(SQLite) {
-    method persist(ChatRecord $record) {
-        $record ==> ipc::publish() ==> store::sqlite(:table(chats)) ==> store::commit()
     }
 }
 "#;
@@ -296,16 +329,19 @@ class ChatDb is sink is storage(SQLite) {
         let python = decisions.iter().find(|d| d.target == Target::Python);
         assert!(python.is_some(), "expected python processor route");
         assert!(python.unwrap().provenance.contains("llm"));
-        let go = decisions.iter().find(|d| d.target == Target::Go);
-        assert!(go.is_some(), "expected go sink route");
+        let graph = sil_core::infer_graph(&program)
+            .expect("infer")
+            .expect("runnable graph");
+        assert_eq!(graph.sink, "ChatRecordDb");
+        assert!(graph.capabilities.web && graph.capabilities.terminal);
     }
 
     #[test]
     fn routes_service_http_to_go() {
         let source = r#"
 @version("1.0")
-class FeedbackRecord { has Str $.author; has Str $.text; }
-class FeedbackApi is service {
+contract FeedbackRecord { has Str $.author; has Str $.text; }
+service FeedbackApi {
     method list(:$port = 18081) {
         FeedbackRecord ==> service::http(:port(18081), :route("/api/feedback"), :method(GET))
     }
@@ -321,8 +357,8 @@ class FeedbackApi is service {
     #[test]
     fn routes_scrape_site_service_to_bun() {
         let source = r#"
-@version("0.2.0")
-class Crawler is service {
+@version("0.4.0")
+service Crawler {
     method run() {
         seed_url ==> scrape::site(:depth(2), :same_host(true)) ==> scrape::select(:css("title"), :as(title))
     }
@@ -331,14 +367,16 @@ class Crawler is service {
         let program = sil_parser::parse(source).expect("parse scrape site");
         let decisions = route_program(&program);
         assert_eq!(decisions[0].target, Target::Bun);
-        assert!(decisions[0].provenance.contains("scrape") || decisions[0].provenance.contains("Bun"));
+        assert!(
+            decisions[0].provenance.contains("scrape") || decisions[0].provenance.contains("Bun")
+        );
     }
 
     #[test]
     fn routes_scrape_site_task_to_go() {
         let source = r#"
-@version("0.2.0")
-class Crawler is task {
+@version("0.4.0")
+task Crawler {
     method run() {
         seed_url ==> scrape::site(:depth(2), :same_host(true))
     }
@@ -347,23 +385,22 @@ class Crawler is task {
         let program = sil_parser::parse(source).expect("parse scrape site task");
         let decisions = route_program(&program);
         assert_eq!(decisions[0].target, Target::Go);
-        assert!(decisions[0].provenance.contains("Colly") || decisions[0].provenance.contains("scrape"));
+        assert!(
+            decisions[0].provenance.contains("Colly") || decisions[0].provenance.contains("scrape")
+        );
     }
 
     #[test]
     fn routes_scrape_page_with_ui_service_to_bun() {
         let source = r#"
-@version("0.2.0")
-class Page is component {
+@version("0.4.0")
+component Page {
     method render() { ui::page(ui::text(:text("x"))) }
 }
-class ScraperApp is app {
+app ScraperApp {
     route "/" => Page;
-    method serve() {
-        ui::web(:root(ScraperApp), :port(18100)) ==> ui::terminal(:port(18101))
-    }
 }
-class Ingest is service {
+service Ingest {
     method fetch() {
         url ==> scrape::page(:js(false)) ==> scrape::select(:css("title"), :as(title))
     }
@@ -378,17 +415,20 @@ class Ingest is service {
     #[test]
     fn routes_scrape_render_processor_to_python() {
         let source = r#"
-@version("0.2.0")
-class Browser is processor {
+@version("0.4.0")
+processor Browser {
     method run() {
         url ==> scrape::render() ==> scrape::extract(:into(Article))
     }
 }
-class Article { has Str $.title; }
+contract Article { has Str $.title; }
 "#;
         let program = sil_parser::parse(source).expect("parse scrape render");
         let decisions = route_program(&program);
         assert_eq!(decisions[0].target, Target::Python);
-        assert!(decisions[0].provenance.contains("Playwright") || decisions[0].provenance.contains("scrape"));
+        assert!(
+            decisions[0].provenance.contains("Playwright")
+                || decisions[0].provenance.contains("scrape")
+        );
     }
 }

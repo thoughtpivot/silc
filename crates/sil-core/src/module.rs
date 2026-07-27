@@ -1,4 +1,4 @@
-//! Module subject: `class … is service|processor|sink` + methods.
+//! Module subject: `service|processor|sink …` + methods.
 
 use crate::constraint::TraitArg;
 use crate::contract::Field;

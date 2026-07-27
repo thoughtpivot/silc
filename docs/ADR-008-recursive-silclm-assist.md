@@ -123,7 +123,7 @@ Future trajectory JSONL (filter: `accepted` and successful `silc_check`):
   "id": "traj-…",
   "task_id": "…",
   "task": "…",
-  "agents_md_version": "0.3.0",
+  "agents_md_version": "0.4.0",
   "target_model": "silclm-assist",
   "turns": [
     {"role": "root", "content": "…"},

@@ -1,0 +1,37 @@
+{
+  "name": "silc-language",
+  "displayName": "Silc Language",
+  "description": "Syntax highlighting for Silc (.silc) intent-native source files.",
+  "version": "0.1.0",
+  "publisher": "thoughtpivot",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "silc",
+        "aliases": [
+          "Silc",
+          "silc"
+        ],
+        "extensions": [
+          ".silc"
+        ],
+        "firstLine": "^#!.*\\bsilc\\b",
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "silc",
+        "scopeName": "source.silc",
+        "path": "./syntaxes/silc.tmLanguage.json"
+      }
+    ]
+  }
+}

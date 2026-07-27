@@ -46,7 +46,7 @@ fn print_usage() {
         "  sil-training bank --candidates <candidates.jsonl> --accepted <accepted.jsonl> --rejected <rejected.jsonl> [--no-emit]"
     );
     println!(
-        "  sil-training subject-first-bench --agents <AGENTS.md> --tasks <dir> --out <report.json>"
+        "  sil-training subject-first-bench --agents <AGENTS.md> --tasks <dir> [--trials <trials.jsonl>]... --out <report.json>"
     );
 }
 
@@ -83,11 +83,13 @@ fn run_bank(args: Vec<String>) -> Result<(), String> {
 fn run_subject_first_bench(args: Vec<String>) -> Result<(), String> {
     let agents = flag_path(&args, "--agents")?;
     let tasks = flag_path(&args, "--tasks")?;
+    let trials = repeated_flag_paths(&args, "--trials");
     let out = flag_path(&args, "--out")?;
-    let report = run_benchmark(&agents, &tasks, &out)?;
+    let report = run_benchmark(&agents, &tasks, &trials, &out)?;
     println!(
-        "sil-training: subject-first bench → {} (prompts={}, trials={})",
+        "sil-training: subject-first bench → {} (decision={:?}, prompts={}, trials={})",
         out.display(),
+        report.decision,
         report.prompts.len(),
         report.trials.len()
     );
@@ -101,7 +103,34 @@ fn run_subject_first_bench(args: Vec<String>) -> Result<(), String> {
             summary.mean_repair_turns
         );
     }
+    for summary in &report.category_summaries {
+        println!(
+            "  {}/{}: first_pass={}/{} ({:.0}%) mean_repair={:.2}",
+            summary.category.as_deref().unwrap_or("all"),
+            summary.variant.as_str(),
+            summary.first_pass_ok,
+            summary.trials,
+            summary.first_pass_rate * 100.0,
+            summary.mean_repair_turns
+        );
+    }
+    for reason in &report.decision_reasons {
+        println!("  decision: {reason}");
+    }
     Ok(())
+}
+
+fn repeated_flag_paths(args: &[String], flag: &str) -> Vec<PathBuf> {
+    let mut paths = Vec::new();
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        if arg == flag {
+            if let Some(value) = iter.next() {
+                paths.push(PathBuf::from(value));
+            }
+        }
+    }
+    paths
 }
 
 fn flag_path(args: &[String], flag: &str) -> Result<PathBuf, String> {

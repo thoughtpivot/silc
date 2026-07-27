@@ -6,6 +6,7 @@ mod supervisor;
 
 use sil_core::ExecutionMode;
 use std::env;
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process;
 
@@ -16,10 +17,9 @@ fn main() {
             println!("silc {}", env!("CARGO_PKG_VERSION"));
             println!("usage: silc <program.silc>");
             println!("       silc build <program.silc>");
+            println!("       silc run <program.silc> --input-json '<json>'");
+            println!("       silc run <program.silc> --input <file.json>");
             println!("       silc init [path]");
-        }
-        Some("init") => {
-            let path = args.next();
             println!(
                 "       silc assist \"<task>\" [--out path.silc] [--corpus <dir>] [--max-turns N]"
             );
@@ -33,6 +33,9 @@ fn main() {
                     process::exit(1);
                 }
             }
+        }
+        Some("init") => {
+            let path = args.next();
             if let Err(err) = init::run(path.as_deref()) {
                 eprintln!("silc: {err}");
                 process::exit(1);
@@ -48,6 +51,59 @@ fn main() {
                 process::exit(1);
             }
         }
+        Some("run") => {
+            let Some(path) = args.next() else {
+                eprintln!(
+                    "silc: usage: silc run <program.silc> (--input-json '<json>' | --input <file.json>)"
+                );
+                process::exit(1);
+            };
+            let mut input_json = None;
+            while let Some(flag) = args.next() {
+                match flag.as_str() {
+                    "--input-json" => {
+                        if input_json.is_some() {
+                            eprintln!("silc: choose exactly one of --input-json or --input");
+                            process::exit(1);
+                        }
+                        let Some(value) = args.next() else {
+                            eprintln!("silc: --input-json requires a JSON value");
+                            process::exit(1);
+                        };
+                        input_json = Some(value);
+                    }
+                    "--input" => {
+                        if input_json.is_some() {
+                            eprintln!("silc: choose exactly one of --input-json or --input");
+                            process::exit(1);
+                        }
+                        let Some(file) = args.next() else {
+                            eprintln!("silc: --input requires a JSON file path");
+                            process::exit(1);
+                        };
+                        match fs::read_to_string(&file) {
+                            Ok(value) => input_json = Some(value),
+                            Err(error) => {
+                                eprintln!("silc: read pipeline input {file}: {error}");
+                                process::exit(1);
+                            }
+                        }
+                    }
+                    other => {
+                        eprintln!("silc: unknown run option `{other}`");
+                        process::exit(1);
+                    }
+                }
+            }
+            let Some(input_json) = input_json else {
+                eprintln!("silc: pipeline run requires --input-json or --input");
+                process::exit(1);
+            };
+            if let Err(err) = compile_and_run_pipeline(Path::new(&path), &input_json) {
+                eprintln!("silc: {err}");
+                process::exit(1);
+            }
+        }
         Some(path) => {
             if let Err(err) = compile_and_maybe_run(Path::new(path)) {
                 eprintln!("silc: {err}");
@@ -55,6 +111,27 @@ fn main() {
             }
         }
     }
+}
+
+fn compile_and_run_pipeline(entry: &Path, input_json: &str) -> Result<(), String> {
+    let input: serde_json::Value = serde_json::from_str(input_json)
+        .map_err(|error| format!("invalid pipeline input JSON: {error}"))?;
+    let url = input
+        .get("url")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "pipeline input must contain string field `url`".to_string())?;
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err("pipeline input `url` must use http or https".into());
+    }
+    let (_workdir, output, lock) = compile_common(entry)?;
+    let graph = output
+        .graph
+        .as_ref()
+        .ok_or_else(|| "program is not executable in Silc 0.4.0".to_string())?;
+    if !graph.is_pipeline_only() {
+        return Err("`silc run --input-*` requires a pipeline-only program".into());
+    }
+    supervisor::run_pipeline(&output, &lock, input_json)
 }
 
 fn build_only(entry: &Path) -> Result<(), String> {
@@ -68,7 +145,7 @@ fn build_only(entry: &Path) -> Result<(), String> {
         println!("go:      {}", lock.go_bin.display());
         println!("engines locked under .silc/runtimes.lock.json");
     } else {
-        println!("stub emit only — this program is not executable in Silc 0.2.0");
+        println!("stub emit only — this program is not executable in Silc 0.4.0");
     }
     Ok(())
 }
@@ -84,9 +161,9 @@ fn compile_and_maybe_run(entry: &Path) -> Result<(), String> {
     match output.execution_mode {
         ExecutionMode::Stub => {
             println!();
-            println!("stub emit complete — worker execution requires runnable 0.2.0 operations");
+            println!("stub emit complete — worker execution requires runnable 0.4.0 operations");
             println!(
-                "(is app with ui::web + ui::terminal, resources/actions, optional text::score or llm::complete, or service::http)"
+                "(app with ui::web + ui::terminal, resources/actions, optional text::score or llm::complete, or service::http)"
             );
             Ok(())
         }
@@ -97,6 +174,11 @@ fn compile_and_maybe_run(entry: &Path) -> Result<(), String> {
                 .ok_or_else(|| "runnable program missing executable graph".to_string())?;
             if graph.is_api_only() {
                 supervisor::run_api(&output, &lock)
+            } else if graph.is_pipeline_only() {
+                Err(
+                    "pipeline-only program: use `silc run <program.silc> --input-json '{\"url\":\"https://…\"}'`"
+                        .into(),
+                )
             } else {
                 supervisor::run_app(&output, &lock)
             }
@@ -113,9 +195,7 @@ fn compile_common(
     let ext = entry.extension().and_then(|ext| ext.to_str());
     if ext != Some("silc") {
         let hint = match ext {
-            Some("raku") | Some("sil") => {
-                "rename to .silc — Silc does not accept .raku or .sil"
-            }
+            Some("raku") | Some("sil") => "rename to .silc — Silc does not accept .raku or .sil",
             _ => "expected a .silc entry file",
         };
         return Err(format!("{hint}, got {}", entry.display()));
@@ -135,6 +215,7 @@ fn compile_common(
     let source = std::fs::read_to_string(entry)
         .map_err(|error| format!("failed to read {}: {error}", entry.display()))?;
     let program = sil_parser::parse(&source).map_err(|error| error.to_string())?;
+    program.validate_source_version(env!("CARGO_PKG_VERSION"))?;
     program.validate()?;
     let decisions = sil_router::route_program(&program);
 
@@ -173,6 +254,15 @@ fn compile_common(
         }
         if graph.has_api() {
             supervisor::build_go_api_worker(&lock, &output.root)?;
+        }
+        if graph.is_pipeline_only() {
+            supervisor::build_go_worker(&lock, &output.root)?;
+            let model_id = graph
+                .model_ref
+                .as_deref()
+                .ok_or_else(|| "tensor pipeline missing model_ref".to_string())?;
+            models::ensure_embedding_model(model_id)?;
+            supervisor::build_tensor_python(&lock, &output.root)?;
         }
     }
 

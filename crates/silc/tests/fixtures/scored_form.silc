@@ -1,14 +1,14 @@
-@version("0.2.0")
+@version("0.4.0")
 
 # Dual-surface scored form (replaces the former feedback portal profile).
 
-class FeedbackRecord {
+contract FeedbackRecord {
     has Str $.author;
     has Str $.text;
     has Str $.rating;
 }
 
-class FeedbackPage is component {
+component FeedbackPage {
     has state Str $.author = "";
     has state Str $.text = "";
     has state Str $.rating = "Okay";
@@ -39,26 +39,12 @@ class FeedbackPage is component {
     }
 }
 
-class FeedbackApp is app {
+app FeedbackApp {
     route "/" => FeedbackPage;
-
-    method serve() {
-        ui::web(:root(FeedbackApp), :port(18080), :route("/"))
-            ==> ui::terminal(:port(18023))
-    }
 }
 
-class TextAnalyzer is processor {
+processor TextAnalyzer {
     method analyze(FeedbackRecord $record) {
         $record.text ==> text::score()
-    }
-}
-
-class FeedbackDb is sink is storage(SQLite) {
-    method persist(FeedbackRecord $record) {
-        $record
-            ==> ipc::publish()
-            ==> store::sqlite(:table(feedback))
-            ==> store::commit()
     }
 }

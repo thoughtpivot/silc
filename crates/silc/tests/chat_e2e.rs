@@ -105,13 +105,13 @@ fn multi_session_chat_builds_race_safe_ui() {
     let source = root.join("multi_chat.silc");
     std::fs::write(
         &source,
-        r#"@version("0.2.0")
-class ChatRecord {
+        r#"@version("0.4.0")
+contract ChatRecord {
     has Str $.prompt;
     has Str $.reply;
     has Str $.session_id;
 }
-class ChatPage is component {
+component ChatPage {
     has state Str $.prompt = "";
     has state Str $.active_session = "session-a";
     method render() {
@@ -129,22 +129,13 @@ class ChatPage is component {
     }
     method on_send() { Assistant.complete(); }
 }
-class ChatApp is app {
+app ChatApp {
     route "/" => ChatPage;
-    method serve() {
-        ui::web(:root(ChatApp), :port(18190), :route("/"))
-            ==> ui::terminal(:port(18191))
-    }
 }
-class Assistant is processor {
+processor Assistant {
     has Str $.model_ref = "silclm";
     method complete(ChatRecord $record) {
         $record.prompt ==> llm::complete(:model("silclm"))
-    }
-}
-class ChatDb is sink is storage(SQLite) {
-    method persist(ChatRecord $record) {
-        $record ==> ipc::publish() ==> store::sqlite(:table(chats)) ==> store::commit()
     }
 }
 "#,
@@ -191,6 +182,8 @@ fn chat_assistant_real_completion_e2e() {
     let log = std::fs::File::create(&log_path).unwrap();
     let mut child = Command::new(silc_bin())
         .arg(example.to_str().unwrap())
+        .env("SILC_HTTP_PORT", "18090")
+        .env("SILC_TERMINAL_PORT", "18091")
         .stdout(Stdio::from(log.try_clone().unwrap()))
         .stderr(Stdio::from(log))
         .spawn()
