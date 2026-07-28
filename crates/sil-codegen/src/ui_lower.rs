@@ -144,17 +144,34 @@ fn render_web_component(component: &Component, program: &Program) -> String {
     let llm_search = find_llm_search(&component.render);
 
     let mut state_decls = String::new();
+    let file_fields = collect_file_fields(&component.render);
     for field in &component.state {
-        let init = field
-            .default
-            .as_ref()
-            .map(expr_to_js)
-            .unwrap_or_else(|| "\"\"".into());
+        let is_file = file_fields.iter().any(|f| f == &field.name);
+        let init = if is_file {
+            "null".into()
+        } else {
+            field
+                .default
+                .as_ref()
+                .map(expr_to_js)
+                .unwrap_or_else(|| "\"\"".into())
+        };
         state_decls.push_str(&format!(
             "  const [{name}, set{pascal}] = useState({init});\n",
             name = field.name,
             pascal = pascal(&field.name),
             init = init
+        ));
+    }
+    // File inputs may bind a field without a matching `has state` declaration.
+    for name in &file_fields {
+        if component.state.iter().any(|f| f.name == *name) {
+            continue;
+        }
+        state_decls.push_str(&format!(
+            "  const [{name}, set{pascal}] = useState(null);\n",
+            name = name,
+            pascal = pascal(name),
         ));
     }
     for prop in &component.props {
@@ -1006,6 +1023,47 @@ fn render_node(node: &UiNode, indent: usize) -> String {
                 )
             }
         }
+        "file_input" => {
+            let field = node
+                .prop("field")
+                .and_then(|e| e.as_ident())
+                .map(|s| s.to_string());
+            let setter = field
+                .as_ref()
+                .map(|f| format!("set{}", pascal(f)))
+                .unwrap_or_else(|| "undefined".into());
+            let accept = prop_js(node, "accept");
+            let multiple = if node.prop("multiple").is_some() {
+                "true"
+            } else {
+                "false"
+            };
+            let disabled = if node.prop("disabled").is_some() {
+                "true"
+            } else {
+                "false"
+            };
+            if surface() == SurfaceKind::Terminal {
+                format!(
+                    "{pad}<Field label={{{label}}}><InputField value={{({field} && {field}.path) || \"\"}} onChange={{(v) => {setter}?.(v ? {{ path: v, name: v.split(/[/\\\\]/).pop() || v }} : null)}} placeholder={{\"path/to/file.pdf\"}} disabled={{{disabled}}} /></Field>",
+                    pad = pad,
+                    label = prop_js(node, "label"),
+                    field = field.as_deref().unwrap_or("undefined"),
+                    setter = setter,
+                    disabled = disabled
+                )
+            } else {
+                format!(
+                    "{pad}<div className=\"space-y-1\"><Label>{{ {label} }}</Label><input type=\"file\" accept={{{accept}}} multiple={{{multiple}}} disabled={{{disabled}}} className=\"block w-full text-sm\" onChange={{(e) => {setter}?.(e.target.files && e.target.files[0] ? e.target.files[0] : null)}} /></div>",
+                    pad = pad,
+                    label = prop_js(node, "label"),
+                    accept = accept,
+                    multiple = multiple,
+                    disabled = disabled,
+                    setter = setter
+                )
+            }
+        }
         "radio_group" => {
             let field = node
                 .prop("field")
@@ -1630,6 +1688,27 @@ fn expr_to_js_stmt(
     if let Expr::Call { callee, args } = expr {
         if let Expr::Ident(name) = callee.as_ref() {
             if name == "submit" || name.ends_with("submit") {
+                if program_has_doc_extract(program) {
+                    let file_fields = collect_file_fields(&component.render);
+                    let mut appends = String::new();
+                    for f in &file_fields {
+                        appends.push_str(&format!(
+                            "if ({f}) {{ if ({f} instanceof File) {{ fd.append({f:?}, {f}); }} else if ({f}.path) {{ fd.append(\"path\", {f}.path); fd.append(\"filename\", {f}.name || {f}.path); }} }}\n      "
+                        ));
+                    }
+                    for field in &component.state {
+                        if file_fields.iter().any(|f| f == &field.name) {
+                            continue;
+                        }
+                        appends.push_str(&format!(
+                            "fd.append({:?}, String({} ?? \"\"));\n      ",
+                            field.name, field.name
+                        ));
+                    }
+                    return format!(
+                        "await (async () => {{ const fd = new FormData();\n      {appends}const resp = await fetch(\"/upload\", {{ method: \"POST\", body: fd }}); const data = await resp.json(); if (!resp.ok || data.ok === false) throw new Error(data.error || \"upload failed\"); return data; }})()"
+                    );
+                }
                 let body = if args.is_empty() {
                     let fields = component
                         .state
@@ -1903,6 +1982,63 @@ fn snake_case(s: &str) -> String {
     out
 }
 
+fn collect_file_fields(template: &UiTemplate) -> Vec<String> {
+    let mut out = Vec::new();
+    fn walk(node: &UiNode, out: &mut Vec<String>) {
+        if node.component == "file_input" {
+            if let Some(field) = node.prop("field").and_then(|e| e.as_ident()) {
+                if !out.iter().any(|f| f == field) {
+                    out.push(field.to_string());
+                }
+            }
+        }
+        for child in &node.children {
+            if let Some(n) = child.as_node() {
+                walk(n, out);
+            }
+        }
+        for (_, slot) in &node.slots {
+            if let Some(n) = slot.as_node() {
+                walk(n, out);
+            }
+        }
+    }
+    if let UiTemplate::Node(root) = template {
+        walk(root, &mut out);
+    }
+    out
+}
+
+fn program_has_doc_extract(program: &Program) -> bool {
+    use sil_core::PipelineStep;
+    let mut found = false;
+    let mut check = |steps: &[PipelineStep]| {
+        for step in steps {
+            if let PipelineStep::Call {
+                namespace: Some(ns),
+                name,
+                ..
+            } = step
+            {
+                if ns == "doc" && name == "extract" {
+                    found = true;
+                }
+            }
+        }
+    };
+    for module in &program.modules {
+        for method in &module.methods {
+            check(&method.pipeline.steps);
+        }
+    }
+    for resource in &program.resources {
+        for method in &resource.methods {
+            check(&method.pipeline.steps);
+        }
+    }
+    found
+}
+
 /// Catalog names that must have a `render_node` arm (kept in sync manually).
 #[cfg(test)]
 const LOWERED_BUILTINS: &[&str] = &[
@@ -1920,6 +2056,7 @@ const LOWERED_BUILTINS: &[&str] = &[
     "form",
     "text_input",
     "textarea",
+    "file_input",
     "radio_group",
     "select",
     "checkbox",

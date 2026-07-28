@@ -1,0 +1,3 @@
+Fixture Title
+
+Plain text body for doc::extract unit coverage.

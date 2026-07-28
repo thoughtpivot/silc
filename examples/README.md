@@ -23,7 +23,7 @@ The shared block between `<!-- BEGIN SILC_AGENTS_TEMPLATE -->` and
 byte-for-byte. App-specific notes go **after** the end marker only.
 
 Tracked examples today: `chatApp`, `inventoryApp`, `scraperApp`,
-`pipelineApp`, and `blogApp`.
+`pipelineApp`, `blogApp`, and `dataCollectorApp`.
 
 ## Current apps
 
@@ -34,6 +34,7 @@ Tracked examples today: `chatApp`, `inventoryApp`, `scraperApp`,
 | [`scraperApp/`](scraperApp/) | URL + depth form; site crawl via `scrape::*`; results table | 18110 | 18111 |
 | [`pipelineApp/`](pipelineApp/) | One-shot scrape → MiniLM/ONNX → SQLite pipeline | — | — |
 | [`blogApp/`](blogApp/) | Seeded blog: home filters + grounded search + admin modal CRUD | 18120 | 18121 |
+| [`dataCollectorApp/`](dataCollectorApp/) | File upload + `doc::extract` → documents ledger | 18130 | 18131 |
 
 ## Conventions
 

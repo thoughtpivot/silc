@@ -44,7 +44,7 @@ Authors may declare:
 | `resource Name for Contract { query …; mutation …; seed …; }` | Capability CRUD (no method bodies); optional idempotent seeds |
 | `app { route … }` | Route table only |
 | `service` / `processor` / `task` | Optional workflows |
-| Author `EXECUTABLE_OPS` | `service::http`, `text::score`, `llm::complete`, `scrape::*`, `tensor::*` |
+| Author `EXECUTABLE_OPS` | `service::http`, `text::score`, `llm::complete`, `scrape::*`, `doc::extract`, `tensor::*` |
 | `==>` | Domain pipeline feeds between values and author ops |
 
 ### Forbidden in author source (compiler-owned)

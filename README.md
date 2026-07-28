@@ -62,7 +62,7 @@ scale**, not just snippet scale:
 | Dual-surface internal tools | One component tree → web (React/Tailwind) + terminal (OpenTUI) |
 | Operational CRUD apps | Contracts + resource capabilities → SQLite HTTP APIs |
 | Local AI assistants | Grounded `ui::chat` over live data via **silclm** |
-| Content / research ingestion | `scrape::*` crawls without naming Bun, Colly, or Playwright |
+| Content / research ingestion | `scrape::*` crawls without naming Bun, Colly, or Playwright; `doc::extract` turns uploads into structured rows |
 | Embedding pipelines | Closed MiniLM path: scrape → tokenize → infer → SQLite |
 | Agent-authored software | Closed language + compiler oracle → fewer invented substrates |
 
@@ -365,14 +365,28 @@ scaffolding.
 - **In-app intelligence:** `llm::complete` / `ui::chat` run on **silclm**
   (compiler-pinned local GGUF). Use `:context(...)` to ground answers on live
   resource data.
-- **Silc Assist (experimental):** `silc assist` is a closed-tool recursive
-  authoring loop around silclm ([ADR-008](docs/ADR-008-recursive-silclm-assist.md)).
-  It searches examples and `AGENTS.md` incrementally, drafts `.silc`, and
-  validates with parse → validate → route — instead of loading the entire
-  authoring corpus into an 8K root window.
+- **Silc Assist (experimental):** `silc assist` drafts and modifies `.silc`
+  files with silclm ([ADR-008](docs/ADR-008-recursive-silclm-assist.md)). It
+  auto-retrieves relevant examples and `AGENTS.md` rules, asks for a complete
+  program via the chat template (stop marker `# END`), then compile-and-repairs.
+  Creating a file adapts the `silc init` starter as a skeleton, so the usual run
+  lands on the first attempt in ~6–12s. Repairs escalate cheapest-first:
+  mechanical diagnostics (a repeated resource block, a resource named like a
+  component, seeds missing `:id`, a nested method, a missing `@version`) are
+  auto-fixed with no model call, structural ones get an explicit rule, and only
+  the rest fall back to error-targeted corpus search. Tasks that ask to persist
+  data get the `resource` + mutation pattern injected up front. An identical
+  repeated draft retries at a higher
+  temperature instead of recompiling the same file, and if every attempt fails
+  the closest draft is saved as `<file>.rejected` for inspection. The slower tool
+  loop is opt-in (`--explore`). While it runs, the
+  terminal shows a durable action trace plus a spinner — not raw model protocol.
+  Inference uses a warm silclm worker with Metal GPU offload by default on
+  Apple Silicon.
 
 ```bash
-silc assist "dual-surface notes app with submit" --out notes.silc
+silc assist "dual-surface notes app with submit" notes.silc
+silc assist "refine the form" notes.silc --explore   # optional slower fallback
 ```
 
 Assist is Phase 1: useful, bounded, and experimental. A fine-tuned
@@ -463,7 +477,7 @@ declare intent; the compiler synthesizes runtime mechanics
 Every UI `app` synthesizes **both** surfaces automatically — compiler-owned
 `ui::web` (React/Tailwind) and `ui::terminal` (OpenTUI). Authors declare routes
 only; they never write `method serve()`, `ui::web`, or `ui::terminal` as program
-operations. The full UI primitive catalog (38 dual-surface builtins), closed
+operations. The full UI primitive catalog (39 dual-surface builtins), closed
 prop enums, and agent rules live in
 [`crates/silc/templates/AGENTS.md`](crates/silc/templates/AGENTS.md).
 
@@ -473,7 +487,7 @@ Author-facing ops that run today:
 
 `service::http`, `text::score`, `llm::complete`,
 `scrape::page`, `scrape::site`, `scrape::select`, `scrape::render`,
-`scrape::extract`, `tensor::tokenize`, `tensor::infer`.
+`scrape::extract`, `doc::extract`, `tensor::tokenize`, `tensor::infer`.
 
 **Shipped**
 
@@ -546,6 +560,7 @@ Pre-1.0 SemVer 0.x: breaking language/compiler changes bump the minor.
 | [docs/ADR-008-recursive-silclm-assist.md](docs/ADR-008-recursive-silclm-assist.md) | Silc Assist |
 | [docs/ADR-009-compiler-synthesized-runtime.md](docs/ADR-009-compiler-synthesized-runtime.md) | Synthesized UI / persistence |
 | [docs/ADR-010-tensor-minilm-pipeline.md](docs/ADR-010-tensor-minilm-pipeline.md) | MiniLM embedding pipeline |
+| [docs/ADR-011-document-extract.md](docs/ADR-011-document-extract.md) | `doc::*` upload + extract |
 | [docs/SILC-IPC-ABI-v1.md](docs/SILC-IPC-ABI-v1.md) | Shared buffer ABI |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
 

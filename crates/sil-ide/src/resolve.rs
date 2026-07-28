@@ -1,8 +1,8 @@
 //! Hover resolution: map a byte offset to Markdown documentation.
 
 use crate::docs::{
-    builtin_type_doc, executable_op_doc, keyword_doc, operator_doc, resource_method_summary,
-    stub_op_doc,
+    builtin_type_doc, executable_op_doc, keyword_doc, namespace_doc, operator_doc,
+    resource_method_summary, stub_op_doc,
 };
 use crate::document::{Document, HoverContent, HoverRange};
 use sil_core::{
@@ -193,6 +193,16 @@ fn resolve_ident_context(doc: &Document, idx: usize) -> Option<HoverContent> {
     if idx >= 1 && matches!(doc.tokens[idx - 1].token, Token::Colon) {
         if let Some(content) = resolve_ui_prop(doc, idx, name, range.clone()) {
             return Some(content);
+        }
+    }
+
+    // Namespace qualifier: `ui` in `ui::table`
+    if idx + 1 < doc.tokens.len() && matches!(doc.tokens[idx + 1].token, Token::DoubleColon) {
+        if let Some(text) = namespace_doc(name) {
+            return Some(HoverContent {
+                markdown: md("namespace", name, &text, None),
+                range,
+            });
         }
     }
 
@@ -964,6 +974,30 @@ component Page {
     }
 
     #[test]
+    fn hovers_ui_namespace_qualifier() {
+        let src = r#"
+component Page {
+    method render() {
+        ui::table(:rows([]), :columns([]))
+    }
+}
+"#;
+        let offset = src.find("ui::table").expect("ui::") as u32;
+        let h = resolve_hover(&doc(src), offset).expect("namespace hover");
+        assert!(h.markdown.contains("namespace"), "{}", h.markdown);
+        assert!(
+            h.markdown.contains("UI primitive") || h.markdown.contains("dual-surface"),
+            "expected ui namespace prose:\n{}",
+            h.markdown
+        );
+        assert!(
+            !h.markdown.contains("ui primitive: `ui::table`"),
+            "namespace hover must not be the member hover:\n{}",
+            h.markdown
+        );
+    }
+
+    #[test]
     fn hovers_ui_prop_with_prose() {
         let src = r#"
 component Page {
@@ -1013,6 +1047,17 @@ component Page {
             assert!(
                 doc.len() > 40,
                 "type `{ty}` doc should be at least a sentence or two, got: {doc}"
+            );
+        }
+    }
+
+    #[test]
+    fn namespace_catalog_is_complete() {
+        for ns in sil_core::KNOWN_NAMESPACES {
+            let doc = namespace_doc(ns).unwrap_or_else(|| panic!("missing namespace_doc for {ns}"));
+            assert!(
+                !doc.trim().is_empty() && doc.len() > 40,
+                "namespace `{ns}` doc too short: {doc}"
             );
         }
     }

@@ -43,7 +43,7 @@ fn ui_catalog_lines_present_in_agents_template() {
 
     assert_eq!(
         UI_COMPONENT_CATALOG.len(),
-        38,
+        39,
         "catalog size changed; update docs and this assertion"
     );
 
@@ -61,7 +61,7 @@ fn ui_catalog_lines_present_in_agents_template() {
     }
 
     // White-paper README points agents at the full catalog rather than
-    // mirroring all 38 prop/event lines.
+    // mirroring all 39 prop/event lines.
     assert!(
         readme.contains("crates/silc/templates/AGENTS.md"),
         "README must link the AGENTS template for the full UI catalog"
@@ -188,6 +188,7 @@ fn tracked_example_agents_embed_template_common_block() {
         "scraperApp",
         "pipelineApp",
         "blogApp",
+        "dataCollectorApp",
     ] {
         let agents = read_workspace(&format!("examples/{app}/AGENTS.md"));
         let actual = template_common_block(&agents);

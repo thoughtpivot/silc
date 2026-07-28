@@ -18,6 +18,9 @@ sil-router = { workspace = true }
 sil-codegen = { workspace = true }
 sil-ipc = { workspace = true }
 sil-rlm = { workspace = true }
+clap = { version = "4", features = ["derive"] }
+console = "0.15"
+indicatif = "0.17"
 ureq = "2"
 flate2 = "1"
 tar = "0.4"

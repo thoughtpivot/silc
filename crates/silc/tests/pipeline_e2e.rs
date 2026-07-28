@@ -67,7 +67,7 @@ fn local_http_to_normalized_embedding_to_sqlite() {
     let query = Command::new(python)
         .arg("-c")
         .arg(
-            "import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute('select payload from embeddings limit 1').fetchone()[0])",
+            "import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute('select data from embeddings limit 1').fetchone()[0])",
         )
         .arg(&db)
         .output()

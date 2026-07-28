@@ -89,6 +89,11 @@ pub fn route_module(module: &Module) -> RouteDecision {
                     .to_string()
             },
         )
+    } else if module.kind == ModuleKind::Processor && has(&["doc"]) {
+        (
+            Target::Python,
+            "tier1: processor+doc → Python (document extract, ADR-011)".to_string(),
+        )
     } else if module.kind == ModuleKind::Processor && has_scrape_op(&["render", "extract"]) {
         (
             Target::Python,
@@ -144,6 +149,14 @@ pub fn route_module(module: &Module) -> RouteDecision {
             Target::Bun,
             format!(
                 "tier2: namespaces [{}] → Bun (async I/O / UI / static scrape, ADR-006)",
+                namespaces.join(", ")
+            ),
+        )
+    } else if has(&["doc"]) {
+        (
+            Target::Python,
+            format!(
+                "tier2: namespaces [{}] → Python (document extract, ADR-011)",
                 namespaces.join(", ")
             ),
         )

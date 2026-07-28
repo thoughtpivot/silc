@@ -30,6 +30,8 @@ const SCRAPE_CRAWL_GO: &str = include_str!("../templates/scrape_crawl_worker.go"
 const SCRAPE_CRAWL_GOMOD: &str = include_str!("../templates/scrape_crawl_go.mod");
 const SCRAPE_BROWSER_PY: &str = include_str!("../templates/scrape_browser_worker.py");
 const SCRAPE_REQUIREMENTS: &str = include_str!("../templates/scrape_requirements.txt");
+const DOC_EXTRACT_PY: &str = include_str!("../templates/doc_extract_worker.py");
+const DOC_REQUIREMENTS: &str = include_str!("../templates/doc_requirements.txt");
 
 pub const SCRAPE_BUN_ADAPTER: &str = "bun-fetch-v1";
 pub const SCRAPE_COLLY_ADAPTER: &str = "go-colly-v1";
@@ -207,8 +209,10 @@ pub fn emit(
                 "history": g.capabilities.history,
                 "resources": g.capabilities.resources,
                 "scrape": g.capabilities.scrape,
+                "doc": g.capabilities.doc,
             },
             "scrape": scrape_manifest(g),
+            "doc": doc_manifest(g),
             "app": g.app_name,
             "root_component": g.root_component,
             "model_ref": g.model_ref,
@@ -364,6 +368,12 @@ pub fn emit(
                 );
             }
         }
+        if g.has_doc() {
+            entrypoints.insert(
+                "python_doc_extract".into(),
+                serde_json::json!("python/doc_extract_worker.py"),
+            );
+        }
         if g.is_pipeline_only() {
             entrypoints.insert(
                 "pipeline_ingress".into(),
@@ -385,6 +395,9 @@ pub fn emit(
         if g.has_scrape() {
             manifest["scrape"] = scrape_manifest(g);
         }
+        if g.has_doc() {
+            manifest["doc"] = doc_manifest(g);
+        }
         manifest["engines"] = serde_json::json!({
             "bun": {"path": null, "version": "1.2.18"},
             "python": {"path": null, "version": "3.12.12"},
@@ -403,6 +416,7 @@ pub fn emit(
             "history": g.capabilities.history,
             "resources": g.capabilities.resources,
             "scrape": g.capabilities.scrape,
+            "doc": g.capabilities.doc,
         });
     }
 
@@ -736,6 +750,16 @@ fn emit_ui_app(
             ));
         }
     }
+    if graph.has_doc() {
+        files.push((
+            root.join("python/doc_extract_worker.py"),
+            DOC_EXTRACT_PY.replace("__COMPILER_VERSION__", compiler_version),
+        ));
+        files.push((
+            root.join("python/doc_requirements.txt"),
+            DOC_REQUIREMENTS.to_string(),
+        ));
+    }
     for (path, contents) in files {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)
@@ -996,6 +1020,42 @@ fn scrape_table(graph: &ExecutableGraph) -> String {
         .unwrap_or_else(|| "scraped_pages".into())
 }
 
+fn doc_table(graph: &ExecutableGraph) -> String {
+    graph
+        .doc
+        .table
+        .clone()
+        .or_else(|| {
+            graph
+                .resource_tables
+                .iter()
+                .map(|(_, table)| table.clone())
+                .find(|t| t.contains("document") || t == "documents")
+        })
+        .or_else(|| {
+            graph
+                .resource_tables
+                .first()
+                .map(|(_, table)| table.clone())
+        })
+        .unwrap_or_else(|| "documents".into())
+}
+
+fn doc_manifest(graph: &ExecutableGraph) -> serde_json::Value {
+    serde_json::json!({
+        "extract": graph.doc.extract,
+        "extract_into": graph.doc.extract_into,
+        "table": doc_table(graph),
+        "formats": ["pdf", "docx", "odt", "md", "txt", "html"],
+        "adapters": {
+            "upload": "bun-multipart-v1",
+            "extract": "python-doc-extract-v1",
+        },
+        "provenance": "ADR-011 doc::* Python-native extract",
+        "discard_originals": true,
+    })
+}
+
 fn render_template(
     template: &str,
     program: &Program,
@@ -1035,6 +1095,7 @@ fn render_template(
         graph.processor_op.as_str()
     };
     let has_scrape = if graph.has_scrape() { "true" } else { "false" };
+    let has_doc = if graph.has_doc() { "true" } else { "false" };
     let scrape_site = if graph.scrape.site { "true" } else { "false" };
     let scrape_same_host = if graph.scrape.same_host {
         "true"
@@ -1080,6 +1141,7 @@ fn render_template(
         .replace("__PROCESSOR_OP__", processor)
         .replace("__HAS_LLM__", has_llm)
         .replace("__HAS_SCRAPE__", has_scrape)
+        .replace("__HAS_DOC__", has_doc)
         .replace("__SCRAPE_SITE__", scrape_site)
         .replace("__SCRAPE_JS__", graph.scrape.js.as_str())
         .replace("__SCRAPE_DEPTH__", &graph.scrape.depth.to_string())
@@ -1087,6 +1149,7 @@ fn render_template(
         .replace("__SCRAPE_LINK_CSS__", &link_css)
         .replace("__SCRAPE_SELECTS_JSON__", &scrape_selects)
         .replace("__SCRAPE_TABLE__", &scrape_table(graph))
+        .replace("__DOC_TABLE__", &doc_table(graph))
         .replace("__ACTIONS_JSON__", &actions)
         .replace("__RESOURCE_TABLES__", &resource_tables)
         .replace("__RESOURCE_SEEDS_JSON__", &resource_seeds)
@@ -1325,6 +1388,47 @@ fn pascal_case(name: &str) -> String {
 mod tests {
     use super::*;
     use std::time::{SystemTime, UNIX_EPOCH};
+
+    /// The Go store worker and the TypeScript app worker write the same resource
+    /// tables. When they disagreed on the column name, whichever created the
+    /// table first won and the other's INSERT failed at runtime with
+    /// "table guests has no column named data".
+    #[test]
+    fn store_and_app_workers_agree_on_the_resource_payload_column() {
+        assert!(
+            STORE_WORKER_GO.contains("INSERT OR REPLACE INTO %s (id, data)"),
+            "store worker must write resource rows into `data`"
+        );
+        assert!(
+            !STORE_WORKER_GO.contains("INSERT OR REPLACE INTO %s (id, payload)"),
+            "store worker must not reintroduce a `payload` resource column"
+        );
+        assert!(
+            APP_WORKER_TS.contains("INSERT INTO ${table} (id, data)"),
+            "app worker must write resource rows into `data`"
+        );
+        // Both create resource tables with the columns the app worker updates.
+        for column in ["data TEXT NOT NULL", "updated_at"] {
+            assert!(
+                STORE_WORKER_GO.contains(column),
+                "store worker resource table missing `{column}`"
+            );
+            assert!(
+                APP_WORKER_TS.contains(column),
+                "app worker resource table missing `{column}`"
+            );
+        }
+        // `app_events` is a separate shape both agree uses `payload`.
+        assert!(STORE_WORKER_GO.contains("INSERT OR REPLACE INTO app_events (id, kind, payload)"));
+        assert!(APP_WORKER_TS.contains("SELECT payload FROM app_events"));
+    }
+
+    /// Databases created before the column was unified must self-heal.
+    #[test]
+    fn app_worker_migrates_legacy_resource_tables() {
+        assert!(APP_WORKER_TS.contains("RENAME COLUMN payload TO data"));
+        assert!(APP_WORKER_TS.contains("migrateResourceTable(db, table)"));
+    }
 
     fn output_dir(label: &str) -> PathBuf {
         let nonce = SystemTime::now()
@@ -2060,6 +2164,96 @@ processor Summarizer {
         fs::remove_dir_all(output).ok();
     }
 
+    const DOC_SOURCE: &str = r#"
+@version("0.4.0")
+
+contract Document {
+    has Str $.title;
+    has Str $.headings;
+    has Str $.body;
+    has Str $.tables;
+    has Str $.filename;
+    has Str $.mime;
+    has Str $.format;
+    has Str $.char_count;
+}
+
+resource Documents for Document {
+    query list;
+    mutation create;
+    mutation delete;
+}
+
+component UploadPage {
+    has state Str $.upload = "";
+    method render() {
+        ui::page(
+            ui::heading(:text("Upload"), :level(1)),
+            ui::form(
+                :on(submit(on_submit)),
+                ui::file_input(:field(upload), :label("Document"), :accept(".pdf,.docx,.odt,.md,.txt,.html")),
+                ui::button(:label("Extract"), :variant("primary"), :submit)
+            )
+        )
+    }
+    method on_submit() { submit(); }
+}
+
+component DocumentsPage {
+    query $.rows = Documents.list();
+    method render() {
+        ui::page(
+            ui::heading(:text("Documents"), :level(1)),
+            ui::table(:rows($.rows), :columns(["title", "filename", "format", "char_count"]))
+        )
+    }
+}
+
+app CollectorApp {
+    route "/" => UploadPage;
+    route "/documents" => DocumentsPage;
+}
+
+service Extractor {
+    method run() {
+        $upload ==> doc::extract(:into(Document))
+    }
+}
+"#;
+
+    #[test]
+    fn emits_doc_extract_upload_pipeline() {
+        let (_program, result, output) = parse_emit(DOC_SOURCE, "doc_collector");
+        let graph = result.graph.as_ref().unwrap();
+        assert!(graph.has_doc());
+        assert_eq!(graph.doc.extract_into.as_deref(), Some("Document"));
+        assert_eq!(graph.doc.table.as_deref(), Some("documents"));
+
+        let ts = fs::read_to_string(output.join("typescript/worker.ts")).unwrap();
+        assert!(ts.contains("HAS_DOC = true") || ts.contains("const HAS_DOC = true"));
+        assert!(ts.contains("/upload"));
+        assert!(ts.contains("runDocExtractJob"));
+        assert!(ts.contains("DOC_TABLE = \"documents\"") || ts.contains("const DOC_TABLE = \"documents\""));
+        assert!(!ts.contains("__HAS_DOC__"));
+        assert!(!ts.contains("__DOC_TABLE__"));
+
+        assert!(output.join("python/doc_extract_worker.py").is_file());
+        assert!(output.join("python/doc_requirements.txt").is_file());
+        let reqs = fs::read_to_string(output.join("python/doc_requirements.txt")).unwrap();
+        assert!(reqs.contains("pypdf"));
+        assert!(reqs.contains("python-docx"));
+
+        let app = fs::read_to_string(output.join("typescript/src/App.tsx")).unwrap();
+        assert!(app.contains("type=\"file\"") || app.contains("type='file'"));
+        assert!(app.contains("/upload"));
+
+        let manifest = fs::read_to_string(&result.manifest).unwrap();
+        assert!(manifest.contains("python-doc-extract-v1"));
+        assert!(manifest.contains("bun-multipart-v1"));
+        assert!(manifest.contains("\"doc\": true") || manifest.contains("doc_extract_worker"));
+        fs::remove_dir_all(output).ok();
+    }
+
     #[test]
     fn rejects_legacy_class_declarators() {
         let source = r#"
@@ -2073,5 +2267,56 @@ class BadView is view {
             err.message.contains("legacy `class`"),
             "expected migration diagnostic, got {err}"
         );
+    }
+
+    #[test]
+    fn doc_extract_worker_parses_txt_and_md_fixtures() {
+        let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("templates/fixtures/doc");
+        let worker = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("templates/doc_extract_worker.py");
+        let python = which_python3();
+        for (name, expect_title) in [("sample.txt", "Fixture Title"), ("sample.md", "Fixture Markdown")]
+        {
+            let path = fixtures.join(name);
+            let output = std::process::Command::new(&python)
+                .args([
+                    worker.to_str().unwrap(),
+                    "--path",
+                    path.to_str().unwrap(),
+                    "--filename",
+                    name,
+                    "--json",
+                ])
+                .output()
+                .expect("spawn doc extract worker");
+            assert!(
+                output.status.success(),
+                "extract {name} failed: {}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+            let json: serde_json::Value =
+                serde_json::from_slice(&output.stdout).expect("extract json");
+            assert_eq!(json["ok"], true);
+            assert_eq!(json["title"], expect_title);
+            assert!(json["body"].as_str().unwrap_or("").len() > 0);
+            assert!(!json["char_count"].as_str().unwrap_or("").is_empty());
+        }
+    }
+
+    fn which_python3() -> PathBuf {
+        for candidate in ["python3", "python"] {
+            if let Ok(output) = std::process::Command::new(candidate)
+                .args(["-c", "import sys; print(sys.executable)"])
+                .output()
+            {
+                if output.status.success() {
+                    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    if !path.is_empty() {
+                        return PathBuf::from(path);
+                    }
+                }
+            }
+        }
+        panic!("python3 required for doc extract fixture test");
     }
 }

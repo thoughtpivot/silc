@@ -1,6 +1,6 @@
 //! Documentation catalog for Silc keywords, operators, types, and operations.
 
-use sil_core::{is_executable_op, EXECUTABLE_OPS};
+use sil_core::{is_executable_op, EXECUTABLE_OPS, UI_COMPONENT_CATALOG};
 
 pub fn keyword_doc(keyword: &str) -> Option<&'static str> {
     Some(match keyword {
@@ -247,6 +247,107 @@ pub fn builtin_type_doc(name: &str) -> Option<&'static str> {
     })
 }
 
+/// Documentation for a left-hand namespace qualifier (`ui` in `ui::table`).
+pub fn namespace_doc(ns: &str) -> Option<String> {
+    let text: String = match ns {
+        "ui" => format!(
+            "Dual-surface UI primitive catalog ({count} builtins). \
+             Author `ui::*` nodes inside component `render` templates; they compile to both \
+             web (React/Tailwind) and terminal (OpenTUI). Do not author `ui::web` or \
+             `ui::terminal` as operations — those surfaces are synthesized from `app` routes.",
+            count = UI_COMPONENT_CATALOG.len()
+        ),
+        "service" => {
+            "Runnable service namespace. Author `service::http` in a service module to expose \
+             an HTTP API surface; the compiler wires routes from resources and handlers."
+                .into()
+        }
+        "text" => {
+            "Runnable text namespace. Author `text::score` in processor or handler pipelines \
+             for local, deterministic relevance scoring without calling an LLM."
+                .into()
+        }
+        "llm" => {
+            "Runnable local-LLM namespace. Author `llm::complete` (via silclm) in processors \
+             or awaited handlers when you need generated language grounded on app data."
+                .into()
+        }
+        "scrape" => {
+            "Runnable scrape namespace. Author `scrape::page`, `site`, `select`, `render`, and \
+             `extract` in ingress/processor pipelines to fetch and structure web content."
+                .into()
+        }
+        "doc" => {
+            "Runnable document namespace. Author `doc::extract(:into(Contract))` with \
+             `ui::file_input` so uploads become structured resource rows (ADR-011)."
+                .into()
+        }
+        "tensor" => {
+            "Runnable tensor namespace. Author `tensor::tokenize` then `tensor::infer` for the \
+             CPU MiniLM embedding path (exactly 384 `num32` values in Silc 0.4.0)."
+                .into()
+        }
+        "ipc" => {
+            "Compiler-owned IPC namespace. Cross-engine shared-buffer traffic is synthesized; \
+             do not author `ipc::*` calls in `.silc` sources."
+                .into()
+        }
+        "store" => {
+            "Compiler-owned persistence namespace. SQLite wiring (`store::sqlite`, \
+             `store::commit`) is synthesized from resources; do not author these ops yourself."
+                .into()
+        }
+        "resource" => {
+            "Compiler-owned resource-op namespace. Prefer declaration-style \
+             `resource Name for Contract` with `query` / `mutation` capabilities; do not \
+             author `resource::list` / `get` / `create` / … as pipeline ops."
+                .into()
+        }
+        "http" => {
+            "Stub-only HTTP namespace in Silc 0.4.0. It parses and routes but does not execute; \
+             prefer `scrape::*` for fetches and `service::http` for API surfaces."
+                .into()
+        }
+        "html" => {
+            "Stub-only HTML namespace in Silc 0.4.0. Prefer `scrape::select` / `scrape::extract` \
+             for structured extraction from fetched pages."
+                .into()
+        }
+        "numpy" | "pandas" => format!(
+            "Stub-only `{ns}` namespace in Silc 0.4.0. It parses and routes but does not \
+             execute; keep numerical / tabular work in typed contracts and runnable ops \
+             such as `text::score` or `tensor::*`."
+        ),
+        "ws" => {
+            "Stub-only WebSocket namespace in Silc 0.4.0. It is recognized by the classifier \
+             but is not an author-runnable executable op today."
+                .into()
+        }
+        "sys" => {
+            "Stub-only system namespace in Silc 0.4.0. Recognized for routing, but not \
+             executable; keep side effects in resources, services, and processors."
+                .into()
+        }
+        "schema" => {
+            "Stub-only schema namespace in Silc 0.4.0. Prefer `contract` / `subset` \
+             declarations for typed shapes rather than `schema::*` pipeline ops."
+                .into()
+        }
+        "payload" => {
+            "Stub-only payload namespace in Silc 0.4.0. Cross-engine payloads move through \
+             synthesized IPC; do not author `payload::*` calls."
+                .into()
+        }
+        "json" => {
+            "Stub-only JSON namespace in Silc 0.4.0. It parses and routes but does not \
+             execute; prefer typed contracts and resource/HTTP surfaces for structured data."
+                .into()
+        }
+        _ => return None,
+    };
+    Some(text)
+}
+
 pub fn executable_op_doc(namespace: &str, name: &str) -> Option<String> {
     if !EXECUTABLE_OPS
         .iter()
@@ -310,7 +411,7 @@ pub fn stub_op_doc(namespace: &str, name: &str) -> String {
     format!(
         "Namespace operation `{namespace}::{name}`.\n\n\
          This symbol is recognized but is not an author-runnable executable op in Silc 0.4.0. \
-         Prefer scrape::*, llm::complete, tensor::*, text::score, or service::http inside \
+         Prefer scrape::*, doc::extract, llm::complete, tensor::*, text::score, or service::http inside \
          processor, service, or awaited handler pipelines."
     )
 }

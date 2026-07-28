@@ -8,7 +8,7 @@ fn silc_bin() -> PathBuf {
 }
 
 #[test]
-fn assist_usage_mentions_task_flag() {
+fn assist_usage_mentions_task_and_path() {
     let output = Command::new(silc_bin()).output().expect("silc");
     let text = format!(
         "{}{}",
@@ -18,6 +18,10 @@ fn assist_usage_mentions_task_flag() {
     assert!(
         text.contains("silc assist"),
         "CLI usage should mention assist:\n{text}"
+    );
+    assert!(
+        text.contains("path.silc") || text.contains("<path"),
+        "CLI usage should mention target path:\n{text}"
     );
 }
 
@@ -30,8 +34,36 @@ fn assist_rejects_empty_invocation() {
     assert!(!output.status.success());
     let err = String::from_utf8_lossy(&output.stderr);
     assert!(
-        err.contains("usage") || err.contains("task"),
+        err.contains("Usage")
+            || err.contains("usage")
+            || err.contains("required")
+            || err.contains("task"),
         "unexpected stderr: {err}"
+    );
+}
+
+#[test]
+fn assist_rejects_task_without_path() {
+    let output = Command::new(silc_bin())
+        .args(["assist", "make a hello world app"])
+        .output()
+        .expect("silc assist");
+    assert!(!output.status.success());
+}
+
+#[test]
+fn assist_help_shows_positional_path() {
+    let output = Command::new(silc_bin())
+        .args(["assist", "--help"])
+        .output()
+        .expect("silc assist --help");
+    assert!(output.status.success());
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(text.contains("<TASK>"), "help missing TASK:\n{text}");
+    assert!(text.contains("<PATH>"), "help missing PATH:\n{text}");
+    assert!(
+        !text.contains("--out"),
+        "legacy --out should be gone:\n{text}"
     );
 }
 
@@ -48,7 +80,6 @@ fn assist_live_writes_valid_program() {
         .args([
             "assist",
             "Write a minimal dual-surface Silc notes app with a text field and submit button.",
-            "--out",
             out.to_str().unwrap(),
             "--max-turns",
             "10",

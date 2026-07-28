@@ -450,13 +450,10 @@ Compiler-owned (do not invent alternatives):
 8. Validate with `silc build`; report errors instead of patching `.runtime/`.
 <!-- END SILC_AGENTS_TEMPLATE -->
 
-## App-specific notes (blogApp)
+## App-specific notes (dataCollectorApp)
 
-- Routes: `/` home feed + silclm filter + grounded Q&A chat; `/admin` CRUD table with row-select modal.
-- Resource: `Articles for Article` with thirty declarative `seed Article.new(...)` rows (SilcLM-authored, stable ids).
-- Home filter: `ui::search_input(:context($.articles), :persona(...))` asks silclm for matching ids and narrows the card feed.
-- Admin: `ui::table(:selectable, :on(select(on_select)))` opens `ui::dialog` for edit/delete.
-- Assistant chat is inline on Home via `ui::chat(:context($.articles), :persona(...))`.
-- Dual-surface UI is synthesized from `app BlogApp` routes.
-- Default model: `llm::complete()` with no `:model` (silclm).
-- Never hand-edit `.runtime/` or invent Ollama/OpenAI paths.
+- Routes: `/` upload form with `ui::file_input`; `/documents` ledger table.
+- Resource: `Documents for Document` (title, headings, body, tables, filename, mime, format, char_count).
+- Service: `$upload ==> doc::extract(:into(Document))` — Bun multipart `/upload` + Python extract; originals discarded.
+- Do not call `Documents.create` from submit — `submit()` posts multipart and the compiler stores the row.
+- Do not mix `doc::*` with `text::score`; never invent Pandoc/OCR paths in `.silc`.

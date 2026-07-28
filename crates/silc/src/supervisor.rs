@@ -387,6 +387,47 @@ pub fn build_scrape_python(lock: &RuntimeLock, runtime_root: &Path) -> Result<Pa
     Ok(python)
 }
 
+/// Install Python document extract libs for `doc::extract` (ADR-011).
+pub fn build_doc_python(lock: &RuntimeLock, runtime_root: &Path) -> Result<PathBuf, String> {
+    let python_dir = runtime_root.join("python");
+    let requirements = python_dir.join("doc_requirements.txt");
+    if !requirements.is_file() {
+        return Err(
+            "missing compiler-generated python/doc_requirements.txt for doc::extract".into(),
+        );
+    }
+    if !python_dir.join("doc_extract_worker.py").is_file() {
+        return Err(
+            "missing compiler-generated python/doc_extract_worker.py for doc::extract".into(),
+        );
+    }
+    let venv = python_dir.join(".venv-doc");
+    let python = venv.join("bin/python");
+    if !python.is_file() {
+        let output = Command::new(&lock.python_bin)
+            .args(["-m", "venv"])
+            .arg(&venv)
+            .output()
+            .map_err(|e| format!("failed to create doc::extract Python environment: {e}"))?;
+        if !output.status.success() {
+            return Err(format!(
+                "Silc doc Python environment creation failed:\n{}\n{}",
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+    }
+    let status = Command::new(&python)
+        .args(["-m", "pip", "install", "--disable-pip-version-check", "-r"])
+        .arg(&requirements)
+        .status()
+        .map_err(|e| format!("failed to install doc::extract Python dependencies: {e}"))?;
+    if !status.success() {
+        return Err("Silc install of compiler-pinned document extract dependencies failed".into());
+    }
+    Ok(python)
+}
+
 /// Run an API-only `service::http` program (Go/Gin, no Bun UI).
 pub fn run_api(output: &EmitResult, _lock: &RuntimeLock) -> Result<(), String> {
     let graph = output
@@ -660,6 +701,16 @@ fn run_graph(
                 output.root.join("python/.venv-scrape/bin/python"),
             );
         }
+    }
+    if graph.has_doc() {
+        bun_cmd.env(
+            "SILC_DOC_EXTRACT_PY",
+            output.root.join("python/doc_extract_worker.py"),
+        );
+        bun_cmd.env(
+            "SILC_DOC_PYTHON_BIN",
+            output.root.join("python/.venv-doc/bin/python"),
+        );
     }
     if let Some(input_json) = pipeline_input {
         bun_cmd.env("SILC_PIPELINE_INPUT_JSON", input_json);

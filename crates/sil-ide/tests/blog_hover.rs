@@ -62,6 +62,20 @@ fn blog_ui_table_hover() {
 }
 
 #[test]
+fn blog_ui_namespace_hover() {
+    let src = blog_source();
+    let offset = src.find("ui::table").expect("ui::table") as u32;
+    let doc = Document::open("file://blog.silc", 1, &src);
+    let hover = resolve_hover(&doc, offset).expect("ui namespace hover");
+    assert!(hover.markdown.contains("namespace"), "{}", hover.markdown);
+    assert!(
+        hover.markdown.contains("UI primitive") || hover.markdown.contains("dual-surface"),
+        "expected ui namespace prose:\n{}",
+        hover.markdown
+    );
+}
+
+#[test]
 fn blog_contract_article_hover() {
     let src = blog_source();
     // Hover the contract name in `contract Article`.

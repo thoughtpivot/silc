@@ -114,14 +114,14 @@ attach OpenTUI and the telnet CLI. Override ports with `SILC_HTTP_PORT` /
 Unknown closed tokens are compile errors. `:field` stays a prop pattern;
 `ui::field` is optional chrome around a control.
 
-### Complete UI primitive catalog (38)
+### Complete UI primitive catalog (39)
 
 Every builtin is dual-surface (`web+terminal`). Lines below are the canonical
 API contract (props / events / slots / children).
 
 #### Shell and navigation
 
-- `ui::page` — props: none; events: none; slots: `app_bar`→`app_bar`, `side_panel`→`side_panel`, `footer`→`footer`; children: anyOf(`stack`, `row`, `grid`, `card`, `heading`, `text`, `form`, `text_input`, `textarea`, `radio_group`, `select`, `checkbox`, `switch`, `field`, `button`, `toolbar`, `chat`, `chat_history`, `search_input`, `filter_bar`, `collection`, `list`, `table`, `badge`, `alert`, `divider`, `section`, `description_list`, `tabs`, `dialog`, `loading`, `empty`, `nav_item`); surfaces: web+terminal
+- `ui::page` — props: none; events: none; slots: `app_bar`→`app_bar`, `side_panel`→`side_panel`, `footer`→`footer`; children: anyOf(`stack`, `row`, `grid`, `card`, `heading`, `text`, `form`, `text_input`, `textarea`, `file_input`, `radio_group`, `select`, `checkbox`, `switch`, `field`, `button`, `toolbar`, `chat`, `chat_history`, `search_input`, `filter_bar`, `collection`, `list`, `table`, `badge`, `alert`, `divider`, `section`, `description_list`, `tabs`, `dialog`, `loading`, `empty`, `nav_item`); surfaces: web+terminal
 - `ui::app_bar` — props: `title` (required); events: none; slots: none; children: none; surfaces: web+terminal
 - `ui::side_panel` — props: none; events: none; slots: none; children: anyOf(`nav_item`); surfaces: web+terminal
 - `ui::nav_item` — props: `label` (required), `to?`, `active?` (flag); events: `click`; slots: none; children: none; surfaces: web+terminal
@@ -141,14 +141,15 @@ API contract (props / events / slots / children).
 
 #### Forms
 
-- `ui::form` — props: none; events: `submit`; slots: none; children: anyOf(`stack`, `row`, `grid`, `card`, `heading`, `text`, `text_input`, `textarea`, `radio_group`, `select`, `checkbox`, `switch`, `field`, `button`, `toolbar`, `badge`, `alert`, `divider`, `section`, `loading`, `empty`); surfaces: web+terminal
+- `ui::form` — props: none; events: `submit`; slots: none; children: anyOf(`stack`, `row`, `grid`, `card`, `heading`, `text`, `text_input`, `textarea`, `file_input`, `radio_group`, `select`, `checkbox`, `switch`, `field`, `button`, `toolbar`, `badge`, `alert`, `divider`, `section`, `loading`, `empty`); surfaces: web+terminal
 - `ui::text_input` — props: `field?`, `value?`, `label?`, `placeholder?`, `disabled?` (flag); events: `input`, `change`; slots: none; children: none; surfaces: web+terminal
 - `ui::textarea` — props: `field?`, `value?`, `label?`, `disabled?` (flag); events: `input`, `change`; slots: none; children: none; surfaces: web+terminal
+- `ui::file_input` — props: `field?`, `label?`, `accept?`, `multiple?` (flag), `disabled?` (flag); events: `change`; slots: none; children: none; surfaces: web+terminal
 - `ui::radio_group` — props: `field?`, `value?`, `options` (required), `label?`, `disabled?` (flag); events: `change`; slots: none; children: none; surfaces: web+terminal
 - `ui::select` — props: `field?`, `value?`, `options` (required), `label?`, `placeholder?`, `disabled?` (flag); events: `change`; slots: none; children: none; surfaces: web+terminal
 - `ui::checkbox` — props: `field?`, `label` (required), `checked?`, `disabled?` (flag); events: `change`; slots: none; children: none; surfaces: web+terminal
 - `ui::switch` — props: `field?`, `label` (required), `checked?`, `disabled?` (flag); events: `change`; slots: none; children: none; surfaces: web+terminal
-- `ui::field` — props: `label?`, `hint?`, `error?`; events: none; slots: none; children: anyOf(`stack`, `row`, `grid`, `card`, `heading`, `text`, `text_input`, `textarea`, `radio_group`, `select`, `checkbox`, `switch`, `field`, `button`, `toolbar`, `badge`, `alert`, `divider`, `section`, `loading`, `empty`); surfaces: web+terminal
+- `ui::field` — props: `label?`, `hint?`, `error?`; events: none; slots: none; children: anyOf(`stack`, `row`, `grid`, `card`, `heading`, `text`, `text_input`, `textarea`, `file_input`, `radio_group`, `select`, `checkbox`, `switch`, `field`, `button`, `toolbar`, `badge`, `alert`, `divider`, `section`, `loading`, `empty`); surfaces: web+terminal
 - `ui::button` — props: `label` (required), `variant?`, `size?`, `submit?` (flag), `active?`, `disabled?` (flag); events: `click`; slots: none; children: none; surfaces: web+terminal
 
 #### Chat and search
@@ -370,7 +371,7 @@ Author-facing executable ops today (registry in `sil-core`):
 
 `service::http`, `text::score`, `llm::complete`,
 `scrape::page`, `scrape::site`, `scrape::select`, `scrape::render`,
-`scrape::extract`, `tensor::tokenize`, `tensor::infer`.
+`scrape::extract`, `doc::extract`, `tensor::tokenize`, `tensor::infer`.
 
 Compiler-synthesized (do **not** write in `.silc`): dual-surface `ui::web` /
 `ui::terminal` serving, `resource::*` CRUD pipelines, and `ipc`/`store` sink
@@ -385,6 +386,13 @@ Scraping uses **`scrape::*`** (ADR-006). Authors never name Bun, Colly, or
 Playwright. Prefer `scrape::site` for crawls and `scrape::page` /
 `scrape::select` for single pages. Do **not** use stub `http::get` /
 `html::extract_body` in runnable programs — migrate to `scrape::*`.
+
+Document upload + extract uses **`doc::extract`** with **`ui::file_input`**
+(ADR-011). Declare `$upload ==> doc::extract(:into(Document))` plus a
+`resource … for Document`. The compiler synthesizes multipart `POST /upload`,
+Python-native extract (PDF/DOCX/ODT/MD/TXT/HTML — no Pandoc), and SQLite rows.
+Original file bytes are discarded after extract. Do not mix `doc::*` with
+`text::score`.
 
 Pipeline-only programs use `scrape::page ==> scrape::extract`, then
 `tensor::tokenize(:model("minilm-l6-v2")) ==> tensor::infer(:prefer(CPU))`.
@@ -404,6 +412,7 @@ Compiler-owned (do not invent alternatives):
 
 - `POST /submit` — form `submit()` handlers (also scrape jobs when `scrape::*` is present)
 - `POST /scrape` — explicit scrape ingest when `scrape::*` is present
+- `POST /upload` — multipart file upload when `doc::extract` is present
 - `POST /complete` — chat / `*.complete()` processors
 - `GET|POST|PUT|DELETE /api/{table}` — resource queries/mutations
 - Web: React app served by Bun (`silc main.silc`)
@@ -420,10 +429,12 @@ Compiler-owned (do not invent alternatives):
 5. Do not mix `text::score` and `llm::complete`.
 6. Do not mix `scrape::*` with `text::score`. Scrape pipelines may use
    `llm::complete` for grounded SilcLM summaries.
-7. Do not mix executable and stub-only ops in one runnable graph.
-8. Default ports: web `18088`, terminal `18023`, API `8080`. Override with
+7. Do not mix `doc::*` with `text::score`. Document extract needs
+   `:into(Contract)` plus a matching `resource`.
+8. Do not mix executable and stub-only ops in one runnable graph.
+9. Default ports: web `18088`, terminal `18023`, API `8080`. Override with
    `SILC_HTTP_PORT` / `SILC_TERMINAL_PORT` / service `:port` as needed.
-9. Tensor pipelines require MiniLM, CPU, and exactly 384 normalized `num32`
+10. Tensor pipelines require MiniLM, CPU, and exactly 384 normalized `num32`
    values in `vector_embedding`.
 
 ## Rules for agents

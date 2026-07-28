@@ -15,21 +15,33 @@ pub struct Budgets {
     pub max_llm_query: usize,
     pub max_read_chars: usize,
     pub wall_clock_secs: u64,
+    /// Draft-first author attempts before falling back to the tool loop.
+    pub max_draft_attempts: usize,
+    /// Max new tokens for draft-first chat completions.
+    pub draft_max_tokens: usize,
+    /// When false (default), draft-first failure does not enter the tool loop.
+    pub allow_explore: bool,
 }
 
 impl Default for Budgets {
     fn default() -> Self {
         Self {
-            max_root_turns: 12,
-            max_silc_check: 8,
-            max_llm_query: 16,
+            max_root_turns: 24,
+            max_silc_check: 16,
+            max_llm_query: 24,
             max_read_chars: 4000,
-            // Each root turn reloads the GGUF in a fresh llama.cpp process;
-            // 3B-class weights need well over 120s for a full session on CPU.
-            wall_clock_secs: 900,
+            // Draft-first + short repairs should finish well under this.
+            wall_clock_secs: 120,
+            // ~10s per attempt, so five fit inside the wall clock with retrieval.
+            max_draft_attempts: 5,
+            draft_max_tokens: 4096,
+            allow_explore: false,
         }
     }
 }
+
+/// Minimum draft size before assist treats a program as complete enough to keep.
+pub const MIN_DRAFT_CHARS: usize = 200;
 
 #[derive(Debug, Clone, Default)]
 pub struct BudgetStats {
@@ -56,6 +68,9 @@ pub enum ParsedTurn {
 #[derive(Debug)]
 pub struct ToolState {
     pub draft: String,
+    /// Program the session started from (existing target file), if any.
+    /// A final answer identical to this means no edit was actually made.
+    pub seed: String,
     pub last_check_ok: bool,
     pub stats: BudgetStats,
 }
@@ -64,11 +79,23 @@ impl Default for ToolState {
     fn default() -> Self {
         Self {
             draft: String::new(),
+            seed: String::new(),
             last_check_ok: false,
             stats: BudgetStats::default(),
         }
     }
 }
+
+impl ToolState {
+    /// True when `program` is the untouched starting program.
+    pub fn is_unchanged_seed(&self, program: &str) -> bool {
+        !self.seed.trim().is_empty() && program.trim() == self.seed.trim()
+    }
+}
+
+/// Error text used when a finalize attempt would return the original program.
+pub const UNCHANGED_SEED_ERROR: &str =
+    "the program is unchanged from the original file. Apply the requested task by calling draft_set with the FULL edited program, then silc_check.";
 
 /// Parse a model turn into a tool call or FINAL.
 pub fn parse_turn(text: &str) -> ParsedTurn {
@@ -110,6 +137,10 @@ pub fn parse_turn(text: &str) -> ParsedTurn {
                 if let Some(call) = recover_tool_name(&json) {
                     return ParsedTurn::Tool(call);
                 }
+                // Malformed tool fence may sit beside a real program — keep it.
+                if let Some(call) = implicit_draft_set(trimmed) {
+                    return ParsedTurn::Tool(call);
+                }
                 ParsedTurn::Invalid(format!(
                     "tool JSON parse error: {first_error}. Use strict JSON, e.g. {{\"name\":\"corpus_list\",\"args\":{{}}}}"
                 ))
@@ -121,14 +152,17 @@ pub fn parse_turn(text: &str) -> ParsedTurn {
         ParsedTurn::Tool(call)
     } else {
         ParsedTurn::Invalid(
-            "no tool call found. Reply with one fenced tool block, e.g.\n```tool\n{\"name\":\"corpus_list\",\"args\":{}}\n```\nor with FINAL_VAR(draft) after a successful silc_check.".into(),
+            "no tool call found. Reply with one <tool>…</tool> JSON block, e.g. <tool>{\"name\":\"corpus_list\",\"args\":{}}</tool>, or with FINAL_VAR(draft) after a successful silc_check.".into(),
         )
     }
 }
 
 /// Turn a bare Silc program reply into a `draft_set` call.
 fn implicit_draft_set(text: &str) -> Option<ToolCall> {
-    if !(text.contains("```silc") || text.contains("@version(")) {
+    if !(text.contains("```silc")
+        || text.contains("<silc>")
+        || text.contains("@version("))
+    {
         return None;
     }
     let mut program = extract_program(text);
@@ -136,7 +170,7 @@ fn implicit_draft_set(text: &str) -> Option<ToolCall> {
         return None;
     }
     // Unfenced reply: drop any prose before the program itself.
-    if !text.contains("```") {
+    if !text.contains("```") && !text.contains("<silc>") {
         if let Some(start) = program.find("@version(") {
             program = program[start..].to_string();
         }
@@ -209,13 +243,42 @@ fn recover_tool_name(json: &str) -> Option<ToolCall> {
 }
 
 fn extract_tool_json(text: &str) -> Option<String> {
-    if let Some(start) = text.find("```tool") {
-        let rest = &text[start + "```tool".len()..];
+    // Prefer <tool>…</tool> sentinels (fence-free protocol).
+    if let Some(start) = text.find("<tool>") {
+        let rest = &text[start + "<tool>".len()..];
         let rest = rest.strip_prefix('\n').unwrap_or(rest);
-        if let Some(end) = rest.find("```") {
-            return Some(rest[..end].trim().to_string());
+        if let Some(end) = rest.find("</tool>") {
+            let payload = rest[..end].trim();
+            if !payload.is_empty() {
+                return Some(payload.to_string());
+            }
         }
     }
+
+    // Legacy ```tool fences — skip empty payloads (```tool```) and keep scanning.
+    let bytes = text.as_bytes();
+    let mut search_from = 0usize;
+    while search_from < text.len() {
+        let Some(rel) = text[search_from..].find("```tool") else {
+            break;
+        };
+        let tag_start = search_from + rel;
+        let mut payload_start = tag_start + "```tool".len();
+        if payload_start < text.len() && bytes[payload_start] == b'\n' {
+            payload_start += 1;
+        }
+        let Some(rel_end) = text[payload_start..].find("```") else {
+            break;
+        };
+        let payload_end = payload_start + rel_end;
+        let payload = text[payload_start..payload_end].trim();
+        if !payload.is_empty() {
+            return Some(payload.to_string());
+        }
+        // Empty fence — continue past the closing ```.
+        search_from = payload_end + 3;
+    }
+
     // Bare JSON object with "name"
     let start = text.find('{')?;
     let slice = &text[start..];
@@ -271,9 +334,36 @@ pub fn execute_tool(
             let pattern = arg_str(&call.args, "pattern")
                 .ok_or_else(|| "corpus_grep requires args.pattern".to_string())?;
             let path = arg_str(&call.args, "path");
-            let hits = corpus.grep(pattern, path)?;
+            let mut hits = corpus.grep(pattern, path)?;
+            let mut note = String::new();
+            // Single-file path filters (copied from corpus_read ids) often miss;
+            // auto-widen to the entire corpus so every example is searched.
+            let looks_like_full_id = path.is_some_and(|p| {
+                (p.ends_with(".silc") || p.ends_with(".md")) && p.contains('/')
+            });
+            let no_hits = hits.len() == 1 && hits[0] == "(no matches)";
+            if no_hits && looks_like_full_id {
+                let widened = corpus.grep(pattern, None)?;
+                if !(widened.len() == 1 && widened[0] == "(no matches)") {
+                    hits = widened;
+                    note.push_str(
+                        "\nnote: path filter looked like a full doc id with no matches; widened search to entire corpus.\n",
+                    );
+                } else if let Some(p) = path {
+                    // Try parent prefix (e.g. example/chatApp from example/chatApp/main.silc).
+                    if let Some((prefix, _)) = p.rsplit_once('/') {
+                        let parent = corpus.grep(pattern, Some(prefix))?;
+                        if !(parent.len() == 1 && parent[0] == "(no matches)") {
+                            hits = parent;
+                            note.push_str(&format!(
+                                "\nnote: widened path filter from `{p}` to `{prefix}`.\n"
+                            ));
+                        }
+                    }
+                }
+            }
             Ok(ToolOutcome::Continue(format!(
-                "corpus_grep:\n{}",
+                "corpus_grep:\n{}{note}",
                 hits.join("\n")
             )))
         }
@@ -344,13 +434,18 @@ pub fn execute_tool(
             let source = arg_str(&call.args, "source")
                 .ok_or_else(|| "draft_set requires args.source".to_string())?;
             let program = normalize_typography(&extract_program(source));
+            if program.len() < MIN_DRAFT_CHARS {
+                return Ok(ToolOutcome::Continue(format!(
+                    "draft_set: rejected — only {} chars (minimum {MIN_DRAFT_CHARS}). Write the COMPLETE Silc program for the task (shebang, @version, modules), not a fragment or placeholder from the instructions. Previous draft left unchanged.",
+                    program.len()
+                )));
+            }
+            let unchanged = state.is_unchanged_seed(&program);
             state.draft = program;
             state.last_check_ok = false;
             let mut msg = format!("draft_set: {} chars stored", state.draft.len());
-            if state.draft.len() < 200 {
-                msg.push_str(
-                    " — warning: this draft is very short. Write the COMPLETE program for the task, not a fragment or an example from the instructions.",
-                );
+            if unchanged {
+                msg.push_str(&format!(" — note: {UNCHANGED_SEED_ERROR}"));
             }
             // Auto-validate: a compiler check is free (no LLM inference), and a
             // small model often forgets to call silc_check on its own.
@@ -397,6 +492,9 @@ pub fn resolve_final(program: &str, state: &mut ToolState) -> Result<String, Str
     if source.trim().is_empty() {
         return Err("FINAL program is empty".into());
     }
+    if state.is_unchanged_seed(&source) {
+        return Err(format!("FINAL rejected: {UNCHANGED_SEED_ERROR}"));
+    }
     match check_source(&source, None) {
         Ok(_) => {
             state.draft = source.clone();
@@ -410,6 +508,9 @@ pub fn resolve_final(program: &str, state: &mut ToolState) -> Result<String, Str
 pub fn resolve_final_var(state: &ToolState) -> Result<String, String> {
     if state.draft.trim().is_empty() {
         return Err("FINAL_VAR(draft): draft is empty".into());
+    }
+    if state.is_unchanged_seed(&state.draft) {
+        return Err(format!("FINAL_VAR rejected: {UNCHANGED_SEED_ERROR}"));
     }
     if !state.last_check_ok {
         // Re-check in case draft was set after a prior ok.
@@ -516,5 +617,123 @@ mod tests {
             ToolOutcome::Finished(_) => panic!("unexpected finish"),
         }
         assert!(state.last_check_ok);
+    }
+
+    #[test]
+    fn final_var_rejects_unchanged_seed() {
+        let corpus = Corpus::builtin();
+        let source = corpus.get("fixture/scored_form.silc").unwrap().to_string();
+        let state = ToolState {
+            draft: source.clone(),
+            seed: source,
+            last_check_ok: true,
+            stats: BudgetStats::default(),
+        };
+        let err = resolve_final_var(&state).unwrap_err();
+        assert!(err.contains("unchanged"), "{err}");
+    }
+
+    #[test]
+    fn final_var_accepts_edited_seed() {
+        let corpus = Corpus::builtin();
+        let source = corpus.get("fixture/scored_form.silc").unwrap().to_string();
+        let edited = source.replace("Share feedback", "Front page");
+        let state = ToolState {
+            draft: edited.clone(),
+            seed: source,
+            last_check_ok: true,
+            stats: BudgetStats::default(),
+        };
+        assert_eq!(resolve_final_var(&state).unwrap(), edited);
+    }
+
+    #[test]
+    fn draft_set_rejects_tiny_fragment() {
+        let corpus = Corpus::builtin();
+        let mut state = ToolState::default();
+        let budgets = Budgets::default();
+        let mut completer = ScriptedCompleter::new(Vec::<String>::new());
+        let call = ToolCall {
+            name: "draft_set".into(),
+            args: json!({"source": "@version(\"0.4.0\")\n"}),
+        };
+        let out = execute_tool(&call, &corpus, &mut state, &budgets, &mut completer).unwrap();
+        match out {
+            ToolOutcome::Continue(msg) => assert!(msg.contains("rejected"), "{msg}"),
+            ToolOutcome::Finished(_) => panic!("unexpected finish"),
+        }
+        assert!(state.draft.is_empty());
+    }
+
+    #[test]
+    fn empty_tool_fence_skips_to_program() {
+        let program = r#"@version("0.4.0")
+contract Guest { has Str $.name; }
+component Home {
+    has state Str $.name = "";
+    method render() { ui::page(ui::heading(:text("Hi"), :level(1))) }
+}
+app App { route "/" => Home; }
+"#;
+        let reply = format!("```tool```\n{program}");
+        match parse_turn(&reply) {
+            ParsedTurn::Tool(c) => {
+                assert_eq!(c.name, "draft_set");
+                let source = c.args.get("source").and_then(|v| v.as_str()).unwrap();
+                assert!(source.contains("@version"));
+            }
+            other => panic!("expected draft_set, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_tool_sentinel() {
+        let turn = parse_turn("<tool>\n{\"name\":\"corpus_list\",\"args\":{}}\n</tool>");
+        match turn {
+            ParsedTurn::Tool(c) => assert_eq!(c.name, "corpus_list"),
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn silc_sentinel_becomes_draft_set() {
+        let turn = parse_turn(
+            "<silc>\n@version(\"0.4.0\")\ncontract Note { has Str $.text; }\n</silc>",
+        );
+        match turn {
+            ParsedTurn::Tool(c) => {
+                assert_eq!(c.name, "draft_set");
+                let source = c.args.get("source").and_then(|v| v.as_str()).unwrap();
+                assert!(source.starts_with("@version"));
+                assert!(!source.contains("<silc>"));
+            }
+            other => panic!("unexpected {other:?}"),
+        }
+    }
+
+    #[test]
+    fn corpus_grep_widens_full_file_path_miss() {
+        let corpus = Corpus::builtin();
+        let mut state = ToolState::default();
+        let budgets = Budgets::default();
+        let mut completer = ScriptedCompleter::new(Vec::<String>::new());
+        let call = ToolCall {
+            name: "corpus_grep".into(),
+            args: json!({
+                "pattern": "stable `:id",
+                "path": "example/chatApp/main.silc"
+            }),
+        };
+        let out = execute_tool(&call, &corpus, &mut state, &budgets, &mut completer).unwrap();
+        match out {
+            ToolOutcome::Continue(msg) => {
+                assert!(
+                    msg.contains("widened") || msg.contains(":id"),
+                    "expected auto-widen or seed/:id hits, got: {msg}"
+                );
+                assert!(!msg.lines().all(|l| l.contains("(no matches)") && !l.contains("widened")));
+            }
+            ToolOutcome::Finished(_) => panic!("unexpected finish"),
+        }
     }
 }

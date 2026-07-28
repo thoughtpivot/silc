@@ -81,6 +81,7 @@ const LAYOUT_CHILDREN: &[&str] = &[
     "form",
     "text_input",
     "textarea",
+    "file_input",
     "radio_group",
     "select",
     "checkbox",
@@ -116,6 +117,7 @@ const FORM_CHILDREN: &[&str] = &[
     "text",
     "text_input",
     "textarea",
+    "file_input",
     "radio_group",
     "select",
     "checkbox",
@@ -358,6 +360,41 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
         slots: &[],
         children: ChildPolicy::None,
         events: &[EventSpec { name: "input" }, EventSpec { name: "change" }],
+        surfaces: BOTH,
+    },
+    ComponentSpec {
+        name: "file_input",
+        description: "File picker for document upload (PDF, DOCX, ODT, Markdown, HTML, plain text). Bind `:field` for the staged upload handle, optionally constrain with `:accept`, and use inside a form that posts multipart to the synthesized `/upload` route when `doc::extract` is present.",
+        props: &[
+            PropSpec {
+                name: "field",
+                kind: PropKind::Ident,
+                required: false,
+            },
+            PropSpec {
+                name: "label",
+                kind: PropKind::Expr,
+                required: false,
+            },
+            PropSpec {
+                name: "accept",
+                kind: PropKind::Expr,
+                required: false,
+            },
+            PropSpec {
+                name: "multiple",
+                kind: PropKind::Flag,
+                required: false,
+            },
+            PropSpec {
+                name: "disabled",
+                kind: PropKind::Flag,
+                required: false,
+            },
+        ],
+        slots: &[],
+        children: ChildPolicy::None,
+        events: &[EventSpec { name: "change" }],
         surfaces: BOTH,
     },
     ComponentSpec {
@@ -1435,7 +1472,7 @@ mod tests {
             format_component_catalog_line(button),
             "- `ui::button` — props: `label` (required), `variant?`, `size?`, `submit?` (flag), `active?`, `disabled?` (flag); events: `click`; slots: none; children: none; surfaces: web+terminal"
         );
-        assert_eq!(UI_COMPONENT_CATALOG.len(), 38);
+        assert_eq!(UI_COMPONENT_CATALOG.len(), 39);
         for spec in UI_COMPONENT_CATALOG {
             let line = format_component_catalog_line(spec);
             assert!(line.starts_with(&format!("- `ui::{}` — ", spec.name)));
@@ -1445,7 +1482,7 @@ mod tests {
 
     #[test]
     fn every_catalog_entry_has_nonempty_description() {
-        assert_eq!(UI_COMPONENT_CATALOG.len(), 38);
+        assert_eq!(UI_COMPONENT_CATALOG.len(), 39);
         for spec in UI_COMPONENT_CATALOG {
             assert!(
                 !spec.description.trim().is_empty(),

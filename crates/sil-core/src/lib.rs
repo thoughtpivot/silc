@@ -39,8 +39,8 @@ pub use model_catalog::{
 pub use module::{Method, Module, ModuleKind, Param};
 pub use operation::{
     classify_program, infer_graph, is_executable_op, scan_author_calls, ApiRoute, ExecutableGraph,
-    ExecutionMode, ProcessorOp, ScrapeCapabilities, ScrapeSelect, UiCapabilities, DEFAULT_API_PORT,
-    DEFAULT_TERMINAL_PORT, DEFAULT_WEB_PORT, EXECUTABLE_OPS,
+    ExecutionMode, ProcessorOp, DocCapabilities, ScrapeCapabilities, ScrapeSelect, UiCapabilities, DEFAULT_API_PORT,
+    DEFAULT_TERMINAL_PORT, DEFAULT_WEB_PORT, EXECUTABLE_OPS, KNOWN_NAMESPACES,
 };
 pub use pipeline::{Pipeline, PipelineStep};
 pub use program::Program;

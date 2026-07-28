@@ -91,11 +91,14 @@ func main() {
 	}
 	defer db.Close()
 
+	// Resource tables must match the app worker's schema exactly: it serves the
+	// HTTP CRUD for the same rows and reads/writes the `data` column.
 	_, err = db.Exec(fmt.Sprintf(`
 		CREATE TABLE IF NOT EXISTS %s (
 			id TEXT PRIMARY KEY,
-			payload TEXT NOT NULL,
-			created_at TEXT NOT NULL DEFAULT (datetime('now'))
+			data TEXT NOT NULL,
+			created_at TEXT NOT NULL DEFAULT (datetime('now')),
+			updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 		);
 		CREATE TABLE IF NOT EXISTS app_events (
 			id TEXT PRIMARY KEY,
@@ -170,7 +173,7 @@ func persist(db *sql.DB, table string, record map[string]any) error {
 	if err != nil {
 		return err
 	}
-	_, err = db.Exec(fmt.Sprintf(`INSERT OR REPLACE INTO %s (id, payload) VALUES (?, ?)`, table), id, string(payload))
+	_, err = db.Exec(fmt.Sprintf(`INSERT OR REPLACE INTO %s (id, data) VALUES (?, ?)`, table), id, string(payload))
 	if err != nil {
 		return err
 	}

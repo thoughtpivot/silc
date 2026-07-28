@@ -4,15 +4,97 @@ mod models;
 mod runtimes;
 mod supervisor;
 
+use clap::{Parser, Subcommand};
 use sil_core::ExecutionMode;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process;
 
+#[derive(Parser, Debug)]
+#[command(
+    name = "silc",
+    version,
+    about = "ThoughtPivot Silc compiler CLI",
+    long_about = None
+)]
+struct Cli {
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
+
+#[derive(Subcommand, Debug)]
+enum Commands {
+    /// Generate or modify a Silc program with silclm assist
+    Assist {
+        /// What to build or change
+        task: String,
+        /// Path to the `.silc` file (created if missing)
+        path: PathBuf,
+        /// Extra corpus directory (`.silc` / `.md` / `.txt`)
+        #[arg(long)]
+        corpus: Option<PathBuf>,
+        /// Max root model turns (default 24)
+        #[arg(long)]
+        max_turns: Option<usize>,
+        /// Max compiler checks (default 16)
+        #[arg(long)]
+        max_checks: Option<usize>,
+        /// Max nested llm_query calls (default 24)
+        #[arg(long)]
+        max_llm_queries: Option<usize>,
+        /// Wall-clock limit in seconds (default 120)
+        #[arg(long)]
+        wall_clock_secs: Option<u64>,
+        /// After draft-first fails, run the slower closed-tool explore loop
+        #[arg(long)]
+        explore: bool,
+    },
+    /// Scaffold a new Silc project
+    Init {
+        /// Project directory (default: current directory)
+        path: Option<String>,
+    },
+    /// Compile a program without running it
+    Build {
+        /// Path to the `.silc` entry file
+        path: PathBuf,
+    },
+    /// Run a pipeline-only program with JSON input
+    Run {
+        /// Path to the `.silc` entry file
+        path: PathBuf,
+        /// Inline JSON input (must include string field `url`)
+        #[arg(long, group = "input")]
+        input_json: Option<String>,
+        /// Path to a JSON input file
+        #[arg(long, group = "input")]
+        input: Option<PathBuf>,
+    },
+}
+
 fn main() {
-    let mut args = env::args().skip(1);
-    match args.next().as_deref() {
+    let raw: Vec<String> = env::args().collect();
+    if raw.len() >= 2 && looks_like_direct_run(&raw[1]) {
+        let path = &raw[1];
+        let rest: Vec<String> = raw[2..].to_vec();
+        match parse_direct_run_args(path, &rest, env_truthy("SILC_TERMINAL")) {
+            Ok(opts) => {
+                if let Err(err) = compile_and_maybe_run(&opts.path, opts.attach_terminal) {
+                    eprintln!("silc: {err}");
+                    process::exit(1);
+                }
+            }
+            Err(err) => {
+                eprintln!("silc: {err}");
+                process::exit(1);
+            }
+        }
+        return;
+    }
+
+    let cli = Cli::parse();
+    match cli.command {
         None => {
             println!("silc {}", env!("CARGO_PKG_VERSION"));
             println!("usage: silc <program.silc> [--terminal]");
@@ -20,106 +102,82 @@ fn main() {
             println!("       silc run <program.silc> --input-json '<json>'");
             println!("       silc run <program.silc> --input <file.json>");
             println!("       silc init [path]");
-            println!(
-                "       silc assist \"<task>\" [--out path.silc] [--corpus <dir>] [--max-turns N]"
-            );
+            println!("       silc assist \"<task>\" <path.silc> [--max-turns N] [--explore]");
         }
-        Some("assist") => {
-            let rest: Vec<String> = args.collect();
-            match assist::parse_args(rest).and_then(assist::run) {
-                Ok(()) => {}
-                Err(err) => {
-                    eprintln!("silc: {err}");
-                    process::exit(1);
-                }
+        Some(Commands::Assist {
+            task,
+            path,
+            corpus,
+            max_turns,
+            max_checks,
+            max_llm_queries,
+            wall_clock_secs,
+            explore,
+        }) => {
+            let args = assist::AssistArgs {
+                task,
+                path,
+                corpus,
+                max_turns,
+                max_checks,
+                max_llm_queries,
+                wall_clock_secs,
+                explore,
+            };
+            if let Err(err) = assist::run(args) {
+                eprintln!("silc: {err}");
+                process::exit(1);
             }
         }
-        Some("init") => {
-            let path = args.next();
+        Some(Commands::Init { path }) => {
             if let Err(err) = init::run(path.as_deref()) {
                 eprintln!("silc: {err}");
                 process::exit(1);
             }
         }
-        Some("build") => {
-            let Some(path) = args.next() else {
-                eprintln!("silc: usage: silc build <program.silc>");
-                process::exit(1);
-            };
-            if let Err(err) = build_only(Path::new(&path)) {
+        Some(Commands::Build { path }) => {
+            if let Err(err) = build_only(&path) {
                 eprintln!("silc: {err}");
                 process::exit(1);
             }
         }
-        Some("run") => {
-            let Some(path) = args.next() else {
-                eprintln!(
-                    "silc: usage: silc run <program.silc> (--input-json '<json>' | --input <file.json>)"
-                );
-                process::exit(1);
-            };
-            let mut input_json = None;
-            while let Some(flag) = args.next() {
-                match flag.as_str() {
-                    "--input-json" => {
-                        if input_json.is_some() {
-                            eprintln!("silc: choose exactly one of --input-json or --input");
-                            process::exit(1);
-                        }
-                        let Some(value) = args.next() else {
-                            eprintln!("silc: --input-json requires a JSON value");
-                            process::exit(1);
-                        };
-                        input_json = Some(value);
-                    }
-                    "--input" => {
-                        if input_json.is_some() {
-                            eprintln!("silc: choose exactly one of --input-json or --input");
-                            process::exit(1);
-                        }
-                        let Some(file) = args.next() else {
-                            eprintln!("silc: --input requires a JSON file path");
-                            process::exit(1);
-                        };
-                        match fs::read_to_string(&file) {
-                            Ok(value) => input_json = Some(value),
-                            Err(error) => {
-                                eprintln!("silc: read pipeline input {file}: {error}");
-                                process::exit(1);
-                            }
-                        }
-                    }
-                    other => {
-                        eprintln!("silc: unknown run option `{other}`");
+        Some(Commands::Run {
+            path,
+            input_json,
+            input,
+        }) => {
+            let input_json = match (input_json, input) {
+                (Some(value), None) => value,
+                (None, Some(file)) => match fs::read_to_string(&file) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        eprintln!("silc: read pipeline input {}: {error}", file.display());
                         process::exit(1);
                     }
-                }
-            }
-            let Some(input_json) = input_json else {
-                eprintln!("silc: pipeline run requires --input-json or --input");
-                process::exit(1);
-            };
-            if let Err(err) = compile_and_run_pipeline(Path::new(&path), &input_json) {
-                eprintln!("silc: {err}");
-                process::exit(1);
-            }
-        }
-        Some(path) => {
-            let rest: Vec<String> = args.collect();
-            match parse_direct_run_args(path, &rest, env_truthy("SILC_TERMINAL")) {
-                Ok(opts) => {
-                    if let Err(err) = compile_and_maybe_run(&opts.path, opts.attach_terminal) {
-                        eprintln!("silc: {err}");
-                        process::exit(1);
-                    }
-                }
-                Err(err) => {
-                    eprintln!("silc: {err}");
+                },
+                _ => {
+                    eprintln!(
+                        "silc: choose exactly one of --input-json or --input (usage: silc run <program.silc> --input-json '<json>')"
+                    );
                     process::exit(1);
                 }
+            };
+            if let Err(err) = compile_and_run_pipeline(&path, &input_json) {
+                eprintln!("silc: {err}");
+                process::exit(1);
             }
         }
     }
+}
+
+fn looks_like_direct_run(first: &str) -> bool {
+    if first.starts_with('-') {
+        return false;
+    }
+    !matches!(
+        first,
+        "assist" | "init" | "build" | "run" | "help" | "--help" | "-h" | "--version" | "-V"
+    )
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -298,6 +356,9 @@ fn compile_common(
             if graph.needs_scrape_browser() {
                 supervisor::build_scrape_python(&lock, &output.root)?;
             }
+            if graph.has_doc() {
+                supervisor::build_doc_python(&lock, &output.root)?;
+            }
         }
         if graph.has_api() {
             supervisor::build_go_api_worker(&lock, &output.root)?;
@@ -368,5 +429,13 @@ mod tests {
         let err =
             parse_direct_run_args("main.silc", &[String::from("extra.silc")], false).unwrap_err();
         assert!(err.contains("unexpected argument `extra.silc`"));
+    }
+
+    #[test]
+    fn looks_like_direct_run_for_silc_files() {
+        assert!(looks_like_direct_run("main.silc"));
+        assert!(!looks_like_direct_run("assist"));
+        assert!(!looks_like_direct_run("build"));
+        assert!(!looks_like_direct_run("--help"));
     }
 }

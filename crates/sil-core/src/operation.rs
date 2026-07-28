@@ -27,12 +27,13 @@ pub const EXECUTABLE_OPS: &[(&str, &str)] = &[
     ("scrape", "select"),
     ("scrape", "render"),
     ("scrape", "extract"),
+    ("doc", "extract"),
     ("tensor", "tokenize"),
     ("tensor", "infer"),
 ];
 
 const SUPPORTED_OPS_HELP: &str =
-    "`app` routes (dual-surface UI synthesized), `resource Name for Contract` capabilities, optional text::score or llm::complete, scrape::*, tensor::tokenize/infer pipeline, or service::http API-only";
+    "`app` routes (dual-surface UI synthesized), `resource Name for Contract` capabilities, optional text::score or llm::complete, scrape::*, doc::extract, tensor::tokenize/infer pipeline, or service::http API-only";
 
 const TENSOR_CPU_ONLY: &str =
     "tensor::infer is CPU-only in Silc 0.4.0; remove :prefer(CUDA) (default/CPU accepted)";
@@ -103,6 +104,7 @@ pub struct UiCapabilities {
     pub history: bool,
     pub resources: bool,
     pub scrape: bool,
+    pub doc: bool,
 }
 
 /// Derived scrape capabilities (ADR-006).
@@ -160,6 +162,21 @@ pub struct ScrapeSelect {
     pub as_field: Option<String>,
 }
 
+/// Derived document-extract capabilities (ADR-011).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct DocCapabilities {
+    pub extract: bool,
+    pub extract_into: Option<String>,
+    /// Resource table that receives extracted rows (first resource for extract_into).
+    pub table: Option<String>,
+}
+
+impl DocCapabilities {
+    pub fn active(&self) -> bool {
+        self.extract
+    }
+}
+
 /// One declarative HTTP API route bound to a Contract (`service::http`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApiRoute {
@@ -175,6 +192,7 @@ pub struct ExecutableGraph {
     pub processor_op: ProcessorOp,
     pub capabilities: UiCapabilities,
     pub scrape: ScrapeCapabilities,
+    pub doc: DocCapabilities,
     pub app: Option<App>,
     pub app_name: Option<String>,
     pub service: String,
@@ -216,6 +234,10 @@ impl ExecutableGraph {
         self.scrape.active()
     }
 
+    pub fn has_doc(&self) -> bool {
+        self.doc.active()
+    }
+
     pub fn is_scrape_only(&self) -> bool {
         self.has_scrape() && !self.has_ui() && !self.has_api() && !self.needs_tensor()
     }
@@ -237,6 +259,10 @@ impl ExecutableGraph {
         self.processor_op.needs_tensor()
     }
 
+    pub fn needs_doc_extract(&self) -> bool {
+        self.has_doc()
+    }
+
     pub fn needs_scrape_browser(&self) -> bool {
         self.has_scrape() && self.scrape.needs_browser()
     }
@@ -252,27 +278,14 @@ pub fn is_executable_op(namespace: &str, name: &str) -> bool {
         .any(|(ns, n)| *ns == namespace && *n == name)
 }
 
+/// Every namespace recognized by the classifier (runnable, compiler-owned, or stub).
+pub const KNOWN_NAMESPACES: &[&str] = &[
+    "ui", "http", "html", "service", "text", "llm", "ipc", "store", "resource", "scrape", "doc",
+    "tensor", "numpy", "pandas", "ws", "sys", "schema", "payload", "json",
+];
+
 fn is_known_namespace(ns: &str) -> bool {
-    matches!(
-        ns,
-        "ui" | "http"
-            | "html"
-            | "service"
-            | "text"
-            | "llm"
-            | "ipc"
-            | "store"
-            | "resource"
-            | "scrape"
-            | "tensor"
-            | "numpy"
-            | "pandas"
-            | "ws"
-            | "sys"
-            | "schema"
-            | "payload"
-            | "json"
-    )
+    KNOWN_NAMESPACES.contains(&ns)
 }
 
 fn is_v1_exec_namespace(ns: &str) -> bool {
@@ -287,6 +300,7 @@ fn is_v1_exec_namespace(ns: &str) -> bool {
             | "store"
             | "resource"
             | "scrape"
+            | "doc"
             | "tensor"
     )
 }
@@ -602,6 +616,7 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
         same_host: true,
         ..Default::default()
     };
+    let mut doc = DocCapabilities::default();
 
     let mut scan_pipeline = |steps: &[PipelineStep]| -> Result<(), String> {
         let mut saw_tokenize_in_pipeline = false;
@@ -790,6 +805,23 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
                         }
                         scrape.extract_into = Some(into);
                     }
+                    ("doc", "extract") => {
+                        doc.extract = true;
+                        let mut into: Option<String> = None;
+                        for arg in args {
+                            if arg.name == "into" {
+                                into = Some(normalize_ident(&arg.value));
+                            }
+                        }
+                        let into = into
+                            .ok_or_else(|| "doc::extract requires :into(Contract)".to_string())?;
+                        if !program.contracts.iter().any(|c| c.name == into) {
+                            return Err(format!(
+                                "doc::extract references unknown contract `{into}`"
+                            ));
+                        }
+                        doc.extract_into = Some(into);
+                    }
                     _ => {}
                 },
                 _ => {}
@@ -833,18 +865,38 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
     let has_ui = saw_ui_web || saw_terminal;
     let has_api = !api_routes.is_empty();
     let has_scrape = scrape.active();
+    let has_doc = doc.active();
     let has_tensor = saw_tokenize || saw_infer;
-    if !has_ui && !has_api && !has_scrape && !has_tensor {
+    if !has_ui && !has_api && !has_scrape && !has_doc && !has_tensor {
         // Resource-only or processor pipelines without surface — still runnable if we have resources + app.
         if program.apps.is_empty() && program.resources.is_empty() {
             return Err(format!(
-                "runnable program must declare an `app`, scrape::*, tensor::*, or service::http; {SUPPORTED_OPS_HELP}"
+                "runnable program must declare an `app`, scrape::*, doc::*, tensor::*, or service::http; {SUPPORTED_OPS_HELP}"
             ));
         }
     }
 
     if has_scrape && saw_score {
         return Err("cannot mix scrape::* with text::score in one program".into());
+    }
+    if has_doc && saw_score {
+        return Err("cannot mix doc::* with text::score in one program".into());
+    }
+    if has_doc {
+        let into = doc
+            .extract_into
+            .as_deref()
+            .ok_or_else(|| "doc::extract requires :into(Contract)".to_string())?;
+        let resource = program
+            .resources
+            .iter()
+            .find(|r| r.contract.as_deref() == Some(into))
+            .ok_or_else(|| {
+                format!(
+                    "doc::extract(:into({into})) needs a `resource … for {into}` to store extracted rows"
+                )
+            })?;
+        doc.table = Some(resource.table_name());
     }
     if has_scrape && !scrape.select && !scrape.extract && !scrape.site && !scrape.page {
         return Err("scrape programs need scrape::page, scrape::site, or scrape::extract".into());
@@ -1062,6 +1114,7 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
         history: uses_chat,
         resources: !program.resources.is_empty(),
         scrape: has_scrape,
+        doc: has_doc,
     };
 
     let service_name = services
@@ -1075,6 +1128,7 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
         processor_op,
         capabilities,
         scrape,
+        doc,
         app_name: app.as_ref().map(|a| a.name.clone()),
         app,
         service: service_name,

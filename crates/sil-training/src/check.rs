@@ -57,6 +57,16 @@ pub fn check_source(source: &str, emit_dir: Option<&Path>) -> Result<CheckResult
 /// Pull a `.silc` program out of a completion (fenced or raw).
 pub fn extract_program(completion: &str) -> String {
     let trimmed = completion.trim();
+    // Sentinel form used by assist prompts (avoids teaching the model empty
+    // markdown fences that break tool parsing).
+    if let Some(start) = trimmed.find("<silc>") {
+        let rest = &trimmed[start + "<silc>".len()..];
+        let rest = rest.strip_prefix('\n').unwrap_or(rest);
+        if let Some(end) = rest.find("</silc>") {
+            return rest[..end].trim().to_string();
+        }
+        return rest.trim().to_string();
+    }
     if let Some(start) = trimmed.find("```silc") {
         let rest = &trimmed[start + "```silc".len()..];
         let rest = rest.strip_prefix('\n').unwrap_or(rest);
@@ -64,14 +74,43 @@ pub fn extract_program(completion: &str) -> String {
             return rest[..end].trim().to_string();
         }
     }
-    if let Some(start) = trimmed.find("```") {
-        let rest = &trimmed[start + 3..];
-        let rest = rest.strip_prefix('\n').unwrap_or(rest);
-        if let Some(end) = rest.find("```") {
-            return rest[..end].trim().to_string();
+    // Generic markdown fence — skip ```tool (and empty ```tool```) so they are
+    // never mistaken for program source.
+    let mut search_from = 0usize;
+    while let Some(rel) = trimmed[search_from..].find("```") {
+        let start = search_from + rel;
+        let after = start + 3;
+        let rest = &trimmed[after..];
+        // Language tag ends at newline or at a nested ``` (empty ```tool```).
+        let lang_end = rest
+            .find('\n')
+            .unwrap_or(rest.len())
+            .min(rest.find("```").unwrap_or(rest.len()));
+        let lang = rest[..lang_end].trim();
+        if lang == "tool" || lang.starts_with("tool") {
+            // Empty ```tool```: closing fence begins at lang_end when no newline.
+            if rest[lang_end..].starts_with("```") {
+                search_from = after + lang_end + 3;
+                continue;
+            }
+            // ```tool\n...\n```
+            let body_start = after + lang_end + 1; // skip newline
+            if body_start < trimmed.len() {
+                if let Some(end) = trimmed[body_start..].find("```") {
+                    search_from = body_start + end + 3;
+                    continue;
+                }
+            }
+            // Unclosed tool fence — take remainder after the tag.
+            return trimmed[after + lang.len()..].trim_start_matches('\n').trim().to_string();
         }
+        let body_start = after + lang_end + usize::from(lang_end < rest.len() && rest.as_bytes().get(lang_end) == Some(&b'\n'));
+        if let Some(end) = trimmed.get(body_start..).and_then(|b| b.find("```")) {
+            return trimmed[body_start..body_start + end].trim().to_string();
+        }
+        break;
     }
-    trimmed.to_string()
+    trimmed[search_from..].trim().to_string()
 }
 
 #[cfg(test)]
@@ -107,6 +146,12 @@ app NoteApp {
     #[test]
     fn extracts_fenced_silc() {
         let raw = "Here you go:\n```silc\n@version(\"0.4.0\")\ncontract X {}\n```\n";
+        assert_eq!(extract_program(raw), "@version(\"0.4.0\")\ncontract X {}");
+    }
+
+    #[test]
+    fn extracts_sentinel_silc() {
+        let raw = "Here:\n<silc>\n@version(\"0.4.0\")\ncontract X {}\n</silc>\n";
         assert_eq!(extract_program(raw), "@version(\"0.4.0\")\ncontract X {}");
     }
 }

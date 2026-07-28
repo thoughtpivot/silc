@@ -1,0 +1,80 @@
+#!/usr/bin/env silc
+@version("0.4.0")
+
+contract Document {
+    has Str $.title;
+    has Str $.headings;
+    has Str $.body;
+    has Str $.tables;
+    has Str $.filename;
+    has Str $.mime;
+    has Str $.format;
+    has Str $.char_count;
+}
+
+resource Documents for Document {
+    query list;
+    mutation create;
+    mutation delete;
+}
+
+component UploadPage {
+    has state Str $.upload = "";
+
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("Data Collector"))),
+            :side_panel(ui::side_panel(
+                ui::nav_item(:label("Upload"), :to("/"), :active),
+                ui::nav_item(:label("Documents"), :to("/documents"))
+            )),
+            ui::stack(
+                ui::heading(:text("Upload a document"), :level(2)),
+                ui::form(:on(submit(on_submit)),
+                    ui::file_input(
+                        :field(upload),
+                        :label("Document"),
+                        :accept(".pdf,.docx,.odt,.md,.txt,.html")
+                    ),
+                    ui::button(:label("Extract"), :variant(primary), :submit)
+                )
+            )
+        )
+    }
+    method on_submit() { submit(); }
+}
+
+component DocumentsPage {
+    query $.documents = Documents.list();
+
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("Data Collector"))),
+            :side_panel(ui::side_panel(
+                ui::nav_item(:label("Upload"), :to("/")),
+                ui::nav_item(:label("Documents"), :to("/documents"), :active)
+            )),
+            ui::stack(
+                ui::heading(:text("Documents"), :level(2)),
+                ui::table(
+                    :rows($.documents),
+                    :columns(["title", "filename", "format", "char_count", "body"]),
+                    :empty_text("No documents yet."),
+                    :sortable,
+                    :searchable
+                )
+            )
+        )
+    }
+}
+
+service Extractor {
+    method run() {
+        $upload ==> doc::extract(:into(Document))
+    }
+}
+
+app CollectorApp {
+    route "/" => UploadPage;
+    route "/documents" => DocumentsPage;
+}

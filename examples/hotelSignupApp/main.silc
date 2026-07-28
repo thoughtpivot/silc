@@ -1,0 +1,80 @@
+#!/usr/bin/env silc
+@version("0.4.0")
+
+contract Guest {
+    has Str $.name;
+    has Str $.phone;
+    has Str $.room;
+    has Str $.comment;
+}
+
+resource Guests for Guest {
+    query list;
+    mutation create;
+}
+
+component GuestForm {
+    query $.guests = Guests.list();
+
+    has state Str $.name = "";
+    has state Str $.phone = "";
+    has state Str $.room = "";
+    has state Str $.comment = "";
+
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("Hotel Sign Up"))),
+            :side_panel(ui::side_panel(
+                ui::nav_item(:label("Sign Up"), :to("/"), :active),
+                ui::nav_item(:label("Ledger"), :to("/ledger"))
+            )),
+            ui::stack(
+                ui::heading(:text("Leave a note"), :level(2)),
+                ui::form(:on(submit(on_submit)),
+                    ui::text_input(:field(name), :label("Name")),
+                    ui::text_input(:field(phone), :label("Phone Number")),
+                    ui::text_input(:field(room), :label("Room Number")),
+                    ui::textarea(:field(comment), :label("Comment")),
+                    ui::button(:label("Submit"), :submit)
+                )
+            )
+        )
+    }
+
+    method on_submit() {
+        Guests.create(Guest.new(:name($.name), :phone($.phone), :room($.room), :comment($.comment)));
+        $.name = "";
+        $.phone = "";
+        $.room = "";
+        $.comment = "";
+    }
+}
+
+component GuestLedgerPage {
+    query $.guests = Guests.list();
+
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("Guest Ledger"))),
+            :side_panel(ui::side_panel(
+                ui::nav_item(:label("Sign Up"), :to("/")),
+                ui::nav_item(:label("Ledger"), :to("/ledger"), :active)
+            )),
+            ui::stack(
+                ui::heading(:text("Guest ledger"), :level(2)),
+                ui::table(
+                    :rows($.guests),
+                    :columns(["name", "phone", "room", "comment"]),
+                    :empty_text("No guests yet."),
+                    :sortable,
+                    :searchable
+                )
+            )
+        )
+    }
+}
+
+app HotelApp {
+    route "/" => GuestForm;
+    route "/ledger" => GuestLedgerPage;
+}

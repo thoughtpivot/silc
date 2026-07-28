@@ -26,6 +26,7 @@ const SUBSET_RULES: Record<
 const PROCESSOR = "__PROCESSOR_OP__";
 const HAS_LLM = __HAS_LLM__;
 const HAS_SCRAPE = __HAS_SCRAPE__;
+const HAS_DOC = __HAS_DOC__;
 const SCRAPE_SITE = __SCRAPE_SITE__;
 const SCRAPE_JS = "__SCRAPE_JS__";
 const SCRAPE_DEPTH = __SCRAPE_DEPTH__;
@@ -33,9 +34,12 @@ const SCRAPE_SAME_HOST = __SCRAPE_SAME_HOST__;
 const SCRAPE_LINK_CSS = "__SCRAPE_LINK_CSS__";
 const SCRAPE_SELECTS = __SCRAPE_SELECTS_JSON__;
 const SCRAPE_TABLE = "__SCRAPE_TABLE__";
+const DOC_TABLE = "__DOC_TABLE__";
 const SCRAPE_CRAWL_BIN = process.env.SILC_SCRAPE_CRAWL_BIN || join(root, "..", "go", "crawl", "worker");
 const SCRAPE_BROWSER_PY = process.env.SILC_SCRAPE_BROWSER_PY || join(root, "..", "python", "browser_worker.py");
 const SCRAPE_PYTHON_BIN = process.env.SILC_SCRAPE_PYTHON_BIN || process.env.SILC_PYTHON_BIN || "python3";
+const DOC_EXTRACT_PY = process.env.SILC_DOC_EXTRACT_PY || join(root, "..", "python", "doc_extract_worker.py");
+const DOC_PYTHON_BIN = process.env.SILC_DOC_PYTHON_BIN || process.env.SILC_PYTHON_BIN || "python3";
 
 function encodeFrame(value: unknown): Buffer {
   const payload = Buffer.from(JSON.stringify(value));
@@ -156,6 +160,26 @@ function ingest(payload: Record<string, unknown>, requestId: string): Promise<an
   });
 }
 
+// `CREATE TABLE IF NOT EXISTS` leaves an older schema in place, so a database
+// written by a previous build can be missing the columns this worker expects.
+function migrateResourceTable(db: Database, table: string): void {
+  const columns = (
+    db.query(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
+  ).map((c) => c.name);
+  if (columns.length === 0) return;
+  if (!columns.includes("data")) {
+    if (columns.includes("payload")) {
+      db.exec(`ALTER TABLE ${table} RENAME COLUMN payload TO data`);
+    } else {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN data TEXT NOT NULL DEFAULT '{}'`);
+    }
+  }
+  if (!columns.includes("updated_at")) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN updated_at TEXT`);
+    db.exec(`UPDATE ${table} SET updated_at = COALESCE(created_at, datetime('now'))`);
+  }
+}
+
 function openDb(): Database {
   const db = new Database(dbPath, { create: true });
   db.exec(`
@@ -173,6 +197,7 @@ function openDb(): Database {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     );`);
+    migrateResourceTable(db, table);
   }
   for (const seed of RESOURCE_SEEDS) {
     const payload = { ...seed.data };
@@ -557,7 +582,114 @@ async function runScrapeJob(body: Record<string, unknown>) {
   return { ok: true, count: pages.length, pages };
 }
 
+async function runDocExtractJob(form: FormData): Promise<Record<string, unknown>> {
+  if (!HAS_DOC) throw new Error("doc::extract is not enabled for this program");
+  if (!DOC_TABLE) throw new Error("doc::extract missing resource table");
+
+  const { mkdirSync, writeFileSync, unlinkSync, existsSync } = await import("node:fs");
+  const uploadsDir = join(root, "..", "uploads");
+  mkdirSync(uploadsDir, { recursive: true });
+
+  let stagedPath = "";
+  let filename = "";
+  const pathField = form.get("path");
+  if (typeof pathField === "string" && pathField.trim()) {
+    stagedPath = pathField.trim();
+    filename =
+      (typeof form.get("filename") === "string" && String(form.get("filename"))) ||
+      stagedPath.split(/[/\\]/).pop() ||
+      "upload.bin";
+    if (!existsSync(stagedPath)) {
+      throw new Error(`upload path not found: ${stagedPath}`);
+    }
+  } else {
+    let fileEntry: File | null = null;
+    for (const [, value] of form.entries()) {
+      if (value instanceof File && value.size >= 0) {
+        fileEntry = value;
+        break;
+      }
+    }
+    if (!fileEntry) throw new Error("multipart upload missing file");
+    filename = fileEntry.name || "upload.bin";
+    const safeName = filename.replace(/[^a-zA-Z0-9._-]+/g, "_");
+    stagedPath = join(uploadsDir, `${crypto.randomUUID()}-${safeName}`);
+    const bytes = Buffer.from(await fileEntry.arrayBuffer());
+    writeFileSync(stagedPath, bytes);
+  }
+
+  let extracted: Record<string, unknown>;
+  try {
+    const proc = Bun.spawn(
+      [DOC_PYTHON_BIN, DOC_EXTRACT_PY, "--path", stagedPath, "--filename", filename, "--json"],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const stdout = await new Response(proc.stdout).text();
+    const stderr = await new Response(proc.stderr).text();
+    const code = await proc.exited;
+    if (code !== 0) {
+      let detail = stderr.trim() || stdout.trim() || `doc extract exited ${code}`;
+      try {
+        const parsed = JSON.parse(stdout);
+        if (parsed?.error) detail = String(parsed.error);
+      } catch {
+        /* keep detail */
+      }
+      throw new Error(detail);
+    }
+    const parsed = JSON.parse(stdout);
+    if (!parsed || parsed.ok === false) {
+      throw new Error(String(parsed?.error || "doc extract failed"));
+    }
+    const {
+      ok: _ok,
+      title = "",
+      headings = "",
+      body = "",
+      tables = "",
+      filename: outName = filename,
+      mime = "application/octet-stream",
+      format = "",
+      char_count = "0",
+    } = parsed;
+    extracted = {
+      title: String(title),
+      headings: String(headings),
+      body: String(body),
+      tables: String(tables),
+      filename: String(outName),
+      mime: String(mime),
+      format: String(format),
+      char_count: String(char_count),
+    };
+  } finally {
+    // Discard staged originals after extract (ADR-011). Never persist binary bytes.
+    if (stagedPath.startsWith(uploadsDir) && existsSync(stagedPath)) {
+      try {
+        unlinkSync(stagedPath);
+      } catch {
+        /* best-effort */
+      }
+    }
+  }
+
+  const id = crypto.randomUUID();
+  const subsetErr = validateSubsetFields(DOC_TABLE, extracted);
+  if (subsetErr) throw new Error(subsetErr);
+  db.query(`INSERT INTO ${DOC_TABLE} (id, data) VALUES (?, ?)`).run(id, JSON.stringify(extracted));
+  return { ok: true, id, ...extracted };
+}
+
 async function handleAction(req: Request, pathname: string): Promise<Response | null> {
+  if (pathname === "/upload" && req.method === "POST" && HAS_DOC) {
+    try {
+      const form = await req.formData();
+      const result = await runDocExtractJob(form);
+      return json(result, 201);
+    } catch (error) {
+      return json({ ok: false, error: error instanceof Error ? error.message : String(error) }, 500);
+    }
+  }
   if (pathname === "/submit" && req.method === "POST") {
     const body = await req.json();
     if (HAS_SCRAPE) {
