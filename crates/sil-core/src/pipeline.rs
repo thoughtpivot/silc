@@ -1,6 +1,7 @@
 //! Pipeline subject: `==>` feed steps.
 
 use crate::constraint::TraitArg;
+use crate::types::Span;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PipelineStep {
@@ -13,6 +14,8 @@ pub enum PipelineStep {
         namespace: Option<String>,
         name: String,
         args: Vec<TraitArg>,
+        /// Span covering `ns::op` (or just `op` when un-namespaced).
+        span: Span,
     },
 }
 

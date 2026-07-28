@@ -155,7 +155,7 @@ API contract (props / events / slots / children).
 
 - `ui::chat` — props: `field?`, `value?`, `label?`, `placeholder?`, `session?`, `loading?`, `error?`, `context?`, `persona?`; events: `send`; slots: none; children: none; surfaces: web+terminal
 - `ui::chat_history` — props: `title?`, `items?`, `collapsible?` (flag); events: none; slots: none; children: none; surfaces: web+terminal
-- `ui::search_input` — props: `field?`, `value?`, `label?`, `placeholder?`; events: `input`, `submit`; slots: none; children: none; surfaces: web+terminal
+- `ui::search_input` — props: `field?`, `value?`, `label?`, `placeholder?`, `context?`, `persona?`; events: `input`, `submit`; slots: none; children: none; surfaces: web+terminal
 - `ui::filter_bar` — props: none; events: none; slots: none; children: anyOf(`search_input`, `button`, `text_input`); surfaces: web+terminal
 
 #### Data display
@@ -310,6 +310,29 @@ ui::chat(
 
 `:context` and `:persona` ride the `/complete` ingest frame and are **not**
 persisted into chat history.
+
+### Feed filter with silclm
+
+```silc
+has state Str $.filter_query = "";
+has state Str $.match_ids = "*";       # "*" = show all; "__none__" = empty
+has state Bool $.filtering = false;
+
+ui::search_input(
+    :field(filter_query),
+    :context($.articles),
+    :persona("Return ONLY a JSON array of matching article id strings."),
+    :on(submit(on_filter))
+)
+
+method on_filter() { Assistant.complete(); }
+
+# in the feed:
+when $.match_ids.contains($article.id) { ArticleCard(:article($article)) }
+```
+
+`ui::search_input` with `:context` + `:persona` lowers to an AI filter that
+parses a JSON id array from silclm and stores it in `$.match_ids`.
 
 ### Processor (score or LLM)
 

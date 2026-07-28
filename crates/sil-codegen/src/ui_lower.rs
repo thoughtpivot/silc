@@ -141,6 +141,7 @@ fn render_web_component(component: &Component, program: &Program) -> String {
         find_chat_context_js(&component.render).unwrap_or_else(|| "undefined".into());
     let chat_persona_js =
         find_chat_persona_js(&component.render).unwrap_or_else(|| "undefined".into());
+    let llm_search = find_llm_search(&component.render);
 
     let mut state_decls = String::new();
     for field in &component.state {
@@ -363,12 +364,69 @@ fn render_web_component(component: &Component, program: &Program) -> String {
         }
     }
 
+    if let Some(search) = llm_search.as_ref() {
+        state_decls.push_str(&format!(
+            r#"  const [filterError, setFilterError] = useState("");
+  function __parseFilterIds(reply) {{
+    const text = (reply ?? "").toString();
+    const start = text.indexOf("[");
+    const end = text.lastIndexOf("]");
+    if (start < 0 || end <= start) return [];
+    try {{
+      const parsed = JSON.parse(text.slice(start, end + 1));
+      if (!Array.isArray(parsed)) return [];
+      return parsed.map((value) => String(value)).filter(Boolean);
+    }} catch {{
+      return [];
+    }}
+  }}
+  async function __filterComplete(promptText) {{
+    const prompt = (promptText ?? {field} ?? "").toString().trim();
+    if (!prompt) {{
+      setMatchIds("*");
+      setFilterError("");
+      return;
+    }}
+    if (filtering) return;
+    setFilterError("");
+    setFiltering(true);
+    try {{
+      const resp = await fetch("/complete", {{
+        method: "POST",
+        headers: {{ "content-type": "application/json" }},
+        body: JSON.stringify({{ prompt, context: {context}, persona: {persona} }}),
+      }});
+      const data = await resp.json();
+      if (!resp.ok || data.ok === false) {{
+        throw new Error(data.error || "filter failed");
+      }}
+      const ids = __parseFilterIds(data.reply || data.summary || "");
+      setMatchIds(ids.length ? `,${{ids.join(",")}},` : "__none__");
+    }} catch (error) {{
+      setFilterError(error instanceof Error ? error.message : String(error));
+      setMatchIds("*");
+    }} finally {{
+      setFiltering(false);
+    }}
+  }}
+"#,
+            field = search.field,
+            context = search.context_js,
+            persona = search.persona_js
+        ));
+    }
+
     let mut handlers = String::new();
     for handler in &component.handlers {
         let body = handler
             .body
             .iter()
-            .map(|e| format!("    {};", expr_to_js_stmt(e, component, program)))
+            .map(|e| {
+                format!(
+                    "    {};",
+                    expr_to_js_stmt(e, component, program, &handler.name)
+                )
+            })
             .collect::<Vec<_>>()
             .join("\n");
         let params = handler
@@ -510,6 +568,57 @@ fn find_chat_persona_js(template: &UiTemplate) -> Option<String> {
             .or_else(|| else_body.as_ref().and_then(|b| find_chat_persona_js(b))),
         UiTemplate::For { body, .. } => find_chat_persona_js(body),
         UiTemplate::Block(items) => items.iter().find_map(find_chat_persona_js),
+    }
+}
+
+#[derive(Clone)]
+struct LlmSearchMeta {
+    field: String,
+    submit_handler: String,
+    context_js: String,
+    persona_js: String,
+}
+
+/// `ui::search_input` with `:context` + `:persona` is an LLM feed filter.
+fn find_llm_search(template: &UiTemplate) -> Option<LlmSearchMeta> {
+    match template {
+        UiTemplate::Node(node) => {
+            if node.component == "search_input" {
+                let context = node.prop("context").map(expr_to_js);
+                let persona = node.prop("persona").map(expr_to_js);
+                if let (Some(context_js), Some(persona_js)) = (context, persona) {
+                    let field = node
+                        .prop("field")
+                        .and_then(|e| e.as_ident())
+                        .map(|s| s.to_string())
+                        .or_else(|| {
+                            node.prop("value").and_then(|e| match e {
+                                Expr::Var(s) | Expr::Ident(s) => Some(s.clone()),
+                                _ => None,
+                            })
+                        })
+                        .unwrap_or_else(|| "filter_query".into());
+                    let submit_handler = node
+                        .events
+                        .iter()
+                        .find(|e| e.event == "submit")
+                        .map(|e| e.handler.clone())
+                        .unwrap_or_else(|| "on_filter".into());
+                    return Some(LlmSearchMeta {
+                        field,
+                        submit_handler,
+                        context_js,
+                        persona_js,
+                    });
+                }
+            }
+            node.children.iter().find_map(find_llm_search)
+        }
+        UiTemplate::When {
+            body, else_body, ..
+        } => find_llm_search(body).or_else(|| else_body.as_ref().and_then(|b| find_llm_search(b))),
+        UiTemplate::For { body, .. } => find_llm_search(body),
+        UiTemplate::Block(items) => items.iter().find_map(find_llm_search),
     }
 }
 
@@ -1067,21 +1176,72 @@ fn render_node(node: &UiNode, indent: usize) -> String {
                 .unwrap_or_else(|| "messages".into()),
             title = prop_js(node, "title")
         ),
-        "search_input" => format!(
-            "{pad}<SearchInput value={{{value}}} onChange={{setQuery}} onSubmit={{{submit}}} placeholder={{{ph}}} />",
-            pad = pad,
-            value = node
+        "search_input" => {
+            let field = node
+                .prop("field")
+                .and_then(|e| e.as_ident())
+                .map(|s| s.to_string());
+            let value = node
                 .prop("value")
                 .map(expr_to_js)
-                .unwrap_or_else(|| "query".into()),
-            submit = node
+                .or_else(|| field.clone())
+                .unwrap_or_else(|| "filter_query".into());
+            let setter = field
+                .as_ref()
+                .map(|f| format!("set{}", pascal(f)))
+                .unwrap_or_else(|| "undefined".into());
+            let submit = node
                 .events
                 .iter()
                 .find(|e| e.event == "submit")
                 .map(|e| e.handler.as_str())
-                .unwrap_or("undefined"),
-            ph = prop_js(node, "placeholder")
-        ),
+                .unwrap_or("undefined");
+            let llm_backed = node.prop("context").is_some() && node.prop("persona").is_some();
+            if surface() == SurfaceKind::Terminal {
+                if llm_backed {
+                    format!(
+                        "{pad}<SearchInput value={{{value}}} onChange={{{setter}}} onAiSearch={{{submit}}} searching={{filtering}} label={{{label}}} placeholder={{{ph}}} />",
+                        pad = pad,
+                        value = value,
+                        setter = setter,
+                        submit = submit,
+                        label = prop_js(node, "label"),
+                        ph = prop_js(node, "placeholder")
+                    )
+                } else {
+                    format!(
+                        "{pad}<SearchInput value={{{value}}} onChange={{{setter}}} onSubmit={{{submit}}} placeholder={{{ph}}} />",
+                        pad = pad,
+                        value = value,
+                        setter = setter,
+                        submit = submit,
+                        ph = prop_js(node, "placeholder")
+                    )
+                }
+            } else if llm_backed {
+                format!(
+                    "{pad}<SearchInput id={{{id}}} value={{{value}}} onChange={{{setter}}} onAiSearch={{{submit}}} searching={{filtering}} label={{{label}}} placeholder={{{ph}}} />",
+                    pad = pad,
+                    id = escape_js_string(&format!("search-{value}")),
+                    value = value,
+                    setter = setter,
+                    submit = submit,
+                    label = prop_js(node, "label"),
+                    ph = prop_js(node, "placeholder")
+                )
+            } else {
+                format!(
+                    "{pad}<SearchInput id={{{id}}} value={{{value}}} onChange={{{setter}}} onAiSearch={{{submit}}} searching={{false}} label={{{label}}} placeholder={{{ph}}} />",
+                    pad = pad,
+                    id = escape_js_string(&format!("search-{value}")),
+                    value = value,
+                    setter = setter,
+                    submit = submit,
+                    label = prop_js(node, "label"),
+                    ph = prop_js(node, "placeholder")
+                )
+            }
+        },
         "filter_bar" => {
             if surface() == SurfaceKind::Terminal {
                 format!(
@@ -1379,11 +1539,30 @@ pub fn expr_to_js(expr: &Expr) -> String {
         Expr::Bool(b) => b.to_string(),
         Expr::Ident(s) | Expr::Var(s) => s.clone(),
         Expr::Member { base, field } => format!("{}.{}", expr_to_js(base), field),
-        Expr::Call { callee, args } => format!(
-            "{}({})",
-            expr_to_js(callee),
-            args.iter().map(expr_to_js).collect::<Vec<_>>().join(", ")
-        ),
+        Expr::Call { callee, args } => {
+            // Silc Str helpers → JS String methods.
+            if let Expr::Member { base, field } = callee.as_ref() {
+                let arg = args
+                    .first()
+                    .map(expr_to_js)
+                    .unwrap_or_else(|| "\"\"".into());
+                match field.as_str() {
+                    "contains" => return format!("{}.includes({})", expr_to_js(base), arg),
+                    "starts-with" | "starts_with" => {
+                        return format!("{}.startsWith({})", expr_to_js(base), arg);
+                    }
+                    "ends-with" | "ends_with" => {
+                        return format!("{}.endsWith({})", expr_to_js(base), arg);
+                    }
+                    _ => {}
+                }
+            }
+            format!(
+                "{}({})",
+                expr_to_js(callee),
+                args.iter().map(expr_to_js).collect::<Vec<_>>().join(", ")
+            )
+        }
         Expr::BinOp { op, left, right } => format!(
             "({} {} {})",
             expr_to_js(left),
@@ -1442,7 +1621,12 @@ pub fn expr_to_js(expr: &Expr) -> String {
     }
 }
 
-fn expr_to_js_stmt(expr: &Expr, component: &Component, program: &Program) -> String {
+fn expr_to_js_stmt(
+    expr: &Expr,
+    component: &Component,
+    program: &Program,
+    handler_name: &str,
+) -> String {
     if let Expr::Call { callee, args } = expr {
         if let Expr::Ident(name) = callee.as_ref() {
             if name == "submit" || name.ends_with("submit") {
@@ -1486,6 +1670,11 @@ fn expr_to_js_stmt(expr: &Expr, component: &Component, program: &Program) -> Str
                     );
                 }
                 if field == "complete" {
+                    if let Some(search) = find_llm_search(&component.render) {
+                        if search.submit_handler == handler_name {
+                            return format!("await __filterComplete({})", search.field);
+                        }
+                    }
                     let prompt_field =
                         find_chat_field(&component.render).unwrap_or_else(|| "prompt".into());
                     return format!("await __chatComplete({prompt_field})");
@@ -1795,6 +1984,8 @@ mod tests {
     fn renders_heading_node() {
         let node = UiNode {
             component: "heading".into(),
+            component_span: Default::default(),
+            prop_spans: vec![],
             props: vec![("text".into(), Expr::String("Hello".into()))],
             events: vec![],
             slots: vec![],
@@ -1809,6 +2000,8 @@ mod tests {
     fn lowers_phase1_form_and_feedback_on_both_surfaces() {
         let select = UiNode {
             component: "select".into(),
+            component_span: Default::default(),
+            prop_spans: vec![],
             props: vec![
                 ("field".into(), Expr::Ident("category".into())),
                 (
@@ -1824,6 +2017,8 @@ mod tests {
         };
         let section = UiNode {
             component: "section".into(),
+            component_span: Default::default(),
+            prop_spans: vec![],
             props: vec![("title".into(), Expr::String("Stock".into()))],
             events: vec![],
             slots: vec![],
@@ -1852,6 +2047,8 @@ mod tests {
     fn lowers_phase2_shell_and_table_flags() {
         let dialog = UiNode {
             component: "dialog".into(),
+            component_span: Default::default(),
+            prop_spans: vec![],
             props: vec![
                 ("open".into(), Expr::Ident("show".into())),
                 ("title".into(), Expr::String("Confirm".into())),
@@ -1863,6 +2060,8 @@ mod tests {
         };
         let table = UiNode {
             component: "table".into(),
+            component_span: Default::default(),
+            prop_spans: vec![],
             props: vec![
                 ("rows".into(), Expr::Ident("items".into())),
                 (
@@ -1900,6 +2099,8 @@ mod tests {
         use sil_core::EventBinding;
         let table = UiNode {
             component: "table".into(),
+            component_span: Default::default(),
+            prop_spans: vec![],
             props: vec![
                 ("rows".into(), Expr::Ident("items".into())),
                 (
@@ -1937,6 +2138,8 @@ mod tests {
     fn active_button_uses_session_selected_variant() {
         let node = UiNode {
             component: "button".into(),
+            component_span: Default::default(),
+            prop_spans: vec![],
             props: vec![
                 ("label".into(), Expr::String("Session".into())),
                 ("active".into(), Expr::Var("is_selected".into())),

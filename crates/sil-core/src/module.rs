@@ -42,6 +42,19 @@ pub struct Param {
     pub ty: Option<TypeExpr>,
     pub named: bool,
     pub default: Option<String>,
+    pub span: Span,
+}
+
+impl Param {
+    pub fn new(name: impl Into<String>, ty: Option<TypeExpr>) -> Self {
+        Self {
+            name: name.into(),
+            ty,
+            named: false,
+            default: None,
+            span: Span::default(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

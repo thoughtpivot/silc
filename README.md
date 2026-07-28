@@ -419,6 +419,41 @@ See [`examples/README.md`](examples/README.md).
 
 ---
 
+## Editor support (VS Code / Cursor)
+
+Silc ships a VS Code / Cursor extension that provides syntax highlighting and a
+Rust language server (`sil-lsp`) for semantic hover on `.silc` sources — resource
+methods, query bindings, contracts and fields, components, props and state, UI
+primitives, executable ops, keywords, operators, and builtin types.
+
+Install it with the bundled script:
+
+```bash
+./editors/vscode-silc/install.sh
+```
+
+The script:
+
+1. Builds `sil-lsp` in release mode (`cargo build -p sil-lsp --release`)
+2. Installs npm dependencies and compiles the TypeScript language client
+3. Bundles the host-platform server binary into a VSIX
+4. Installs the extension with the `cursor` CLI, falling back to `code`
+
+Requirements: a Rust toolchain, Node.js/npm, and a `cursor` (or `code`) CLI on
+your `PATH`. In Cursor, you can add the CLI via **Shell Command: Install 'cursor'
+command in PATH**. Set `SILC_EDITOR_CLI` to override CLI detection.
+
+After it finishes, run **Developer: Reload Window**. Open any `.silc` file — the
+language indicator should read **Silc**, and hovering a symbol should show a
+Markdown tooltip. To point the editor at a locally built server without
+reinstalling, set `silc.languageServerPath` to your
+`target/release/sil-lsp` path.
+
+See [`editors/vscode-silc/README.md`](editors/vscode-silc/README.md) for hover
+coverage, highlighting scopes, and development details.
+
+---
+
 ## What ships today (0.4.0)
 
 Silc is **pre-1.0**. Release 0.4.0 makes the product rule explicit: authors

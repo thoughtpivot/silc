@@ -23,7 +23,7 @@ fn scrape_ops(module: &Module) -> Vec<&str> {
                 namespace: Some(ns),
                 name,
                 ..
-            } if ns == "scrape" => Some(name.as_str()),
+                                } if ns == "scrape" => Some(name.as_str()),
             _ => None,
         })
         .collect()
@@ -44,7 +44,8 @@ pub fn route_module(module: &Module) -> RouteDecision {
     let has_scrape_op = |names: &[&str]| scrape.iter().any(|op| names.contains(op));
     let cuda = module.methods.iter().any(|method| {
         method.pipeline.steps.iter().any(|step| match step {
-            sil_core::PipelineStep::Call { args, .. } => args
+            sil_core::PipelineStep::Call { args, ..
+                                } => args
                 .iter()
                 .any(|arg| arg.name == "prefer" && arg.value.eq_ignore_ascii_case("CUDA")),
             _ => false,
@@ -263,7 +264,8 @@ mod tests {
                             namespace: Some("ui".into()),
                             name: "terminal".into(),
                             args: vec![],
-                        }],
+                                    span: Default::default(),
+                                }],
                     },
                 }],
                 span: Span::default(),

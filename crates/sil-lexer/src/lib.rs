@@ -143,6 +143,10 @@ pub enum Token {
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpannedToken {
     pub token: Token,
+    /// Inclusive UTF-8 byte offset.
+    pub start: u32,
+    /// Exclusive UTF-8 byte offset.
+    pub end: u32,
     pub line: usize,
     pub col: usize,
     pub slice: String,
@@ -164,6 +168,8 @@ pub fn lex(source: &str) -> Result<Vec<SpannedToken>, String> {
             Ok(Token::Newline) => continue,
             Ok(token) => tokens.push(SpannedToken {
                 token,
+                start: span.start as u32,
+                end: span.end as u32,
                 line,
                 col,
                 slice,
@@ -193,5 +199,18 @@ mod tests {
         assert!(tokens.iter().any(|t| matches!(t.token, Token::FatArrow)));
         assert!(tokens.iter().any(|t| matches!(t.token, Token::EqEq)));
         assert!(tokens.iter().any(|t| matches!(t.token, Token::AndAnd)));
+    }
+
+    #[test]
+    fn records_byte_offsets_for_member_field() {
+        let src = "Articles.list()";
+        let tokens = lex(src).expect("lex");
+        let list = tokens
+            .iter()
+            .find(|t| matches!(&t.token, Token::Ident(s) if s == "list"))
+            .expect("list token");
+        assert_eq!(&src[list.start as usize..list.end as usize], "list");
+        assert_eq!(list.start, 9);
+        assert_eq!(list.end, 13);
     }
 }

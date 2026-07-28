@@ -1,5 +1,5 @@
 #!/usr/bin/env silc
-# Standalone blog app: chronological home, year/month filters, grounded silclm search,
+# Standalone blog app: chronological home, silclm feed filter, grounded Q&A,
 # and admin CRUD with table-row modal edit. Thirty SilcLM-authored seeds ship with the app.
 @version("0.4.0")
 
@@ -310,8 +310,9 @@ component ArticleCard {
 }
 
 component HomePage {
-    has state Str $.year_filter = "All";
-    has state Str $.month_filter = "All";
+    has state Str $.filter_query = "";
+    has state Str $.match_ids = "*";
+    has state Bool $.filtering = false;
     has state Str $.prompt = "";
     query $.articles = Articles.list();
 
@@ -325,25 +326,31 @@ component HomePage {
             ui::stack(
                 ui::section(
                     :title("Articles"),
-                    :description("Browse chronologically, filter by year and month, or ask silclm about the live catalog.")
+                    :description("Browse chronologically, filter with silclm, or ask about the live catalog.")
                 ),
                 ui::alert(
                     :tone(info),
                     :text("Home and Admin share the articles resource. Seeds load once with stable ids; admin edits persist across restarts.")
                 ),
                 ui::section(
-                    :title("Filters"),
-                    :description("Chip-style year and month filters narrow the card feed."),
-                    ui::radio_group(
-                        :field(year_filter),
-                        :options(["All", "2024", "2025", "2026"]),
-                        :label("Year")
+                    :title("Filter with silclm"),
+                    :description("Type natural language like “jan 2026” or “june, science, long articles”."),
+                    ui::search_input(
+                        :field(filter_query),
+                        :label("Filter"),
+                        :placeholder("jan 2026 / june, science, long articles"),
+                        :context($.articles),
+                        :persona("You are a Silc blog feed filter built on silclm. Given the live article catalog in context and the user's filter request, return ONLY a JSON array of matching article id strings such as [\"article-001\",\"article-013\"]. Match on year, month, published_at, title, author, and body. Interpret fuzzy dates (jan 2026 → January 2026). Prefer precision over recall. If nothing matches, return []. No prose, no markdown."),
+                        :on(submit(on_filter))
                     ),
-                    ui::radio_group(
-                        :field(month_filter),
-                        :options(["All", "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]),
-                        :label("Month")
-                    )
+                    when $.filtering {
+                        ui::loading(:text("Filtering with silclm…"))
+                    },
+                    when $.match_ids != "*" {
+                        ui::toolbar(
+                            ui::button(:label("Clear filter"), :variant(ghost), :on(click(on_clear_filter)))
+                        )
+                    }
                 ),
                 ui::section(
                     :title("Feed"),
@@ -351,31 +358,17 @@ component HomePage {
                     when !$.articles {
                         ui::empty(:text("No articles yet."))
                     },
-                    when $.year_filter == "All" {
-                        when $.month_filter == "All" {
-                            for $.articles -> $article {
-                                ArticleCard(:article($article))
-                            }
-                        } else {
-                            for $.articles -> $article {
-                                when $article.month == $.month_filter {
-                                    ArticleCard(:article($article))
-                                }
-                            }
+                    when $.match_ids == "*" {
+                        for $.articles -> $article {
+                            ArticleCard(:article($article))
                         }
                     } else {
-                        when $.month_filter == "All" {
-                            for $.articles -> $article {
-                                when $article.year == $.year_filter {
-                                    ArticleCard(:article($article))
-                                }
-                            }
+                        when $.match_ids == "__none__" {
+                            ui::empty(:text("No articles match that filter."))
                         } else {
                             for $.articles -> $article {
-                                when $article.year == $.year_filter {
-                                    when $article.month == $.month_filter {
-                                        ArticleCard(:article($article))
-                                    }
+                                when $.match_ids.contains($article.id) {
+                                    ArticleCard(:article($article))
                                 }
                             }
                         }
@@ -383,7 +376,7 @@ component HomePage {
                 ),
                 ui::section(
                     :title("Ask about articles"),
-                    :description("Natural-language search grounded on the live article snapshot."),
+                    :description("Natural-language Q&A grounded on the live article snapshot."),
                     ui::chat(
                         :value($.prompt),
                         :context($.articles),
@@ -394,6 +387,15 @@ component HomePage {
                 )
             )
         )
+    }
+
+    method on_filter() {
+        Assistant.complete();
+    }
+
+    method on_clear_filter() {
+        $.match_ids = "*";
+        $.filter_query = "";
     }
 
     method on_send() {
@@ -428,7 +430,7 @@ component AdminPage {
             ui::stack(
                 ui::section(
                     :title("New article"),
-                    :description("Create a post. Year and month drive Home filters."),
+                    :description("Create a post. Year and month help silclm filter and browse."),
                     ui::form(:on(submit(on_create)),
                         ui::text_input(:field(title), :label("Title")),
                         ui::textarea(:field(body), :label("Body")),

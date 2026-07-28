@@ -96,3 +96,9 @@ pub struct SpannedExpr {
     pub expr: Expr,
     pub span: Span,
 }
+
+impl SpannedExpr {
+    pub fn new(expr: Expr, span: Span) -> Self {
+        Self { expr, span }
+    }
+}

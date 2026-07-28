@@ -545,14 +545,33 @@ export function HistoryPanel(props: { title?: string; items?: any[] }) {
 export function SearchInput(props: {
   value?: string;
   placeholder?: string;
+  label?: string;
+  searching?: boolean;
   onChange?: (value: string) => void;
   onSubmit?: () => void;
+  onAiSearch?: () => void;
 }) {
-  return InputField({
-    value: props.value,
-    placeholder: props.placeholder ?? "Search…",
-    onChange: props.onChange,
-  });
+  const run = props.onAiSearch ?? props.onSubmit;
+  return h(
+    Box,
+    { flexDirection: "column", gap: 1, width: "100%" },
+    props.label ? h(Text, { content: props.label, fg: "#94a3b8" }) : null,
+    h(Input, {
+      value: asText(props.value),
+      placeholder: props.placeholder ?? "Search…",
+      width: "100%",
+      onInput: (value: string) => props.onChange?.(value),
+      onChange: (value: string) => props.onChange?.(value),
+      onSubmit: () => {
+        if (!props.searching) run?.();
+      },
+    }),
+    Button({
+      label: props.searching ? "Filtering…" : "AI filter",
+      disabled: !!props.searching || !asText(props.value).trim(),
+      onClick: run,
+    })
+  );
 }
 
 export function FilterBar(props: { children?: VChild[] }, ...children: VChild[]) {

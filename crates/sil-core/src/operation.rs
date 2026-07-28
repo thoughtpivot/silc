@@ -379,7 +379,7 @@ pub fn classify_program(program: &Program) -> Result<ExecutionMode, String> {
                         namespace: Some(ns),
                         name,
                         ..
-                    } = step
+                } = step
                     {
                         if is_v1_exec_namespace(ns) && !is_executable_op(ns, name) {
                             return Err(format!(
@@ -616,6 +616,7 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
                     namespace: Some(ns),
                     name,
                     args,
+                    ..
                 } => match (ns.as_str(), name.as_str()) {
                     ("ui", "web") => {
                         saw_ui_web = true;
@@ -1168,6 +1169,7 @@ mod tests {
                                         name: "js".into(),
                                         value: "false".into(),
                                     }],
+                                    span: Default::default(),
                                 },
                                 PipelineStep::Call {
                                     namespace: Some("scrape".into()),
@@ -1176,6 +1178,7 @@ mod tests {
                                         name: "into".into(),
                                         value: "ArticlePayload".into(),
                                     }],
+                                    span: Default::default(),
                                 },
                             ],
                         },
@@ -1194,6 +1197,7 @@ mod tests {
                             ty: Some(TypeExpr::Named("ArticlePayload".into())),
                             named: false,
                             default: None,
+                            span: Default::default(),
                         }],
                         pipeline: Pipeline {
                             steps: vec![
@@ -1205,6 +1209,7 @@ mod tests {
                                     namespace: Some("tensor".into()),
                                     name: "tokenize".into(),
                                     args: vec![],
+                                    span: Default::default(),
                                 },
                                 PipelineStep::Call {
                                     namespace: Some("tensor".into()),
@@ -1213,6 +1218,7 @@ mod tests {
                                         name: "model".into(),
                                         value: "minilm-l6-v2".into(),
                                     }],
+                                    span: Default::default(),
                                 },
                             ],
                         },
@@ -1259,11 +1265,13 @@ mod tests {
                                     namespace: Some("http".into()),
                                     name: "get".into(),
                                     args: vec![],
+                                    span: Default::default(),
                                 },
                                 PipelineStep::Call {
                                     namespace: Some("html".into()),
                                     name: "extract_body".into(),
                                     args: vec![],
+                                    span: Default::default(),
                                 },
                             ],
                         },
@@ -1284,11 +1292,13 @@ mod tests {
                                     namespace: Some("tensor".into()),
                                     name: "tokenize".into(),
                                     args: vec![],
+                                    span: Default::default(),
                                 },
                                 PipelineStep::Call {
                                     namespace: Some("tensor".into()),
                                     name: "infer".into(),
                                     args: vec![],
+                                    span: Default::default(),
                                 },
                             ],
                         },

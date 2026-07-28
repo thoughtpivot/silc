@@ -93,6 +93,7 @@ fn synthesize_capability(
         ty: Some(TypeExpr::Named(contract.to_string())),
         named: false,
         default: None,
+        span: Span::default(),
     };
     match (kind, name) {
         (ResourceKind::Query, "list" | "all") => Ok((

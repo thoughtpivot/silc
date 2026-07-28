@@ -59,6 +59,8 @@ pub struct EventSpec {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ComponentSpec {
     pub name: &'static str,
+    /// One or two sentences: what the primitive renders and when to use it.
+    pub description: &'static str,
     pub props: &'static [PropSpec],
     pub slots: &'static [SlotSpec],
     pub children: ChildPolicy,
@@ -132,6 +134,7 @@ const FORM_CHILDREN: &[&str] = &[
 pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     ComponentSpec {
         name: "page",
+        description: "Root layout shell for a screen. Hosts optional `app_bar`, `side_panel`, and `footer` slots around the main content tree, and is the required root of a component `render` template.",
         props: &[],
         slots: &[
             SlotSpec {
@@ -156,6 +159,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "app_bar",
+        description: "Top application bar that shows a required title. Use it for the screen heading and brand strip that stays visible across the page.",
         props: &[PropSpec {
             name: "title",
             kind: PropKind::Expr,
@@ -168,6 +172,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "side_panel",
+        description: "Vertical navigation rail that accepts only `nav_item` children. Reach for it when a page needs persistent secondary navigation beside the main content.",
         props: &[],
         slots: &[],
         children: ChildPolicy::AnyOf(&["nav_item"]),
@@ -176,6 +181,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "nav_item",
+        description: "A single navigation entry with a label and optional route target. Mark it `:active` for the current location, or bind `:on(click)` for custom navigation handlers.",
         props: &[
             PropSpec {
                 name: "label",
@@ -200,6 +206,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "toolbar",
+        description: "Horizontal action strip that holds `button` children. Use it above tables, forms, or collections for primary and secondary actions.",
         props: &[],
         slots: &[],
         children: ChildPolicy::AnyOf(&["button"]),
@@ -208,6 +215,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "stack",
+        description: "Vertical layout container that stacks children top-to-bottom with consistent spacing. Prefer it for most form and content hierarchies on both web and terminal surfaces.",
         props: &[],
         slots: &[],
         children: ChildPolicy::Any,
@@ -216,6 +224,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "row",
+        description: "Horizontal layout container that places children side-by-side. Use it for toolbars, button groups, and compact label/value pairs.",
         props: &[],
         slots: &[],
         children: ChildPolicy::Any,
@@ -224,6 +233,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "grid",
+        description: "Two-dimensional layout container for children arranged in a responsive grid. Reach for it when a stack or row alone cannot express the desired alignment.",
         props: &[],
         slots: &[],
         children: ChildPolicy::Any,
@@ -232,6 +242,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "card",
+        description: "Surfaced content panel with optional `actions` slot. Use it to group a related block of UI so it reads as one unit on web and terminal.",
         props: &[],
         slots: &[SlotSpec {
             name: "actions",
@@ -244,6 +255,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "heading",
+        description: "Semantic title text with a required `:text` and optional heading `:level`. Use it to introduce sections without inventing custom typography primitives.",
         props: &[
             PropSpec {
                 name: "text",
@@ -263,6 +275,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "text",
+        description: "Plain body copy bound through the required `:text` prop. Prefer it for paragraphs, captions, and any non-interactive string display.",
         props: &[PropSpec {
             name: "text",
             kind: PropKind::Expr,
@@ -275,6 +288,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "form",
+        description: "Form container that groups inputs and emits a `submit` event. Place fields and action buttons inside it so enter-to-submit and validation wiring stay consistent.",
         props: &[],
         slots: &[],
         children: ChildPolicy::AnyOf(FORM_CHILDREN),
@@ -283,6 +297,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "text_input",
+        description: "Single-line text field for short values. Bind `:field` or `:value`, optionally label and placeholder it, and listen for `input` or `change` as the user types.",
         props: &[
             PropSpec {
                 name: "field",
@@ -317,6 +332,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "textarea",
+        description: "Multi-line text field for longer content such as article bodies or notes. Same binding model as `text_input`, but sized for paragraphs instead of a single line.",
         props: &[
             PropSpec {
                 name: "field",
@@ -346,6 +362,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "radio_group",
+        description: "Exclusive choice control over a closed `:options` list. Bind the selected value through `:field` or `:value` when the user must pick exactly one option.",
         props: &[
             PropSpec {
                 name: "field",
@@ -380,6 +397,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "select",
+        description: "Dropdown choice control over a closed `:options` list. Prefer it over radio groups when the option set is long or screen space is tight.",
         props: &[
             PropSpec {
                 name: "field",
@@ -419,6 +437,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "checkbox",
+        description: "Boolean toggle with a required visible label. Use it for independent on/off settings that are not mutually exclusive with siblings.",
         props: &[
             PropSpec {
                 name: "field",
@@ -448,6 +467,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "switch",
+        description: "Boolean on/off control styled as a switch, with a required label. Prefer it for settings that feel like enabling a mode rather than checking a box.",
         props: &[
             PropSpec {
                 name: "field",
@@ -477,6 +497,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "field",
+        description: "Labeled wrapper that can show hint and error text around nested form children. Use it when an input needs surrounding help or validation chrome.",
         props: &[
             PropSpec {
                 name: "label",
@@ -501,6 +522,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "button",
+        description: "Clickable action control with a required label and optional variant/size. Set `:submit` inside forms, or bind `:on(click)` for ordinary handler dispatch.",
         props: &[
             PropSpec {
                 name: "label",
@@ -540,6 +562,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "chat",
+        description: "Conversational composer that collects a message and emits `send`. Optional session, persona, loading, and error props wire it into LLM or agent flows.",
         props: &[
             PropSpec {
                 name: "field",
@@ -594,6 +617,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "chat_history",
+        description: "Scrollable transcript of prior chat turns. Bind `:items` to message history and optionally make the panel `:collapsible` when space is scarce.",
         props: &[
             PropSpec {
                 name: "title",
@@ -618,6 +642,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "search_input",
+        description: "Search-oriented text field that emits `input` while typing and `submit` on enter. Optional persona/context props support scored or agent-assisted search UIs.",
         props: &[
             PropSpec {
                 name: "field",
@@ -639,6 +664,16 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
                 kind: PropKind::Expr,
                 required: false,
             },
+            PropSpec {
+                name: "context",
+                kind: PropKind::Expr,
+                required: false,
+            },
+            PropSpec {
+                name: "persona",
+                kind: PropKind::Expr,
+                required: false,
+            },
         ],
         slots: &[],
         children: ChildPolicy::None,
@@ -647,6 +682,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "filter_bar",
+        description: "Horizontal filter strip that hosts search inputs, buttons, and text fields. Place it above collections or tables when users need to narrow a result set.",
         props: &[],
         slots: &[],
         children: ChildPolicy::AnyOf(&["search_input", "button", "text_input"]),
@@ -655,6 +691,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "collection",
+        description: "Repeating container driven by a required `:items` expression. Render children once per item, and supply `:empty_text` for the zero-results state.",
         props: &[
             PropSpec {
                 name: "items",
@@ -674,6 +711,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "list",
+        description: "Simple vertical list of items, optionally bound through `:items`. Prefer it for lightweight enumerations where a full table would be overkill.",
         props: &[PropSpec {
             name: "items",
             kind: PropKind::Expr,
@@ -686,6 +724,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "table",
+        description: "Renders a collection of records as rows and columns, one column per `:columns` entry. Use it for tabular data where users scan and compare across fields; it degrades to an aligned text grid on the terminal surface.",
         props: &[
             PropSpec {
                 name: "rows",
@@ -745,6 +784,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "badge",
+        description: "Compact status chip with required text and optional closed `:tone`. Use it to tag rows, cards, or headings with a short categorical label.",
         props: &[
             PropSpec {
                 name: "text",
@@ -764,6 +804,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "alert",
+        description: "Prominent inline notice with required text and optional title, tone, and dismissibility. Reach for it for success, warning, or error feedback that must stay visible.",
         props: &[
             PropSpec {
                 name: "text",
@@ -793,6 +834,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "divider",
+        description: "Visual separator between sections, optionally labeled. Use it to break dense stacks without introducing a full new section heading.",
         props: &[PropSpec {
             name: "label",
             kind: PropKind::Expr,
@@ -805,6 +847,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "section",
+        description: "Titled content region with optional description and arbitrary children. Prefer it when a card is too heavy but the block still needs a clear heading.",
         props: &[
             PropSpec {
                 name: "title",
@@ -824,6 +867,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "footer",
+        description: "Bottom-of-page region for secondary links, legal copy, or actions. Usually hosted in the page `footer` slot rather than inline in the main stack.",
         props: &[],
         slots: &[],
         children: ChildPolicy::Any,
@@ -832,6 +876,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "description_list",
+        description: "Key/value presentation driven by a required `:items` expression. Use it for read-only detail views such as record summaries.",
         props: &[PropSpec {
             name: "items",
             kind: PropKind::Expr,
@@ -844,6 +889,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "tabs",
+        description: "Tabbed container whose selected tab is bound through `:field` or `:value`. Children must be `tab` nodes; a `change` event fires when the selection moves.",
         props: &[
             PropSpec {
                 name: "field",
@@ -863,6 +909,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "tab",
+        description: "One pane inside a `tabs` parent, identified by required `:label` and `:value`. The value is the tab identity compared against the parent selection, not a form input.",
         props: &[
             PropSpec {
                 name: "label",
@@ -882,6 +929,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "dialog",
+        description: "Modal overlay controlled by a required `:open` expression. Use `confirm` and `cancel` events for affirmative and dismissive actions around focused tasks.",
         props: &[
             PropSpec {
                 name: "open",
@@ -901,6 +949,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "loading",
+        description: "In-progress placeholder with optional status text. Show it while a query, mutation, or agent call is outstanding.",
         props: &[PropSpec {
             name: "text",
             kind: PropKind::Expr,
@@ -913,6 +962,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "empty",
+        description: "Zero-results placeholder with optional explanatory text. Pair it with collections, lists, and tables when there is nothing to render yet.",
         props: &[PropSpec {
             name: "text",
             kind: PropKind::Expr,
@@ -932,6 +982,214 @@ pub fn lookup_component(name: &str) -> Option<&'static ComponentSpec> {
 pub fn catalog_component_names() -> Vec<&'static str> {
     UI_COMPONENT_CATALOG.iter().map(|c| c.name).collect()
 }
+
+/// Documentation for a prop on a builtin UI primitive.
+///
+/// Checks `(component, prop)` overrides first, then a shared vocabulary keyed by
+/// prop name. Returns `None` only when the prop is unknown to the catalog.
+pub fn prop_doc(component: &str, prop: &str) -> Option<&'static str> {
+    for (comp, name, doc) in PROP_DOC_OVERRIDES {
+        if *comp == component && *name == prop {
+            return Some(doc);
+        }
+    }
+    if let Some(doc) = shared_prop_doc(prop) {
+        return Some(doc);
+    }
+    // Unknown to catalog — still allow a soft fallback for hover UX.
+    if lookup_component(component)
+        .map(|spec| spec.props.iter().any(|p| p.name == prop))
+        .unwrap_or(false)
+    {
+        return Some("Prop on this UI primitive. Consult the component catalog line for type and requiredness.");
+    }
+    None
+}
+
+/// Documentation for an event on a builtin UI primitive.
+pub fn event_doc(component: &str, event: &str) -> Option<&'static str> {
+    for (comp, name, doc) in EVENT_DOC_OVERRIDES {
+        if *comp == component && *name == event {
+            return Some(doc);
+        }
+    }
+    if let Some(doc) = shared_event_doc(event) {
+        return Some(doc);
+    }
+    if lookup_component(component)
+        .map(|spec| spec.events.iter().any(|e| e.name == event))
+        .unwrap_or(false)
+    {
+        return Some("Event emitted by this UI primitive. Bind it with `:on(event(handler))`.");
+    }
+    None
+}
+
+fn shared_prop_doc(prop: &str) -> Option<&'static str> {
+    Some(match prop {
+        "label" => "Visible label shown beside or above the control. Prefer a short noun phrase that names the value the user is editing or the action they will take.",
+        "field" => "Binds this control to a named form or state field. The runtime keeps the control's value in sync with that field across renders.",
+        "value" => "Controlled value for the control. Pass an expression when you want to drive the displayed value from component state or a query result.",
+        "text" => "Display text rendered by the primitive. This is content, not a form binding — use `:field` or `:value` when the user can edit the string.",
+        "title" => "Short heading text for the chrome around this primitive. Keep it brief so it remains readable on both web and terminal surfaces.",
+        "placeholder" => "Hint text shown when the control is empty. It disappears as soon as the user enters a value and is not submitted with the form.",
+        "disabled" => "When set, the control ignores interaction and typically renders with muted chrome. Use it while a mutation is in flight or the action is unavailable.",
+        "variant" => "Closed visual style for the control. Allowed tokens are `primary`, `secondary`, `destructive`, and `ghost`.",
+        "tone" => "Closed semantic color token for status chrome. Allowed values are `default`, `muted`, `info`, `success`, `warning`, and `danger`.",
+        "size" => "Closed size token for the control. Allowed values are `sm`, `md`, and `lg`.",
+        "checked" => "Boolean expression for whether the control is currently on. Bind it to state when the toggle should round-trip through handlers.",
+        "active" => "Marks this item as the current or selected entry. Use it for navigation highlighting or pressed-button state.",
+        "options" => "Closed list of string choices the user may pick from. Prefer a stable order so web and terminal renders stay aligned.",
+        "items" => "Collection expression that drives repeated or list content. Each element becomes one rendered row, message, or description entry.",
+        "empty_text" => "Message shown when the bound collection has no rows. Use it so empty states stay intentional instead of rendering a blank panel.",
+        "rows" => "Row data for a table. Usually an array of contract values from a resource query or local collection.",
+        "columns" => "Column descriptors that name which fields appear and in what order. One column entry becomes one table heading and cell binding.",
+        "sortable" => "When set, column headers become clickable sort controls. Sorting is client-side over the currently loaded rows.",
+        "searchable" => "When set, the table exposes a search box that filters visible rows. Pair with `:filter_field` when the filter should bind to named state.",
+        "selectable" => "When set, rows can be selected and the table emits a `select` event. Use it for bulk actions or detail drill-down.",
+        "dense" => "Tightens row and cell spacing for information-dense tables. Prefer the default spacing when the table is the page's primary focus.",
+        "filter_field" => "Named state or form field that holds the active table filter string. The table reads this field when `:searchable` filtering is enabled.",
+        "filter_column" => "Optional column key that scopes the table filter to a single field. Omit it to search across all columns.",
+        "filter_all" => "Expression that forces the table to show every row regardless of the current filter. Useful for an explicit \"clear filters\" control.",
+        "submit" => "Marks the button as the form's submit action. Pressing it (or Enter inside the form) fires the surrounding `form`'s `submit` event.",
+        "to" => "Route or path target for navigation. When set, activating the item navigates without needing a custom click handler.",
+        "level" => "Heading rank such as `h1`–`h3`. Choose the level that matches document structure rather than visual size alone.",
+        "hint" => "Secondary help text shown under a field label. Use it for format examples or soft constraints that are not validation errors.",
+        "error" => "Validation or failure message associated with this control. Prefer binding it only when an error is present so the chrome stays quiet otherwise.",
+        "dismissible" => "When set, the alert shows a dismiss control and can emit `dismiss`. Use it for transient notices the user may clear.",
+        "description" => "Supporting copy under a section title. Keep it to one or two sentences that explain why the section exists.",
+        "open" => "Boolean expression that controls whether the dialog is visible. Drive it from component state so confirm/cancel handlers can close it.",
+        "collapsible" => "When set, the panel can collapse to reclaim vertical space. Useful for secondary history or detail panes.",
+        "session" => "Opaque session identifier for a conversational flow. Pass it so successive sends stay attached to the same chat context.",
+        "loading" => "Expression that is truthy while an async operation is in flight. The control can show busy chrome until it clears.",
+        "context" => "Extra context blob supplied to scored or agent-assisted controls. Use it for embeddings, filters, or prior turns the model should see.",
+        "persona" => "Named persona or agent identity that shapes how an assisted control behaves. Keep personas stable so scores and completions stay comparable.",
+        _ => return None,
+    })
+}
+
+fn shared_event_doc(event: &str) -> Option<&'static str> {
+    Some(match event {
+        "click" => "Fires when the user activates the control. Bind a handler with `:on(click(handler))` for navigation or mutations.",
+        "change" => "Fires when the committed value changes (blur, toggle, or selection). Prefer `change` over `input` when you only care about finalized edits.",
+        "input" => "Fires on each keystroke or incremental edit. Use it for live filtering and search-as-you-type; prefer `change` for commits.",
+        "submit" => "Fires when the user submits the form or search. Typically bound to a mutation or navigation handler.",
+        "send" => "Fires when the user sends a chat message. The handler usually clears the composer and appends to history.",
+        "select" => "Fires when the user selects a row or item. The handler receives enough identity to open a detail view or stage a bulk action.",
+        "dismiss" => "Fires when the user dismisses an alert or notice. Clear the backing state so the alert does not immediately reappear.",
+        "confirm" => "Fires when the user confirms a dialog. Perform the destructive or committing action, then set `:open` to false.",
+        "cancel" => "Fires when the user cancels a dialog. Leave data unchanged and set `:open` to false.",
+        _ => return None,
+    })
+}
+
+/// Props whose meaning diverges from the shared vocabulary on a specific component.
+const PROP_DOC_OVERRIDES: &[(&str, &str, &str)] = &[
+    (
+        "tab",
+        "value",
+        "Stable identity for this tab pane. Compared against the parent `tabs` selection; it is not a form field value.",
+    ),
+    (
+        "tabs",
+        "value",
+        "Currently selected tab identity. Bind it to state so changing tabs round-trips through a `change` handler.",
+    ),
+    (
+        "tabs",
+        "field",
+        "Named state field that stores the selected tab identity. Prefer this over `:value` when the selection should participate in form-like state.",
+    ),
+    (
+        "chat_history",
+        "items",
+        "Ordered transcript of chat turns to render. Each item is typically a message contract with role and text fields.",
+    ),
+    (
+        "list",
+        "items",
+        "Optional collection driving the list rows. When omitted, children alone define the list content.",
+    ),
+    (
+        "collection",
+        "items",
+        "Required collection expression. The collection repeats its child template once per element.",
+    ),
+    (
+        "description_list",
+        "items",
+        "Required key/value pairs to render as a description list. Use contract fields or tuples the runtime can label.",
+    ),
+    (
+        "button",
+        "active",
+        "Expression that renders the button in a pressed/selected visual state. Distinct from `:disabled`, which blocks interaction entirely.",
+    ),
+    (
+        "nav_item",
+        "active",
+        "Flag marking this nav entry as the current location. Keeps the side panel highlight in sync with the active route.",
+    ),
+    (
+        "chat",
+        "value",
+        "Controlled composer text for the chat input. Bind it to state when the handler needs to clear or rewrite the draft after `send`.",
+    ),
+    (
+        "chat",
+        "loading",
+        "Truthy while a reply is outstanding. The composer typically disables send and shows busy chrome until it clears.",
+    ),
+    (
+        "loading",
+        "text",
+        "Optional status copy shown beside the busy indicator. Prefer a short phrase such as \"Loading articles…\".",
+    ),
+    (
+        "empty",
+        "text",
+        "Optional explanation shown in the empty state. Tell the user what is missing and, when useful, what action fills it.",
+    ),
+];
+
+/// Events whose meaning is specialized on a specific component.
+const EVENT_DOC_OVERRIDES: &[(&str, &str, &str)] = &[
+    (
+        "form",
+        "submit",
+        "Fires when the form is submitted via a `:submit` button or Enter in a field. Run validation and mutations here.",
+    ),
+    (
+        "search_input",
+        "submit",
+        "Fires when the user presses Enter in the search field. Use it to commit the query; use `input` for live filtering.",
+    ),
+    (
+        "table",
+        "select",
+        "Fires when a selectable row is chosen. Handlers typically open a detail route or stage the row for a mutation.",
+    ),
+    (
+        "dialog",
+        "confirm",
+        "Fires on the affirmative dialog action. Perform the work, then close by setting the bound `:open` expression false.",
+    ),
+    (
+        "dialog",
+        "cancel",
+        "Fires when the dialog is dismissed without confirming. Leave underlying data unchanged and close the dialog.",
+    ),
+    (
+        "chat",
+        "send",
+        "Fires when the user sends the current composer value. Append to history, call the agent/LLM path, and clear the draft.",
+    ),
+    (
+        "tabs",
+        "change",
+        "Fires when the selected tab identity changes. Update the bound `:field`/`:value` state so the active pane stays in sync.",
+    ),
+];
 
 /// Canonical one-line API reference for docs / AGENTS.md (kept in sync by tests).
 pub fn format_component_catalog_line(spec: &ComponentSpec) -> String {
@@ -1121,6 +1379,8 @@ mod tests {
     fn node(component: &str, props: Vec<(&str, Expr)>) -> UiNode {
         UiNode {
             component: component.into(),
+            component_span: Default::default(),
+            prop_spans: vec![],
             props: props
                 .into_iter()
                 .map(|(name, expr)| (name.to_string(), expr))
@@ -1180,6 +1440,51 @@ mod tests {
             let line = format_component_catalog_line(spec);
             assert!(line.starts_with(&format!("- `ui::{}` — ", spec.name)));
             assert!(line.contains("surfaces: web+terminal"));
+        }
+    }
+
+    #[test]
+    fn every_catalog_entry_has_nonempty_description() {
+        assert_eq!(UI_COMPONENT_CATALOG.len(), 38);
+        for spec in UI_COMPONENT_CATALOG {
+            assert!(
+                !spec.description.trim().is_empty(),
+                "ui::{} missing description",
+                spec.name
+            );
+            assert!(
+                spec.description.contains('.') || spec.description.len() > 40,
+                "ui::{} description looks too short: {}",
+                spec.name,
+                spec.description
+            );
+        }
+    }
+
+    #[test]
+    fn every_catalog_prop_and_event_has_docs() {
+        for spec in UI_COMPONENT_CATALOG {
+            for prop in spec.props {
+                let doc = prop_doc(spec.name, prop.name)
+                    .unwrap_or_else(|| panic!("missing prop_doc for ui::{}:{}", spec.name, prop.name));
+                assert!(
+                    doc.len() > 20,
+                    "prop_doc for ui::{}:{} too short",
+                    spec.name,
+                    prop.name
+                );
+            }
+            for event in spec.events {
+                let doc = event_doc(spec.name, event.name).unwrap_or_else(|| {
+                    panic!("missing event_doc for ui::{}:{}", spec.name, event.name)
+                });
+                assert!(
+                    doc.len() > 20,
+                    "event_doc for ui::{}:{} too short",
+                    spec.name,
+                    event.name
+                );
+            }
         }
     }
 

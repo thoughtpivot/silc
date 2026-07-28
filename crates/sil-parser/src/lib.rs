@@ -24,12 +24,18 @@ impl std::fmt::Display for ParseError {
 impl std::error::Error for ParseError {}
 
 pub fn parse(source: &str) -> Result<Program, ParseError> {
+    Ok(parse_with_tokens(source)?.0)
+}
+
+/// Parse a Silc source file, returning both the program AST and the spanned token stream.
+pub fn parse_with_tokens(source: &str) -> Result<(Program, Vec<SpannedToken>), ParseError> {
     let tokens = lex(source).map_err(|message| ParseError {
         message,
         line: 1,
         col: 1,
     })?;
-    Parser::new(tokens).parse_program()
+    let program = Parser::new(tokens.clone()).parse_program()?;
+    Ok((program, tokens))
 }
 
 enum ClassKind {
@@ -135,7 +141,7 @@ impl Parser {
             name,
             base,
             predicate,
-            span: start,
+            span: self.finish_span(start),
         })
     }
 
@@ -217,18 +223,21 @@ impl Parser {
 
         match kind {
             ClassKind::Component => {
-                let component = self.parse_component_body(name, start)?;
+                let mut component = self.parse_component_body(name, start)?;
                 self.expect_simple(Token::RBrace, "`}` after component")?;
+                component.span = self.finish_span(start);
                 program.components.push(component);
             }
             ClassKind::Resource => {
-                let resource = self.parse_resource_body(name, start, resource_contract)?;
+                let mut resource = self.parse_resource_body(name, start, resource_contract)?;
                 self.expect_simple(Token::RBrace, "`}` after resource")?;
+                resource.span = self.finish_span(start);
                 program.resources.push(resource);
             }
             ClassKind::App => {
-                let app = self.parse_app_body(name, start)?;
+                let mut app = self.parse_app_body(name, start)?;
                 self.expect_simple(Token::RBrace, "`}` after app")?;
+                app.span = self.finish_span(start);
                 program.apps.push(app);
             }
             ClassKind::Contract => {
@@ -244,7 +253,7 @@ impl Parser {
                 program.contracts.push(Contract {
                     name,
                     fields,
-                    span: start,
+                    span: self.finish_span(start),
                 });
             }
             ClassKind::Module(module_kind) => {
@@ -265,7 +274,7 @@ impl Parser {
                     traits,
                     fields,
                     methods,
-                    span: start,
+                    span: self.finish_span(start),
                 });
             }
         }
@@ -283,7 +292,7 @@ impl Parser {
         let ty = self.parse_type()?;
         self.expect_simple(Token::Dollar, "`$` in attribute")?;
         self.expect_simple(Token::Dot, "`.` in attribute")?;
-        let name = self.expect_ident("attribute name")?;
+        let (name, name_span) = self.expect_ident_spanned("attribute name")?;
         let default = if matches!(self.peek(), Some(Token::Eq)) {
             self.advance();
             Some(self.collect_until_semi()?)
@@ -296,6 +305,7 @@ impl Parser {
             ty,
             default,
             is_state,
+            span: name_span,
         })
     }
 
@@ -386,11 +396,11 @@ impl Parser {
                     self.advance();
                     self.expect_simple(Token::Dollar, "`$` in query binding")?;
                     self.expect_simple(Token::Dot, "`.` in query binding")?;
-                    let qname = self.expect_ident("query name")?;
+                    let (qname, name_span) = self.expect_ident_spanned("query name")?;
                     self.expect_simple(Token::Eq, "`=` in query binding")?;
-                    let resource = self.expect_ident("resource name")?;
+                    let (resource, resource_span) = self.expect_ident_spanned("resource name")?;
                     self.expect_simple(Token::Dot, "`.` before resource method")?;
-                    let method = self.expect_ident("resource method")?;
+                    let (method, method_span) = self.expect_ident_spanned("resource method")?;
                     let mut args = Vec::new();
                     if matches!(self.peek(), Some(Token::LParen)) {
                         self.advance();
@@ -413,6 +423,9 @@ impl Parser {
                         method,
                         args,
                         span,
+                        name_span,
+                        resource_span,
+                        method_span,
                     });
                 }
                 Some(Token::Method) => {
@@ -467,7 +480,7 @@ impl Parser {
             methods,
             handlers,
             render,
-            span: start,
+            span: self.finish_span(start),
         })
     }
 
@@ -564,12 +577,14 @@ impl Parser {
             return Err(self.error_here("expected `ui`"));
         }
         self.expect_simple(Token::DoubleColon, "`::` after ui")?;
-        let component = self.expect_ident("component name")?;
+        let (component, component_span) = self.expect_ident_spanned("component name")?;
         self.expect_simple(Token::LParen, "`(` after component")?;
-        let (props, events, slots, children) = self.parse_node_args()?;
+        let (props, prop_spans, events, slots, children) = self.parse_node_args()?;
         Ok(UiNode {
             component,
+            component_span,
             props,
+            prop_spans,
             events,
             slots,
             children,
@@ -579,12 +594,14 @@ impl Parser {
 
     fn parse_component_call(&mut self) -> Result<UiNode, ParseError> {
         let start = self.current_span();
-        let component = self.expect_ident("component name")?;
+        let (component, component_span) = self.expect_ident_spanned("component name")?;
         self.expect_simple(Token::LParen, "`(` after component")?;
-        let (props, events, slots, children) = self.parse_node_args()?;
+        let (props, prop_spans, events, slots, children) = self.parse_node_args()?;
         Ok(UiNode {
             component,
+            component_span,
             props,
+            prop_spans,
             events,
             slots,
             children,
@@ -597,6 +614,7 @@ impl Parser {
     ) -> Result<
         (
             Vec<(String, Expr)>,
+            Vec<Span>,
             Vec<EventBinding>,
             Vec<(String, UiTemplate)>,
             Vec<UiTemplate>,
@@ -604,6 +622,7 @@ impl Parser {
         ParseError,
     > {
         let mut props = Vec::new();
+        let mut prop_spans = Vec::new();
         let mut events = Vec::new();
         let mut slots = Vec::new();
         let mut children = Vec::new();
@@ -615,7 +634,7 @@ impl Parser {
             }
             if matches!(self.peek(), Some(Token::Colon)) {
                 self.advance();
-                let key = self.expect_ident("prop/slot/event name")?;
+                let (key, key_span) = self.expect_ident_spanned("prop/slot/event name")?;
                 if key == "on" {
                     // :on(click(handler)) or :on(add => handler)
                     self.expect_simple(Token::LParen, "`(` after :on")?;
@@ -652,21 +671,24 @@ impl Parser {
                         // bare flag :submit()
                         self.advance();
                         props.push((key, Expr::Bool(true)));
+                        prop_spans.push(key_span);
                     } else {
                         let expr = self.parse_expr()?;
                         self.expect_simple(Token::RParen, "`)` after prop")?;
                         props.push((key, expr));
+                        prop_spans.push(key_span);
                     }
                 } else {
                     // bare flag :submit
                     props.push((key, Expr::Bool(true)));
+                    prop_spans.push(key_span);
                 }
             } else {
                 children.push(self.parse_template_item()?);
             }
         }
         self.expect_simple(Token::RParen, "`)` after component args")?;
-        Ok((props, events, slots, children))
+        Ok((props, prop_spans, events, slots, children))
     }
 
     fn parse_handler_method(&mut self) -> Result<Handler, ParseError> {
@@ -689,7 +711,7 @@ impl Parser {
             name,
             params,
             body,
-            span: start,
+            span: self.finish_span(start),
         })
     }
 
@@ -796,7 +818,7 @@ impl Parser {
             contract: Some(contract),
             table: None,
             seeds,
-            span: start,
+            span: self.finish_span(start),
         })
     }
 
@@ -900,7 +922,7 @@ impl Parser {
             name,
             routes,
             serve: None,
-            span: start,
+            span: self.finish_span(start),
         })
     }
 
@@ -1242,8 +1264,21 @@ impl Parser {
     }
 
     fn expect_ident(&mut self, what: &str) -> Result<String, ParseError> {
+        Ok(self.expect_ident_spanned(what)?.0)
+    }
+
+    fn expect_ident_spanned(&mut self, what: &str) -> Result<(String, Span), ParseError> {
+        let span = self.current_span();
         match self.advance_token()? {
-            Token::Ident(s) => Ok(s),
+            Token::Ident(s) => {
+                // Prefer the token's full byte span when available.
+                let span = self
+                    .tokens
+                    .get(self.pos.saturating_sub(1))
+                    .map(|t| Span::new(t.start, t.end, t.line, t.col))
+                    .unwrap_or(span);
+                Ok((s, span))
+            }
             _ => Err(self.error_here(&format!("expected {what}"))),
         }
     }
@@ -1251,11 +1286,22 @@ impl Parser {
     fn current_span(&self) -> Span {
         self.tokens
             .get(self.pos)
-            .map(|t| Span {
-                line: t.line,
-                col: t.col,
-            })
+            .map(|t| Span::new(t.start, t.end, t.line, t.col))
             .unwrap_or_default()
+    }
+
+    fn last_span(&self) -> Span {
+        if self.pos == 0 {
+            return Span::default();
+        }
+        self.tokens
+            .get(self.pos - 1)
+            .map(|t| Span::new(t.start, t.end, t.line, t.col))
+            .unwrap_or_default()
+    }
+
+    fn finish_span(&self, start: Span) -> Span {
+        Span::cover(start, self.last_span())
     }
 
     fn error_here(&self, message: &str) -> ParseError {
@@ -1475,11 +1521,17 @@ fn parse_params(tokens: &[SpannedToken]) -> Vec<Param> {
             idx += 1;
         }
         if !name.is_empty() {
+            let span = part
+                .iter()
+                .find(|t| matches!(&t.token, Token::Ident(id) if id == &name))
+                .map(|t| Span::new(t.start, t.end, t.line, t.col))
+                .unwrap_or_default();
             params.push(Param {
                 name,
                 ty,
                 named,
                 default,
+                span,
             });
         }
     }
@@ -1522,10 +1574,15 @@ fn parse_step(tokens: &[SpannedToken]) -> Result<PipelineStep, String> {
                 } else {
                     vec![]
                 };
+                let span = Span::cover(
+                    Span::new(tokens[0].start, tokens[0].end, tokens[0].line, tokens[0].col),
+                    Span::new(tokens[2].start, tokens[2].end, tokens[2].line, tokens[2].col),
+                );
                 return Ok(PipelineStep::Call {
                     namespace: Some(ns),
                     name,
                     args,
+                    span,
                 });
             }
         }
@@ -1536,10 +1593,12 @@ fn parse_step(tokens: &[SpannedToken]) -> Result<PipelineStep, String> {
         // name(...) without namespace
         if matches!(tokens.get(1).map(|t| &t.token), Some(Token::LParen)) {
             let args = parse_call_args(&tokens[2..])?;
+            let span = Span::new(tokens[0].start, tokens[0].end, tokens[0].line, tokens[0].col);
             return Ok(PipelineStep::Call {
                 namespace: None,
                 name: ns,
                 args,
+                span,
             });
         }
         return Ok(PipelineStep::Name(ns));

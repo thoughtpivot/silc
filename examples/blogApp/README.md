@@ -2,7 +2,7 @@
 
 Standalone Silc 0.4.0 blog application:
 
-- **Home** — chronological article cards, year/month chip filters, and grounded **silclm** search
+- **Home** — chronological article cards, **silclm** natural-language feed filter, and grounded Q&A
 - **Admin** — create form plus searchable table; row click opens an edit/delete modal
 - **Seeds** — thirty short SilcLM-authored articles declared as idempotent `seed` rows
 

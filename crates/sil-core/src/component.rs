@@ -25,6 +25,9 @@ pub struct QueryBinding {
     pub method: String,
     pub args: Vec<Expr>,
     pub span: Span,
+    pub name_span: Span,
+    pub resource_span: Span,
+    pub method_span: Span,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -63,7 +66,10 @@ pub struct EventBinding {
 pub struct UiNode {
     /// Builtin `page`/`button` or author component name `ProductCard`.
     pub component: String,
+    pub component_span: Span,
     pub props: Vec<(String, Expr)>,
+    /// Prop name spans aligned with `props` (same length).
+    pub prop_spans: Vec<Span>,
     pub events: Vec<EventBinding>,
     pub slots: Vec<(String, UiTemplate)>,
     pub children: Vec<UiTemplate>,

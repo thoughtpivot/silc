@@ -78,8 +78,14 @@ fn blog_app_seeds_admin_modal_and_surfaces() {
         "missing table select wiring"
     );
     assert!(app.contains("<Dialog open={dialog_open}"), "missing dialog");
-    assert!(app.contains("year_filter"), "missing year filter");
-    assert!(app.contains("month_filter"), "missing month filter");
+    assert!(
+        app.contains("__filterComplete") && app.contains("filter_query"),
+        "missing silclm feed filter"
+    );
+    assert!(
+        !app.contains("year_filter") && !app.contains("month_filter"),
+        "chip year/month filters should be gone"
+    );
     assert!(
         app.contains("__chatComplete") || app.contains("/complete"),
         "missing chat"

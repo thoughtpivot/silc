@@ -1,9 +1,9 @@
 # Silc Language (VS Code / Cursor)
 
-Native TextMate grammar for `.silc` sources. Replaces the temporary Raku
-(`source.perl.6`) association, which left Silc's declaration keywords —
-`contract`, `component`, `resource`, `app`, `processor`, `emit`, `seed`,
-`route` — and `ui::` calls and `:colon(pairs)` completely uncolored.
+Native TextMate grammar plus a Rust language server (`sil-lsp`) for `.silc`
+sources. Replaces the temporary Raku (`source.perl.6`) association and adds
+semantic hover for Silc-specific primitives, resource methods, contracts,
+components, and more.
 
 ## Install
 
@@ -11,12 +11,47 @@ Native TextMate grammar for `.silc` sources. Replaces the temporary Raku
 ./editors/vscode-silc/install.sh
 ```
 
-The script packages the folder as a VSIX and installs it with the `cursor`
-CLI (falling back to `code`). Reload the window afterwards via
-`Developer: Reload Window`. Set `SILC_EDITOR_CLI` to override CLI detection.
+The script:
 
-Confirm it took effect by opening any `.silc` file and checking that the
-language indicator in the status bar reads **Silc**.
+1. Builds `sil-lsp` in release mode
+2. Compiles the TypeScript language client
+3. Bundles a host-platform server binary into the VSIX
+4. Installs the extension with the `cursor` CLI (falling back to `code`)
+
+Reload the window afterwards via **Developer: Reload Window**. Set
+`SILC_EDITOR_CLI` to override CLI detection.
+
+Confirm it took effect by opening any `.silc` file — the language indicator
+should read **Silc**, and hovering symbols should show Markdown tooltips.
+
+## Hover coverage
+
+Hover works on:
+
+| Target | Example |
+| --- | --- |
+| Resource methods | `Articles.list()` |
+| Query bindings | `query $.articles = …` |
+| Contracts / fields | `Article`, `$article.title` |
+| Components / props / state / handlers | `AdminPage`, `$.q`, parameters |
+| UI primitives & props | `ui::table`, `:sortable` |
+| Executable ops | `llm::complete`, `scrape::page` |
+| Keywords, operators, builtin types | `query`, `==>`, `Str` |
+
+## Development
+
+```bash
+# Build the language server
+cargo build -p sil-lsp --release
+
+# Compile the client
+cd editors/vscode-silc && npm install && npm run compile
+```
+
+Point the editor at a local binary without reinstalling:
+
+- Setting: `silc.languageServerPath`
+- Example: `/absolute/path/to/silc/target/release/sil-lsp`
 
 ## What is highlighted
 
@@ -38,5 +73,6 @@ language indicator in the status bar reads **Silc**.
 
 Keywords must stay in sync with the lexer in
 `crates/sil-lexer/src/lib.rs` and the builtin type list in
-`crates/sil-core/src/program.rs`. Bump `version` in `package.json` and
-re-run `install.sh` after editing the grammar.
+`crates/sil-core/src/program.rs`. Hover docs for keywords/types live in
+`crates/sil-ide/src/docs.rs`. Bump `version` in `package.json` and re-run
+`install.sh` after editing the grammar or client.

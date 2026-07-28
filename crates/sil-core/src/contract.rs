@@ -133,6 +133,7 @@ pub struct Field {
     pub ty: TypeExpr,
     pub default: Option<String>,
     pub is_state: bool,
+    pub span: Span,
 }
 
 impl Field {
@@ -142,6 +143,7 @@ impl Field {
             ty,
             default: None,
             is_state: false,
+            span: Span::default(),
         }
     }
 }

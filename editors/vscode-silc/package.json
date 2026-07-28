@@ -1,8 +1,8 @@
 {
   "name": "silc-language",
   "displayName": "Silc Language",
-  "description": "Syntax highlighting for Silc (.silc) intent-native source files.",
-  "version": "0.1.0",
+  "description": "Syntax highlighting and semantic hover for Silc (.silc) intent-native source files.",
+  "version": "0.2.0",
   "publisher": "thoughtpivot",
   "license": "MIT",
   "engines": {
@@ -10,6 +10,10 @@
   },
   "categories": [
     "Programming Languages"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onLanguage:silc"
   ],
   "contributes": {
     "languages": [
@@ -32,6 +36,28 @@
         "scopeName": "source.silc",
         "path": "./syntaxes/silc.tmLanguage.json"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Silc",
+      "properties": {
+        "silc.languageServerPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the sil-lsp binary. When empty, the extension uses the bundled server or a binary on PATH."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.75.0",
+    "typescript": "^5.3.3"
   }
 }

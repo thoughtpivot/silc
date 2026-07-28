@@ -28,7 +28,7 @@ pub use component::{
 };
 pub use constraint::TraitArg;
 pub use contract::{Contract, Field, Subset, SubsetPredicate};
-pub use expr::{BinOp, Expr, InterpPart, UnaryOp};
+pub use expr::{BinOp, Expr, InterpPart, SpannedExpr, UnaryOp};
 pub use model_catalog::{
     is_known_embedding_model_id, is_known_model_id, lookup_embedding_model, lookup_model,
     validate_embedding_model_id, validate_model_id, EmbeddingModelCatalogEntry, ModelArtifact,
@@ -53,9 +53,9 @@ pub use scrape_catalog::{
     JS_MODES, MAX_SITE_DEPTH,
 };
 pub use target::Target;
-pub use types::{Span, TypeExpr};
+pub use types::{lsp_to_offset, offset_to_lsp, Span, TypeExpr};
 pub use ui::{
-    catalog_component_names, format_component_catalog_line, lookup_component,
+    catalog_component_names, event_doc, format_component_catalog_line, lookup_component, prop_doc,
     validate_builtin_node, validate_template, ChildPolicy, ComponentSpec, EventSpec, PropKind,
     PropSpec, SlotSpec, Surface, UI_COMPONENT_CATALOG,
 };
@@ -135,11 +135,13 @@ mod tests {
                                     namespace: Some("http".into()),
                                     name: "get".into(),
                                     args: vec![],
+                                    span: Default::default(),
                                 },
                                 PipelineStep::Call {
                                     namespace: Some("html".into()),
                                     name: "extract_body".into(),
                                     args: vec![],
+                                    span: Default::default(),
                                 },
                                 PipelineStep::Name("ArticlePayload".into()),
                             ],
@@ -161,6 +163,7 @@ mod tests {
                                     namespace: Some("tensor".into()),
                                     name: "tokenize".into(),
                                     args: vec![],
+                                    span: Default::default(),
                                 },
                                 PipelineStep::Call {
                                     namespace: Some("tensor".into()),
@@ -169,6 +172,7 @@ mod tests {
                                         name: "prefer".into(),
                                         value: "CUDA".into(),
                                     }],
+                                    span: Default::default(),
                                 },
                             ],
                         },
