@@ -27,7 +27,7 @@ component UploadPage {
             :app_bar(ui::app_bar(:title("Data Collector"))),
             :side_panel(ui::side_panel(
                 ui::nav_item(:label("Upload"), :to("/"), :active),
-                ui::nav_item(:label("Documents"), :to("/documents"))
+                ui::nav_item(:label("Documents"), :to("/documents"), :active)
             )),
             ui::stack(
                 ui::heading(:text("Upload a document"), :level(2)),
@@ -37,25 +37,20 @@ component UploadPage {
                         :label("Document"),
                         :accept(".pdf,.docx,.odt,.md,.txt,.html")
                     ),
-                    ui::button(:label("Extract"), :variant(primary), :submit),
-                    when $.status {
-                        ui::alert(
-                            :tone(success),
-                            :text($.status),
-                            :auto_dismiss_ms(5000),
-                            :on(dismiss(on_dismiss))
-                        )
-                    }
+                    ui::button(:label("Extract"), :variant(primary), :submit)
                 )
             )
         )
     }
     method on_submit() {
+        $.status = "Extracting...";
         submit();
-        $.upload = "";
         $.status = "Document extracted.";
+        $.upload = "";
     }
-    method on_dismiss() { $.status = ""; }
+    method on_dismiss() {
+        $.status = "";
+    }
 }
 
 component DocumentsPage {
@@ -81,6 +76,12 @@ component DocumentsPage {
         )
     }
 }
+
+ui::alert(
+    :tone(success),
+    :text($.status),
+    :dismissible
+)
 
 app CollectorApp {
     route "/" => UploadPage;

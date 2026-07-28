@@ -266,6 +266,15 @@ pub fn repair_guidance(error: &str) -> Option<String> {
         );
     }
 
+    if lower.contains("unsupported construct")
+        || (lower.contains("expected `subset`") && lower.contains("ui::"))
+    {
+        return Some(
+            "TOP-LEVEL RULE: `ui::*` nodes belong ONLY inside a component `method render()` tree. Never leave `ui::alert(...)` / `ui::stack(...)` as a free-standing top-level declaration beside `app` / `service`. Move the alert into the component stack with `when $.status { ui::alert(...) }`."
+                .into(),
+        );
+    }
+
     if lower.contains("closed") && (lower.contains("variant") || lower.contains("tone") || lower.contains("size")) {
         return Some(
             "CLOSED ENUM: `:variant` accepts primary|secondary|destructive|ghost, `:tone` accepts default|muted|info|success|warning|danger, `:size` accepts sm|md|lg. Use bare tokens, not strings."
@@ -605,6 +614,41 @@ service Extractor {
 }
 
 Rules: keep contract field names exactly as above so extract can fill them; use `:submit` on the upload button (not `:on(click)`); do not call `Documents.create` from the submit handler — `submit()` posts multipart to `/upload` and the compiler stores the row; do not mix `doc::*` with `text::score`; do not invent Pandoc, OCR, or blob CDN ops."#,
+        );
+    }
+
+    let wants_toast = [
+        "toast", "snack", "snackbar", "success alert", "show a success",
+        "status message", "flash message", "notify", "notification",
+    ]
+    .iter()
+    .any(|k| lower.contains(k));
+    if wants_toast {
+        parts.push(
+            r#"Transient success feedback uses `ui::alert` INSIDE a component render tree — never as a top-level declaration.
+Shape:
+
+has state Str $.status = "";
+
+# inside the same component's ui::stack (sibling of the form):
+when $.status {
+    ui::alert(
+        :tone(success),
+        :text($.status),
+        :dismissible,
+        :auto_dismiss_ms(5000),
+        :on(dismiss(on_dismiss))
+    )
+}
+
+method on_submit() {
+    submit();
+    $.upload = "";
+    $.status = "Document extracted.";
+}
+method on_dismiss() { $.status = ""; }
+
+Rules: `ui::alert` / `when` must live inside `method render()`; clearing a file field is `$.upload = \"\"` after `submit()`; use `:auto_dismiss_ms(5000)` for a 5s fade-away toast; do not invent toast/snackbar components outside the catalog."#,
         );
     }
 

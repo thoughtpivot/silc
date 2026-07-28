@@ -317,13 +317,27 @@ export function Badge(props: { text: string; tone?: Tone }) {
   return h(Text, { content: `(${props.text})`, fg: toneColor(props.tone) });
 }
 
+const alertAutoDismissTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
 export function Alert(props: {
   text: string;
   title?: string;
   tone?: Tone;
   dismissible?: boolean;
+  autoDismissMs?: number;
   onDismiss?: () => void;
 }) {
+  const ms = Number(props.autoDismissMs);
+  if (Number.isFinite(ms) && ms > 0 && props.text) {
+    const key = `${props.text}|${ms}`;
+    if (!alertAutoDismissTimers.has(key)) {
+      const id = setTimeout(() => {
+        alertAutoDismissTimers.delete(key);
+        props.onDismiss?.();
+      }, ms);
+      alertAutoDismissTimers.set(key, id);
+    }
+  }
   return h(
     Box,
     {

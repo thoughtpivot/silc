@@ -17,7 +17,7 @@ Silc borrows the `==>` glyph from Raku’s feed operator for dense dataflow
 authoring. In Raku, `==>` threads the left-hand result as the last argument to
 the right-hand callable at runtime. Silc uses the same surface for a different
 purpose: building a compile-time **Pipeline** subject that the router and
-codegen lower into Bun / CPython / Go workers and IPC stages.
+codegen emit as Bun / CPython / Go workers and IPC stages.
 
 ## Decision
 
@@ -27,7 +27,7 @@ Silc `==>` constructs **Pipeline IR**. It is not Rakudo call-threading.
 
 | Kind | Appears in `.silc`? | Examples |
 | --- | --- | --- |
-| Author domain ops | Yes | `service::http`, `text::score`, `llm::complete`, `scrape::*`, `tensor::*` |
+| Author domain ops | Yes | `service::http`, `text::score`, `llm::complete`, `scrape::*`, `doc::extract`, `tensor::*` |
 | Synthesized runtime stages | No | dual-surface serving, `resource::*` CRUD, `ipc::*` / `store::*` persistence |
 
 Authors write domain feeds only. The compiler inserts IPC/store/resource stages

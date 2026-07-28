@@ -15,7 +15,7 @@ use crate::scrape_catalog::{
 };
 use crate::types::TypeExpr;
 
-/// Author-facing operations Silc 0.4.0 can lower and run.
+/// Author-facing operations Silc 0.4.0 can codegen and run.
 /// Runtime-owned surfaces (`ui::web`/`ui::terminal`), IPC/store, and resource CRUD
 /// pipelines are synthesized by the compiler and must not appear in source.
 pub const EXECUTABLE_OPS: &[(&str, &str)] = &[

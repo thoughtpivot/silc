@@ -27,6 +27,7 @@ export function Alert({
   title,
   tone = "default",
   dismissible = false,
+  autoDismissMs,
   onDismiss,
   className,
 }: {
@@ -34,14 +35,33 @@ export function Alert({
   title?: string;
   tone?: Tone;
   dismissible?: boolean;
+  autoDismissMs?: number;
   onDismiss?: () => void;
   className?: string;
 }) {
+  const [visible, setVisible] = React.useState(true);
+  const ms = Number(autoDismissMs);
+  const onDismissRef = React.useRef(onDismiss);
+  onDismissRef.current = onDismiss;
+
+  React.useEffect(() => {
+    setVisible(true);
+    if (!Number.isFinite(ms) || ms <= 0) return;
+    const fadeMs = Math.max(0, ms - 400);
+    const fadeTimer = window.setTimeout(() => setVisible(false), fadeMs);
+    const dismissTimer = window.setTimeout(() => onDismissRef.current?.(), ms);
+    return () => {
+      window.clearTimeout(fadeTimer);
+      window.clearTimeout(dismissTimer);
+    };
+  }, [ms, text, title]);
+
   return (
     <div
       role="alert"
       className={cn(
-        "relative rounded-lg border px-4 py-3 text-sm",
+        "relative rounded-lg border px-4 py-3 text-sm transition-opacity duration-400 ease-out",
+        visible ? "opacity-100" : "opacity-0",
         toneClass[tone],
         className
       )}

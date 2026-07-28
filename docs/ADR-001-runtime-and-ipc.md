@@ -104,7 +104,7 @@ workers.
 ## Architectural ownership
 
 - `sil-core::contract` owns logical schemas and layout invariants.
-- `sil-codegen` lowers validated Contracts and emits per-engine accessors.
+- `sil-codegen` renders and emits per-engine accessors from validated Contracts.
 - `sil-ipc` owns shared-memory allocation, ABI framing, process-safe handles,
   lifecycle rules, and UDS signaling.
 - `silc` composes these boundaries and supervises generated workers.
@@ -130,7 +130,7 @@ workers.
 ## Non-goals for ABI v1
 
 - Typed zero-copy contract field views
-- General execution lowering beyond the registered operation set
+- General execution codegen beyond the registered operation set
 - Per-worker crash recovery (v1 restarts the runtime)
 - Linux-specific `shm_open` optimization
 - Self-contained deployment bundles

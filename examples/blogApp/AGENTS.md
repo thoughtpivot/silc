@@ -26,6 +26,7 @@ application code.
 - Synthesized runtime (0.4.0): https://github.com/thoughtpivot/silc/blob/main/docs/ADR-009-compiler-synthesized-runtime.md
 - Local LLM: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-005-local-llm-complete.md
 - Scrape: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-006-scrape-namespace.md
+- Document extract: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-011-document-extract.md
 - Tensor / MiniLM: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-010-tensor-minilm-pipeline.md
 - Architecture: https://github.com/thoughtpivot/silc/blob/main/docs/ARCHITECTURE.md
 - Examples: https://github.com/thoughtpivot/silc/tree/main/examples
@@ -169,7 +170,7 @@ API contract (props / events / slots / children).
 #### Feedback and overlays
 
 - `ui::badge` — props: `text` (required), `tone?`; events: none; slots: none; children: none; surfaces: web+terminal
-- `ui::alert` — props: `text` (required), `title?`, `tone?`, `dismissible?` (flag); events: `dismiss`; slots: none; children: none; surfaces: web+terminal
+- `ui::alert` — props: `text` (required), `title?`, `tone?`, `dismissible?` (flag), `auto_dismiss_ms?`; events: `dismiss`; slots: none; children: none; surfaces: web+terminal
 - `ui::tabs` — props: `field?`, `value?`; events: `change`; slots: none; children: anyOf(`tab`); surfaces: web+terminal
 - `ui::tab` — props: `label` (required), `value` (required); events: none; slots: none; children: any; surfaces: web+terminal
 - `ui::dialog` — props: `open` (required), `title?`; events: `confirm`, `cancel`; slots: none; children: any; surfaces: web+terminal

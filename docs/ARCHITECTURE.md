@@ -35,6 +35,25 @@ mirrored in the root [README](../README.md). Compiler sources
 (`UI_COMPONENT_CATALOG`, `EXECUTABLE_OPS`) remain authoritative; documentation
 conformance tests fail on drift.
 
+## Compiler pipeline vocabulary
+
+Silc names the pipeline it actually has. There is no MidIR today.
+
+- **Frontend** — lex, parse, validate, build the executable graph, and resolve
+  targets (`sil-lexer`, `sil-parser`, `sil-core`, `sil-router`).
+- **Codegen** — project that validated model into target source strings
+  (`sil-codegen`: templates and adapters).
+- **Emit** — write codegen output into `{workdir}/.runtime/` (and related
+  manifests). The public `emit` entrypoint covers both codegen and emit.
+- **Lower** — reserved for real desugar / AST→adapter transforms. Today that is
+  dual-surface UI in
+  [`crates/sil-codegen/src/ui_lower.rs`](../crates/sil-codegen/src/ui_lower.rs).
+  Worker and contract template instantiation is codegen/emit, not lowering.
+
+Author-facing docs may still say the compiler **synthesizes** the runtime
+([ADR-009](ADR-009-compiler-synthesized-runtime.md)); internals use the stages
+above.
+
 ## The subject boundary
 
 A Silc subject is a durable semantic concept that has shared types, owns
@@ -113,7 +132,7 @@ sil-lexer ──► sil-parser
              sil-router
                   │ resolves Target
                   ▼
-             sil-codegen
+             sil-codegen  (codegen + emit; UI via ui_lower)
                   │
                   ▼
         {workdir}/.runtime/
@@ -138,9 +157,9 @@ sil-lexer ──► sil-parser
 4. **Cross-subject access is explicit.** Rust paths should name the owner, for
    example `sil_core::contract::Contract` and
    `sil_core::pipeline::Pipeline`.
-5. **Sub-workflows remain under their subject.** If Contract gains Silc buffer layout
-   lowering or Pipeline gains graph analysis, those modules begin beneath
-   their subject rather than as detached top-level utility crates.
+5. **Sub-workflows remain under their subject.** If Contract gains Silc buffer
+   layout projection/encoding or Pipeline gains graph analysis, those modules
+   begin beneath their subject rather than as detached top-level utility crates.
 6. **Shared means truly domain-neutral.** Source spans, diagnostics, and stable
    IDs may become common primitives. A folder named `utils` must not become an
    ownership escape hatch.
@@ -169,7 +188,7 @@ the strength catalog in [ADR-004](ADR-004-runtime-strengths.md).
 Generators are adapters grouped by target (`go`, `python`, `typescript`).
 The TypeScript adapter emits source for Bun, which is the runtime engine.
 They consume one validated semantic model and must not define parallel AST
-types. Reusable lowering that expresses Silc meaning belongs to the owning
+types. Reusable semantics that express Silc meaning belong to the owning
 subject; target-specific rendering belongs to `sil-codegen`.
 
 ### Declarative UI
@@ -195,8 +214,8 @@ application source. See [ADR-003-declarative-ui.md](ADR-003-declarative-ui.md).
 ### IPC
 
 IPC is both a runtime boundary and a significant technical subsystem. Contract
-owns logical schema and layout requirements. `sil-codegen` lowers validated
-Contracts into generated accessors. `sil-ipc` owns the versioned Silc Shared
+owns logical schema and layout requirements. `sil-codegen` renders and emits
+accessors from validated Contracts. `sil-ipc` owns the versioned Silc Shared
 Buffer ABI, mmap/shared-memory allocation, process-safe handles, lifecycle
 rules, and UDS signaling. Large payloads remain mapped while small control
 frames identify `{ segment_id, offset, len, schema_id }`. This avoids letting

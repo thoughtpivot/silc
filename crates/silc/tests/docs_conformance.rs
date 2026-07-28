@@ -210,6 +210,8 @@ fn canonical_silc_sources_omit_runtime_plumbing() {
         "examples/inventoryApp/main.silc",
         "examples/scraperApp/main.silc",
         "examples/pipelineApp/main.silc",
+        "examples/blogApp/main.silc",
+        "examples/dataCollectorApp/main.silc",
         "crates/silc/templates/main.silc",
         "crates/silc/tests/fixtures/scored_form.silc",
         "crates/silc/tests/fixtures/shopping_app.silc",

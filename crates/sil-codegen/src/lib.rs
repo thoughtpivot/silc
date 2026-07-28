@@ -1,4 +1,10 @@
 //! Silc 0.4.0 code generation: inspectable stubs and runnable dual-surface apps.
+//!
+//! Pipeline vocabulary: **codegen** renders target source from the validated
+//! semantic model; **emit** writes those artifacts into `.runtime/`. Dual-surface
+//! UI goes through [`ui_lower`] — the sole named lower pass (AST → React /
+//! OpenTUI adapters). Worker and contract paths use template render + emit, not
+//! lowering.
 
 mod ui_lower;
 

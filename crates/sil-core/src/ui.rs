@@ -841,7 +841,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "alert",
-        description: "Prominent inline notice with required text and optional title, tone, and dismissibility. Reach for it for success, warning, or error feedback that must stay visible.",
+        description: "Prominent inline notice with required text and optional title, tone, dismissibility, and auto-dismiss. Reach for it for success, warning, or error feedback; use `:auto_dismiss_ms` for transient toasts that fade away.",
         props: &[
             PropSpec {
                 name: "text",
@@ -861,6 +861,11 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
             PropSpec {
                 name: "dismissible",
                 kind: PropKind::Flag,
+                required: false,
+            },
+            PropSpec {
+                name: "auto_dismiss_ms",
+                kind: PropKind::Expr,
                 required: false,
             },
         ],
@@ -1094,6 +1099,7 @@ fn shared_prop_doc(prop: &str) -> Option<&'static str> {
         "hint" => "Secondary help text shown under a field label. Use it for format examples or soft constraints that are not validation errors.",
         "error" => "Validation or failure message associated with this control. Prefer binding it only when an error is present so the chrome stays quiet otherwise.",
         "dismissible" => "When set, the alert shows a dismiss control and can emit `dismiss`. Use it for transient notices the user may clear.",
+        "auto_dismiss_ms" => "Milliseconds before the alert fades and emits `dismiss` (e.g. `5000`). Omit for a sticky notice; pair with `:dismissible` so the user can clear it early.",
         "description" => "Supporting copy under a section title. Keep it to one or two sentences that explain why the section exists.",
         "open" => "Boolean expression that controls whether the dialog is visible. Drive it from component state so confirm/cancel handlers can close it.",
         "collapsible" => "When set, the panel can collapse to reclaim vertical space. Useful for secondary history or detail panes.",

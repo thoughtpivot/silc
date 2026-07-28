@@ -1,4 +1,8 @@
 //! Lower Silc components to dual-surface adapters (React web + OpenTUI terminal).
+//!
+//! This is the sole named **lower** pass in Silc today: a real AST/tree transform
+//! from semantic UI into surface adapters. Worker and contract codegen use
+//! template render + emit instead (see the crate-level docs in `lib.rs`).
 
 use sil_core::{
     App, BinOp, Component, ExecutableGraph, Expr, Program, UiNode, UiTemplate, UnaryOp,
@@ -170,6 +174,14 @@ fn render_web_component(component: &Component, program: &Program) -> String {
         }
         state_decls.push_str(&format!(
             "  const [{name}, set{pascal}] = useState(null);\n",
+            name = name,
+            pascal = pascal(name),
+        ));
+    }
+    // Epoch counters remount file inputs only when cleared (not on select).
+    for name in &file_fields {
+        state_decls.push_str(&format!(
+            "  const [__{name}Epoch, set__{pascal}Epoch] = useState(0);\n",
             name = name,
             pascal = pascal(name),
         ));
@@ -1053,14 +1065,20 @@ fn render_node(node: &UiNode, indent: usize) -> String {
                     disabled = disabled
                 )
             } else {
+                let field_name = field.as_deref().unwrap_or("upload");
+                let selected = format!("({field_name} && {field_name}.name)");
+                let selected_name = format!("{field_name}.name");
                 format!(
-                    "{pad}<div className=\"space-y-1\"><Label>{{ {label} }}</Label><input type=\"file\" accept={{{accept}}} multiple={{{multiple}}} disabled={{{disabled}}} className=\"block w-full text-sm\" onChange={{(e) => {setter}?.(e.target.files && e.target.files[0] ? e.target.files[0] : null)}} /></div>",
+                    "{pad}<div className=\"space-y-1\"><Label>{{ {label} }}</Label><input key={{\"{field_name}-\" + __{field_name}Epoch}} type=\"file\" accept={{{accept}}} multiple={{{multiple}}} disabled={{{disabled}}} className=\"block w-full text-sm\" onChange={{(e) => {setter}?.(e.target.files && e.target.files[0] ? e.target.files[0] : null)}} />{{{selected} ? <p className=\"text-sm text-muted-foreground\">{{{selected_name}}}</p> : null}}</div>",
                     pad = pad,
                     label = prop_js(node, "label"),
+                    field_name = field_name,
                     accept = accept,
                     multiple = multiple,
                     disabled = disabled,
-                    setter = setter
+                    setter = setter,
+                    selected = selected,
+                    selected_name = selected_name,
                 )
             }
         }
@@ -1118,10 +1136,10 @@ fn render_node(node: &UiNode, indent: usize) -> String {
                 format!(
                     "({} ? \"secondary\" : ({} ?? \"primary\"))",
                     expr_to_js(active),
-                    prop_js(node, "variant")
+                    enum_prop_js(node, "variant", "\"primary\"")
                 )
             } else {
-                prop_js(node, "variant")
+                enum_prop_js(node, "variant", "\"primary\"")
             };
             if surface() == SurfaceKind::Terminal {
                 format!(
@@ -1452,7 +1470,7 @@ fn render_node(node: &UiNode, indent: usize) -> String {
                 .map(|e| e.handler.as_str())
                 .unwrap_or("undefined");
             format!(
-                "{pad}<Alert text={{{text}}} title={{{title}}} tone={{{tone}}} dismissible={{{dismissible}}} onDismiss={{{dismiss}}} />",
+                "{pad}<Alert text={{{text}}} title={{{title}}} tone={{{tone}}} dismissible={{{dismissible}}} autoDismissMs={{{auto_dismiss}}} onDismiss={{{dismiss}}} />",
                 pad = pad,
                 text = prop_js(node, "text"),
                 title = prop_js(node, "title"),
@@ -1462,6 +1480,7 @@ fn render_node(node: &UiNode, indent: usize) -> String {
                 } else {
                     "false"
                 },
+                auto_dismiss = prop_js(node, "auto_dismiss_ms"),
                 dismiss = dismiss
             )
         }
@@ -1685,6 +1704,22 @@ fn expr_to_js_stmt(
     program: &Program,
     handler_name: &str,
 ) -> String {
+    if let Expr::Assign { target, value } = expr {
+        if let Expr::Var(name) | Expr::Ident(name) = target.as_ref() {
+            let file_fields = collect_file_fields(&component.render);
+            if file_fields.iter().any(|f| f == name) {
+                // Clearing remounts the native picker via epoch; selecting must not.
+                let rhs = match value.as_ref() {
+                    Expr::String(s) if s.is_empty() => "null".to_string(),
+                    other => expr_to_js(other),
+                };
+                let p = pascal(name);
+                return format!(
+                    "{{ set{p}({rhs}); if ({rhs} == null) set__{p}Epoch((n) => n + 1); }}"
+                );
+            }
+        }
+    }
     if let Expr::Call { callee, args } = expr {
         if let Expr::Ident(name) = callee.as_ref() {
             if name == "submit" || name.ends_with("submit") {
@@ -2288,5 +2323,32 @@ mod tests {
         };
         let html = render_template(&UiTemplate::Node(node), 0);
         assert!(html.contains("is_selected ? \"secondary\""));
+    }
+
+    #[test]
+    fn bare_variant_ident_lowers_to_js_string() {
+        let node = UiNode {
+            component: "button".into(),
+            component_span: Default::default(),
+            prop_spans: vec![],
+            props: vec![
+                ("label".into(), Expr::String("Extract".into())),
+                ("variant".into(), Expr::Ident("primary".into())),
+                ("submit".into(), Expr::Bool(true)),
+            ],
+            events: vec![],
+            slots: vec![],
+            children: vec![],
+            span: Span::default(),
+        };
+        let html = render_template(&UiTemplate::Node(node), 0);
+        assert!(
+            html.contains("variant={\"primary\"}") || html.contains("variant={\"primary\"}"),
+            "bare :variant(primary) must become a JS string, got: {html}"
+        );
+        assert!(
+            !html.contains("variant={primary}"),
+            "must not emit unbound primary identifier: {html}"
+        );
     }
 }
