@@ -3,9 +3,11 @@
 //! Pipeline vocabulary: **codegen** renders target source from the validated
 //! semantic model; **emit** writes those artifacts into `.runtime/`. Dual-surface
 //! UI goes through [`ui_lower`] — the sole named lower pass (AST → React /
-//! OpenTUI adapters). Worker and contract paths use template render + emit, not
-//! lowering.
+//! OpenTUI adapters). Game programs go through [`game_lower`] (AST → JSON
+//! manifest) plus template copy. Worker and contract paths use template render
+//! + emit, not lowering.
 
+mod game_lower;
 mod ui_lower;
 
 use sil_core::{
@@ -26,6 +28,7 @@ const APP_WORKER_TS: &str = include_str!("../templates/app_worker.ts");
 const PIPELINE_WORKER_TS: &str = include_str!("../templates/pipeline_worker.ts");
 const PROCESSOR_WORKER_PY: &str = include_str!("../templates/processor_worker.py");
 const STORE_WORKER_GO: &str = include_str!("../templates/store_worker.go");
+const GAME_BAKE_WORKER_PY: &str = include_str!("../templates/game_bake_worker.py");
 const LLM_REQUIREMENTS: &str = include_str!("../templates/llm_requirements.txt");
 /// Compiler-owned Python dependencies for a generated tensor runtime.
 pub const TENSOR_REQUIREMENTS: &str = include_str!("../templates/tensor_requirements.txt");
@@ -313,6 +316,52 @@ pub fn emit(
                 "catalog": sil_core::catalog_component_names(),
             });
         }
+        if g.has_game() {
+            manifest["game"] = serde_json::json!({
+                "profile": "webgpu",
+                "surfaces": ["web"],
+                "substrate": "babylon-webgpu",
+                "babylon_version": "9.16.2",
+                "vite_version": "8.1.5",
+                "title": g.game.title,
+                "target_fps": g.game.target_fps,
+                "app": g.app_name,
+                "engines": ["bun", "cpython", "go"],
+                "bake": "python/game_bake_worker.py",
+                "artifacts": [
+                    "typescript/package.json",
+                    "typescript/bun.lock",
+                    "typescript/public/manifest.json",
+                    "typescript/public/baked/bake.json",
+                    "typescript/src/main.ts",
+                    "typescript/dist/index.html",
+                    "python/game_bake_worker.py",
+                    "python/bake_plan.json",
+                    "go/worker.go",
+                ],
+                "provenance": "compiler-owned game::scene → Bun WebGPU + CPython bake + Go SQLite (ADR-012)",
+                "catalog": sil_core::catalog_game_node_names(),
+            });
+            if let Some(graph_obj) = manifest.get_mut("graph") {
+                if let Some(obj) = graph_obj.as_object_mut() {
+                    obj.insert("game".into(), serde_json::json!(true));
+                    obj.insert(
+                        "capabilities".into(),
+                        serde_json::json!({
+                            "web": false,
+                            "terminal": false,
+                            "webgpu": true,
+                            "score": false,
+                            "llm": false,
+                            "history": false,
+                            "resources": true,
+                            "scrape": false,
+                            "doc": false,
+                        }),
+                    );
+                }
+            }
+        }
         if g.has_api() {
             manifest["services"] = serde_json::json!({
                 "profile": "http",
@@ -330,6 +379,27 @@ pub fn emit(
             });
         }
         let mut entrypoints = serde_json::Map::new();
+        if g.has_game() {
+            entrypoints.insert("bun".into(), serde_json::json!("typescript/worker.ts"));
+            entrypoints.insert(
+                "game_web_entry".into(),
+                serde_json::json!("typescript/src/main.ts"),
+            );
+            entrypoints.insert(
+                "game_manifest".into(),
+                serde_json::json!("typescript/public/manifest.json"),
+            );
+            entrypoints.insert(
+                "python_bake".into(),
+                serde_json::json!("python/game_bake_worker.py"),
+            );
+            entrypoints.insert("go_source".into(), serde_json::json!("go/worker.go"));
+            entrypoints.insert("go_binary".into(), serde_json::json!("go/worker"));
+            entrypoints.insert(
+                "supervisor_socket".into(),
+                serde_json::json!(SUPERVISOR_SOCKET),
+            );
+        }
         if g.has_ui() {
             entrypoints.insert("bun".into(), serde_json::json!("typescript/worker.ts"));
             entrypoints.insert("python".into(), serde_json::json!("python/worker.py"));
@@ -450,6 +520,10 @@ fn emit_runnable(
     compiler_version: &str,
     generated: &mut Vec<PathBuf>,
 ) -> Result<(), String> {
+    if graph.has_game() {
+        emit_game(root, program, graph, schema_id, compiler_version, generated)?;
+        return Ok(());
+    }
     if graph.has_ui() {
         emit_ui_app(root, program, graph, schema_id, compiler_version, generated)?;
     }
@@ -460,6 +534,157 @@ fn emit_runnable(
         emit_pipeline(root, program, graph, schema_id, compiler_version, generated)?;
     }
     Ok(())
+}
+
+fn emit_game(
+    root: &Path,
+    program: &Program,
+    graph: &ExecutableGraph,
+    schema_id: u32,
+    compiler_version: &str,
+    generated: &mut Vec<PathBuf>,
+) -> Result<(), String> {
+    let game = graph
+        .game_decl
+        .as_ref()
+        .ok_or_else(|| "game graph missing game_decl".to_string())?;
+    let game_manifest = game_lower::lower_game(game)?;
+    let bake_plan = game_lower::bake_plan_from_manifest(&game_manifest);
+
+    clear_dir_sources(&root.join("go"), &["go"])?;
+    clear_dir_sources(&root.join("python"), &["py"])?;
+    let ts_dir = root.join("typescript");
+    if ts_dir.is_dir() {
+        fs::remove_dir_all(&ts_dir)
+            .map_err(|error| format!("clear {}: {error}", ts_dir.display()))?;
+    }
+    fs::create_dir_all(&ts_dir).map_err(|error| format!("create {}: {error}", ts_dir.display()))?;
+    fs::create_dir_all(root.join("go"))
+        .map_err(|error| format!("create go: {error}"))?;
+    fs::create_dir_all(root.join("python"))
+        .map_err(|error| format!("create python: {error}"))?;
+
+    let template_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("templates/game");
+    copy_game_templates(&template_root, &ts_dir, generated)?;
+
+    let lock_src = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("templates/game_bun.lock");
+    if lock_src.is_file() {
+        let lock_dst = ts_dir.join("bun.lock");
+        fs::copy(&lock_src, &lock_dst)
+            .map_err(|error| format!("copy bun.lock: {error}"))?;
+        generated.push(lock_dst);
+    }
+
+    let manifest_path = ts_dir.join("public/manifest.json");
+    if let Some(parent) = manifest_path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("create {}: {error}", parent.display()))?;
+    }
+    let mut manifest_body = serde_json::to_string_pretty(&game_manifest)
+        .map_err(|error| format!("serialize game manifest: {error}"))?;
+    manifest_body.push('\n');
+    fs::write(&manifest_path, &manifest_body)
+        .map_err(|error| format!("write {}: {error}", manifest_path.display()))?;
+    generated.push(manifest_path);
+
+    let bake_plan_path = root.join("python/bake_plan.json");
+    let mut bake_body = serde_json::to_string_pretty(&bake_plan)
+        .map_err(|error| format!("serialize bake plan: {error}"))?;
+    bake_body.push('\n');
+    fs::write(&bake_plan_path, &bake_body)
+        .map_err(|error| format!("write {}: {error}", bake_plan_path.display()))?;
+    generated.push(bake_plan_path);
+
+    let bake_py = root.join("python/game_bake_worker.py");
+    fs::write(
+        &bake_py,
+        GAME_BAKE_WORKER_PY.replace("__COMPILER_VERSION__", compiler_version),
+    )
+    .map_err(|error| format!("write {}: {error}", bake_py.display()))?;
+    generated.push(bake_py);
+
+    let go_files = [
+        (
+            root.join("go/worker.go"),
+            render_template(STORE_WORKER_GO, program, graph, schema_id, compiler_version),
+        ),
+        (root.join("go/go.mod"), STORE_GOMOD.to_string()),
+    ];
+    for (path, contents) in go_files {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|error| format!("create {}: {error}", parent.display()))?;
+        }
+        fs::write(&path, contents).map_err(|error| format!("write {}: {error}", path.display()))?;
+        generated.push(path);
+    }
+
+    let index_path = ts_dir.join("index.html");
+    if index_path.is_file() {
+        let title = game_manifest
+            .get("title")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Silc Game");
+        let html = fs::read_to_string(&index_path)
+            .map_err(|error| format!("read {}: {error}", index_path.display()))?;
+        let html = html.replace("<title>Silc Game</title>", &format!("<title>{title}</title>"));
+        let html = html.replace(
+            "<!-- AUTO-GENERATED BY silc — DO NOT EDIT -->",
+            &format!("<!-- AUTO-GENERATED BY silc {compiler_version} — DO NOT EDIT -->"),
+        );
+        fs::write(&index_path, html)
+            .map_err(|error| format!("write {}: {error}", index_path.display()))?;
+    }
+
+    Ok(())
+}
+
+fn copy_game_templates(
+    from: &Path,
+    to: &Path,
+    generated: &mut Vec<PathBuf>,
+) -> Result<(), String> {
+    fn walk(
+        from: &Path,
+        to: &Path,
+        generated: &mut Vec<PathBuf>,
+    ) -> Result<(), String> {
+        let entries = fs::read_dir(from)
+            .map_err(|error| format!("read {}: {error}", from.display()))?;
+        for entry in entries {
+            let entry = entry.map_err(|error| format!("read dir entry: {error}"))?;
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if name_str == "node_modules"
+                || name_str == "dist"
+                || name_str == ".gitignore"
+                || name_str == "DECISIONS.md"
+                || name_str == "ASSETS.md"
+            {
+                continue;
+            }
+            let src = entry.path();
+            let dst = to.join(&name);
+            let ft = entry
+                .file_type()
+                .map_err(|error| format!("stat {}: {error}", src.display()))?;
+            if ft.is_dir() {
+                fs::create_dir_all(&dst)
+                    .map_err(|error| format!("create {}: {error}", dst.display()))?;
+                walk(&src, &dst, generated)?;
+            } else if ft.is_file() {
+                if let Some(parent) = dst.parent() {
+                    fs::create_dir_all(parent)
+                        .map_err(|error| format!("create {}: {error}", parent.display()))?;
+                }
+                fs::copy(&src, &dst)
+                    .map_err(|error| format!("copy {} → {}: {error}", src.display(), dst.display()))?;
+                generated.push(dst);
+            }
+        }
+        Ok(())
+    }
+    walk(from, to, generated)
 }
 
 fn emit_pipeline(
@@ -2215,7 +2440,7 @@ component DocumentsPage {
     }
 }
 
-app CollectorApp {
+app ExtractorApp {
     route "/" => UploadPage;
     route "/documents" => DocumentsPage;
 }
@@ -2229,7 +2454,7 @@ service Extractor {
 
     #[test]
     fn emits_doc_extract_upload_pipeline() {
-        let (_program, result, output) = parse_emit(DOC_SOURCE, "doc_collector");
+        let (_program, result, output) = parse_emit(DOC_SOURCE, "doc_extractor");
         let graph = result.graph.as_ref().unwrap();
         assert!(graph.has_doc());
         assert_eq!(graph.doc.extract_into.as_deref(), Some("Document"));
@@ -2324,5 +2549,88 @@ class BadView is view {
             }
         }
         panic!("python3 required for doc extract fixture test");
+    }
+
+    #[test]
+    fn emits_game_program_without_cdn_or_title_branching() {
+        const GAME_SOURCE: &str =
+            include_str!("../../../examples/snowFlowGameApp/main.silc");
+        let (_program, _result, output) = parse_emit(GAME_SOURCE, "snowflow_game");
+
+        let pkg = fs::read_to_string(output.join("typescript/package.json")).unwrap();
+        assert!(
+            pkg.contains("\"@babylonjs/core\": \"9.16.2\""),
+            "package.json must pin babylon 9.16.2:\n{pkg}"
+        );
+
+        let template_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("templates/game");
+        let mut scanned = Vec::new();
+        scan_game_sources(&template_root, &mut scanned).expect("scan game templates");
+        let joined = scanned.join("\n");
+        for needle in [
+            "unpkg.com",
+            "jsdelivr",
+            "cdnjs",
+            "WebGL",
+            "webgl",
+            "SnowFlow",
+            "SNOWFLOW",
+            "title ===",
+        ] {
+            assert!(
+                !joined.contains(needle),
+                "game templates must not contain `{needle}`"
+            );
+        }
+
+        let manifest =
+            fs::read_to_string(output.join("typescript/public/manifest.json")).unwrap();
+        assert!(manifest.contains("\"title\": \"SNOWFLOW\""));
+        assert!(manifest.contains("\"renderer\": \"webgpu\""));
+        assert!(manifest.contains("\"toggle\": \"F1\""));
+
+        assert!(
+            output.join("python/game_bake_worker.py").is_file(),
+            "game emit must include CPython bake worker"
+        );
+        assert!(
+            output.join("python/bake_plan.json").is_file(),
+            "game emit must include bake plan"
+        );
+        assert!(
+            output.join("go/worker.go").is_file(),
+            "game emit must include Go store worker"
+        );
+        let root_manifest = fs::read_to_string(output.join("manifest.json")).unwrap();
+        assert!(root_manifest.contains("python_bake"));
+        assert!(root_manifest.contains("go_source"));
+        assert!(root_manifest.contains("supervisor_socket"));
+
+        fs::remove_dir_all(output).ok();
+    }
+
+    fn scan_game_sources(dir: &Path, out: &mut Vec<String>) -> Result<(), String> {
+        for entry in fs::read_dir(dir).map_err(|e| format!("read {}: {e}", dir.display()))? {
+            let entry = entry.map_err(|e| format!("read dir entry: {e}"))?;
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name == "node_modules" || name == "dist" {
+                continue;
+            }
+            let ft = entry
+                .file_type()
+                .map_err(|e| format!("stat {}: {e}", path.display()))?;
+            if ft.is_dir() {
+                scan_game_sources(&path, out)?;
+            } else if ft.is_file() {
+                let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                if matches!(ext, "ts" | "tsx" | "js" | "json" | "html") {
+                    let body = fs::read_to_string(&path)
+                        .map_err(|e| format!("read {}: {e}", path.display()))?;
+                    out.push(body);
+                }
+            }
+        }
+        Ok(())
     }
 }

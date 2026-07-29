@@ -30,6 +30,11 @@ pub fn keyword_doc(keyword: &str) -> Option<&'static str> {
             "Declares an application with routes that map URL paths to components. An app is \
              the entry that the runtime serves for both web and terminal surfaces."
         }
+        "game" => {
+            "Declares a WebGPU-only game scene (`game Name { game::scene(...) }`). Distinct from \
+             dual-surface `app` routes; the compiler synthesizes a Babylon/Vite runtime from the \
+             closed `game::*` catalog (ADR-012)."
+        }
         "service" => {
             "Declares a service module, commonly used with `service::http` to expose an API \
              surface. Keep service bodies focused on transport concerns rather than UI."
@@ -257,6 +262,12 @@ pub fn namespace_doc(ns: &str) -> Option<String> {
              `ui::terminal` as operations — those surfaces are synthesized from `app` routes.",
             count = UI_COMPONENT_CATALOG.len()
         ),
+        "game" => format!(
+            "WebGPU game scene catalog ({count} nodes). Author `game::scene` and nested \
+             `game::*` nodes inside a `game` declaration; the compiler lowers them to a Babylon \
+             runtime manifest. Game programs are web-only (no terminal surface).",
+            count = sil_core::GAME_NODE_CATALOG.len()
+        ),
         "service" => {
             "Runnable service namespace. Author `service::http` in a service module to expose \
              an HTTP API surface; the compiler wires routes from resources and handlers."
@@ -455,9 +466,9 @@ pub fn resource_method_summary(kind: &str, method: &str) -> &'static str {
 
 /// Every lexer keyword that should have a hover entry (for conformance tests).
 pub const KEYWORD_NAMES: &[&str] = &[
-    "subset", "class", "contract", "component", "resource", "app", "service", "processor", "sink",
-    "task", "has", "method", "is", "of", "where", "query", "mutation", "seed", "slot", "emit",
-    "state", "when", "for", "else", "route", "await",
+    "subset", "class", "contract", "component", "resource", "app", "game", "service", "processor",
+    "sink", "task", "has", "method", "is", "of", "where", "query", "mutation", "seed", "slot",
+    "emit", "state", "when", "for", "else", "route", "await",
 ];
 
 pub const BUILTIN_TYPE_NAMES: &[&str] =

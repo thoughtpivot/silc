@@ -201,6 +201,13 @@ components; dual-surface web and terminal serving is **synthesized** by the
 compiler ([ADR-009](ADR-009-compiler-synthesized-runtime.md)). Authors do not
 write `method serve()`, `ui::web`, or `ui::terminal` as program operations.
 
+**Game subject (web-only surface, polyglot spine).** Real-time WebGPU programs
+declare `game Name { game::scene(...) }` with the closed `game::*` catalog
+([ADR-012](ADR-012-webgpu-game-subject.md)). They synthesize a browser WebGPU
+surface only — ADR-009 dual-surface parity applies to `app`, not `game` — but
+still use Silc’s Bun (host), CPython (compile-time bake), and Go (SQLite store)
+engines. A program must not mix `game` with `app` / UI resources in v1.
+
 Codegen consumes one component graph and emits equal web and terminal adapters.
 Web lowers to compiler-owned React/Tailwind templates. Terminal lowers to a
 compiler-owned **OpenTUI** app that renders the same routes, state, events, and

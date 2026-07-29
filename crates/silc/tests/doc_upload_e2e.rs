@@ -34,13 +34,13 @@ fn wait_http(port: u16, timeout: Duration) {
         }
         thread::sleep(Duration::from_millis(250));
     }
-    panic!("dataCollectorApp did not become healthy on {port}");
+    panic!("dataExtractorApp did not become healthy on {port}");
 }
 
 #[test]
-fn data_collector_app_emits_upload_pipeline() {
+fn data_extractor_app_emits_upload_pipeline() {
     let example =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/dataCollectorApp/main.silc");
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/dataExtractorApp/main.silc");
     let build = Command::new(silc_bin())
         .args(["build", example.to_str().unwrap()])
         .env("SILC_HTTP_PORT", "18132")
@@ -55,7 +55,7 @@ fn data_collector_app_emits_upload_pipeline() {
     );
 
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../examples/dataCollectorApp/.runtime/main");
+        .join("../../examples/dataExtractorApp/.runtime/main");
     let worker = std::fs::read_to_string(root.join("typescript/worker.ts")).unwrap();
     assert!(worker.contains("HAS_DOC = true") || worker.contains("const HAS_DOC = true"));
     assert!(worker.contains("/upload"));
@@ -70,9 +70,9 @@ fn data_collector_app_emits_upload_pipeline() {
 
 #[test]
 #[ignore = "starts full dual-surface runtime and installs doc extract wheels"]
-fn data_collector_upload_persists_extracted_row() {
+fn data_extractor_upload_persists_extracted_row() {
     let example = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../examples/dataCollectorApp");
+        .join("../../examples/dataExtractorApp");
     let port = 18134u16;
     free_port(port);
 
@@ -84,7 +84,7 @@ fn data_collector_upload_persists_extracted_row() {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
-        .expect("spawn dataCollectorApp");
+        .expect("spawn dataExtractorApp");
 
     wait_http(port, Duration::from_secs(120));
 

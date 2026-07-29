@@ -989,6 +989,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "sil-core",
  "sil-training",
  "tempfile",
 ]

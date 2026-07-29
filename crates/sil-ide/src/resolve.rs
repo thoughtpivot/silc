@@ -77,6 +77,7 @@ fn keyword_from_token(token: &Token) -> Option<&'static str> {
         Token::Component => "component",
         Token::Resource => "resource",
         Token::App => "app",
+        Token::Game => "game",
         Token::Service => "service",
         Token::Processor => "processor",
         Token::Sink => "sink",
@@ -134,6 +135,31 @@ fn resolve_ident_context(doc: &Document, idx: usize) -> Option<HoverContent> {
                 let detail = format!("{}\n\n{}", spec.description, signature);
                 return Some(HoverContent {
                     markdown: md("ui primitive", &format!("ui::{name}"), &detail, None),
+                    range: ns_range,
+                });
+            }
+        }
+        if ns == "game" {
+            if let Some(spec) = sil_core::lookup_game_node(name) {
+                let props: Vec<String> = spec
+                    .props
+                    .iter()
+                    .map(|p| {
+                        if p.required {
+                            format!(":{}(...)", p.name)
+                        } else {
+                            format!(":{}?", p.name)
+                        }
+                    })
+                    .collect();
+                let detail = format!(
+                    "{}\n\n`game::{}({})`",
+                    spec.description,
+                    spec.name,
+                    props.join(", ")
+                );
+                return Some(HoverContent {
+                    markdown: md("game node", &format!("game::{name}"), &detail, None),
                     range: ns_range,
                 });
             }
@@ -670,6 +696,21 @@ fn resolve_declaration_name(
                      declares {} route(s); the runtime serves the matching component tree for \
                      both web and terminal surfaces.",
                     app.routes.len()
+                ),
+                None,
+            ),
+            range,
+        });
+    }
+    if let Some(game) = program.games.iter().find(|g| g.name == name) {
+        return Some(HoverContent {
+            markdown: md(
+                "game",
+                name,
+                &format!(
+                    "WebGPU game entry rooted at `game::{}`. The compiler lowers the scene \
+                     tree to a Babylon runtime; there is no dual-surface terminal path.",
+                    game.root.name
                 ),
                 None,
             ),

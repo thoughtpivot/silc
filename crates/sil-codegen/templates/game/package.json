@@ -1,0 +1,23 @@
+{
+  "name": "silc-generated-game",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "bun x vite",
+    "build": "bun x vite build",
+    "preview": "bun x vite preview"
+  },
+  "dependencies": {
+    "@babylonjs/core": "9.16.2",
+    "@babylonjs/materials": "9.16.2",
+    "@babylonjs/post-processes": "9.16.2"
+  },
+  "optionalDependencies": {
+    "vite": "8.1.5"
+  },
+  "devDependencies": {
+    "typescript": "5.8.3",
+    "vite": "8.1.5"
+  }
+}

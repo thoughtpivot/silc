@@ -188,7 +188,8 @@ fn tracked_example_agents_embed_template_common_block() {
         "scraperApp",
         "pipelineApp",
         "blogApp",
-        "dataCollectorApp",
+        "dataExtractorApp",
+        "snowFlowGameApp",
     ] {
         let agents = read_workspace(&format!("examples/{app}/AGENTS.md"));
         let actual = template_common_block(&agents);
@@ -211,7 +212,8 @@ fn canonical_silc_sources_omit_runtime_plumbing() {
         "examples/scraperApp/main.silc",
         "examples/pipelineApp/main.silc",
         "examples/blogApp/main.silc",
-        "examples/dataCollectorApp/main.silc",
+        "examples/dataExtractorApp/main.silc",
+        "examples/snowFlowGameApp/main.silc",
         "crates/silc/templates/main.silc",
         "crates/silc/tests/fixtures/scored_form.silc",
         "crates/silc/tests/fixtures/shopping_app.silc",

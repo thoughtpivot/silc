@@ -65,10 +65,10 @@ enum Commands {
         /// Path to the `.silc` entry file
         path: PathBuf,
         /// Inline JSON input (must include string field `url`)
-        #[arg(long, group = "input")]
+        #[arg(long, group = "run_input")]
         input_json: Option<String>,
         /// Path to a JSON input file
-        #[arg(long, group = "input")]
+        #[arg(long, group = "run_input")]
         input: Option<PathBuf>,
     },
 }
@@ -279,6 +279,8 @@ fn compile_and_maybe_run(entry: &Path, attach_terminal: bool) -> Result<(), Stri
                 .ok_or_else(|| "runnable program missing executable graph".to_string())?;
             if graph.is_api_only() {
                 supervisor::run_api(&output, &lock)
+            } else if graph.has_game() {
+                supervisor::run_game(&output, &lock)
             } else if graph.is_pipeline_only() {
                 Err(
                     "pipeline-only program: use `silc run <program.silc> --input-json '{\"url\":\"https://…\"}'`"
@@ -339,6 +341,11 @@ fn compile_common(
             .graph
             .as_ref()
             .ok_or_else(|| "runnable program missing executable graph".to_string())?;
+        if graph.has_game() {
+            supervisor::build_game_python_bake(&lock, &output.root)?;
+            supervisor::build_game_web(&lock, &output.root)?;
+            supervisor::build_go_worker(&lock, &output.root)?;
+        }
         if graph.has_ui() {
             supervisor::build_ui_web(&lock, &output.root)?;
             supervisor::build_go_worker(&lock, &output.root)?;

@@ -7,6 +7,7 @@ authors.workspace = true
 description = "Closed-tool recursive language model scaffold for silc assist (ADR-008)"
 
 [dependencies]
+sil-core = { workspace = true }
 sil-training = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -24,7 +24,7 @@ component UploadPage {
 
     method render() {
         ui::page(
-            :app_bar(ui::app_bar(:title("Data Collector"))),
+            :app_bar(ui::app_bar(:title("Data Extractor"))),
             :side_panel(ui::side_panel(
                 ui::nav_item(:label("Upload"), :to("/"), :active),
                 ui::nav_item(:label("Documents"), :to("/documents"))
@@ -63,7 +63,7 @@ component DocumentsPage {
 
     method render() {
         ui::page(
-            :app_bar(ui::app_bar(:title("Data Collector"))),
+            :app_bar(ui::app_bar(:title("Data Extractor"))),
             :side_panel(ui::side_panel(
                 ui::nav_item(:label("Upload"), :to("/")),
                 ui::nav_item(:label("Documents"), :to("/documents"), :active)
@@ -82,7 +82,7 @@ component DocumentsPage {
     }
 }
 
-app CollectorApp {
+app ExtractorApp {
     route "/" => UploadPage;
     route "/documents" => DocumentsPage;
 }

@@ -2,10 +2,12 @@
 
 use crate::app::App;
 use crate::component::Component;
+use crate::expr::Expr;
 use crate::model_catalog::{
     validate_embedding_model_id, validate_model_id, DEFAULT_EMBEDDING_MODEL_ID, DEFAULT_MODEL_ID,
     DEFAULT_TENSOR_INPUT_FIELD, DEFAULT_TENSOR_OUTPUT_FIELD, MINILM_EMBEDDING_DIM,
 };
+use crate::game::{GameCapabilities, DEFAULT_GAME_FPS, DEFAULT_GAME_PORT};
 use crate::module::{Module, ModuleKind};
 use crate::pipeline::PipelineStep;
 use crate::program::Program;
@@ -33,7 +35,7 @@ pub const EXECUTABLE_OPS: &[(&str, &str)] = &[
 ];
 
 const SUPPORTED_OPS_HELP: &str =
-    "`app` routes (dual-surface UI synthesized), `resource Name for Contract` capabilities, optional text::score or llm::complete, scrape::*, doc::extract, tensor::tokenize/infer pipeline, or service::http API-only";
+    "`app` routes (dual-surface UI synthesized), `game` (WebGPU scene synthesized), `resource Name for Contract` capabilities, optional text::score or llm::complete, scrape::*, doc::extract, tensor::tokenize/infer pipeline, or service::http API-only";
 
 const TENSOR_CPU_ONLY: &str =
     "tensor::infer is CPU-only in Silc 0.4.0; remove :prefer(CUDA) (default/CPU accepted)";
@@ -191,9 +193,11 @@ pub struct ExecutableGraph {
     pub mode: ExecutionMode,
     pub processor_op: ProcessorOp,
     pub capabilities: UiCapabilities,
+    pub game: GameCapabilities,
     pub scrape: ScrapeCapabilities,
     pub doc: DocCapabilities,
     pub app: Option<App>,
+    pub game_decl: Option<crate::game::Game>,
     pub app_name: Option<String>,
     pub service: String,
     pub processor: String,
@@ -218,6 +222,10 @@ pub struct ExecutableGraph {
 }
 
 impl ExecutableGraph {
+    pub fn has_game(&self) -> bool {
+        self.game.webgpu
+    }
+
     pub fn has_ui(&self) -> bool {
         self.capabilities.web || self.capabilities.terminal
     }
@@ -280,8 +288,8 @@ pub fn is_executable_op(namespace: &str, name: &str) -> bool {
 
 /// Every namespace recognized by the classifier (runnable, compiler-owned, or stub).
 pub const KNOWN_NAMESPACES: &[&str] = &[
-    "ui", "http", "html", "service", "text", "llm", "ipc", "store", "resource", "scrape", "doc",
-    "tensor", "numpy", "pandas", "ws", "sys", "schema", "payload", "json",
+    "ui", "game", "http", "html", "service", "text", "llm", "ipc", "store", "resource", "scrape",
+    "doc", "tensor", "numpy", "pandas", "ws", "sys", "schema", "payload", "json",
 ];
 
 fn is_known_namespace(ns: &str) -> bool {
@@ -373,7 +381,8 @@ pub fn classify_program(program: &Program) -> Result<ExecutionMode, String> {
         }
     });
 
-    let declaration_runnable = !program.apps.is_empty() || !program.resources.is_empty();
+    let declaration_runnable =
+        !program.apps.is_empty() || !program.games.is_empty() || !program.resources.is_empty();
 
     if (saw_exec || declaration_runnable) && saw_unknown_ns {
         if saw_legacy_http_html {
@@ -568,10 +577,91 @@ fn component_uses_chat(components: &[Component], name: &str) -> bool {
         .unwrap_or(false)
 }
 
+fn infer_game_graph(program: &Program) -> Result<Option<ExecutableGraph>, String> {
+    if program.games.len() != 1 {
+        return Err("game programs require exactly one `game` declaration".into());
+    }
+    if !program.apps.is_empty() {
+        return Err("cannot mix `game` and `app` in one program".into());
+    }
+    if !program.modules.is_empty() {
+        return Err(
+            "game programs cannot declare service/processor/sink modules; scene intent lives under `game::scene`"
+                .into(),
+        );
+    }
+    if !program.resources.is_empty() || !program.components.is_empty() {
+        return Err(
+            "game programs cannot mix resource/component UI declarations with WebGPU scenes".into(),
+        );
+    }
+
+    let game = program.games[0].clone();
+    if game.root.name != "scene" {
+        return Err("game root must be `game::scene(...)`".into());
+    }
+
+    let title = game
+        .root
+        .prop("title")
+        .and_then(|e| e.as_string_literal().map(|s| s.to_string()))
+        .unwrap_or_else(|| game.name.clone());
+    let target_fps = game
+        .root
+        .prop("target_fps")
+        .and_then(|e| match e {
+            Expr::Number(n) => n.parse().ok(),
+            _ => None,
+        })
+        .unwrap_or(DEFAULT_GAME_FPS);
+    let http_port = env_u16("SILC_HTTP_PORT", DEFAULT_GAME_PORT);
+
+    Ok(Some(ExecutableGraph {
+        mode: ExecutionMode::Runnable,
+        processor_op: ProcessorOp::None,
+        capabilities: UiCapabilities::default(),
+        game: GameCapabilities {
+            webgpu: true,
+            title,
+            target_fps,
+            http_port,
+        },
+        scrape: ScrapeCapabilities::default(),
+        doc: DocCapabilities::default(),
+        app: None,
+        game_decl: Some(game.clone()),
+        app_name: Some(game.name.clone()),
+        service: game.name.clone(),
+        processor: String::new(),
+        sink: "GameDb".into(),
+        http_port,
+        http_route: "/".into(),
+        sqlite_table: "game_saves".into(),
+        terminal_port: None,
+        api_routes: Vec::new(),
+        model_ref: None,
+        embedding_dim: None,
+        tensor_device: None,
+        tensor_input_field: None,
+        tensor_output_field: None,
+        actions: Vec::new(),
+        resource_tables: vec![
+            ("GameSaves".into(), "game_saves".into()),
+            ("GameSettings".into(), "game_settings".into()),
+            ("GameTelemetry".into(), "game_telemetry".into()),
+        ],
+        root_component: None,
+    }))
+}
+
 pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String> {
     match classify_program(program)? {
         ExecutionMode::Stub => return Ok(None),
         ExecutionMode::Runnable => {}
+    }
+
+    if !program.games.is_empty() {
+        return infer_game_graph(program);
     }
 
     let services: Vec<&Module> = program
@@ -1127,10 +1217,12 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
         mode: ExecutionMode::Runnable,
         processor_op,
         capabilities,
+        game: GameCapabilities::default(),
         scrape,
         doc,
         app_name: app.as_ref().map(|a| a.name.clone()),
         app,
+        game_decl: None,
         service: service_name,
         processor: processors
             .first()
@@ -1283,6 +1375,7 @@ mod tests {
             components: vec![],
             resources: vec![],
             apps: vec![],
+            games: vec![],
         }
     }
 
@@ -1363,6 +1456,7 @@ mod tests {
             components: vec![],
             resources: vec![],
             apps: vec![],
+            games: vec![],
         }
     }
 

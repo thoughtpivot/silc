@@ -8,6 +8,7 @@
   [ADR-005](ADR-005-local-llm-complete.md),
   [ADR-007](ADR-007-pipeline-feeds.md),
   [ADR-010](ADR-010-tensor-minilm-pipeline.md),
+  [ADR-012](ADR-012-webgpu-game-subject.md),
   [intent-vs-subjects.md](intent-vs-subjects.md),
   [ARCHITECTURE.md](ARCHITECTURE.md)
 - **Supersedes (partial):** Author-facing `method serve()`, `ui::web` /
@@ -67,6 +68,11 @@ Authors may declare:
 Dual-surface **parity remains required** as a product outcome: every UI app
 gets both surfaces. Authors no longer declare the surfaces in source.
 
+**Exception (ADR-012):** `game` programs synthesize a **web-only** WebGPU
+browser surface (no OpenTUI). Dual-surface parity does not apply to `game`; do
+not declare `app`, `component`, or UI resources alongside `game` in v1. Game
+programs still synthesize Bun + CPython bake + Go persistence (ADR-001/004).
+
 ### Example (0.4.0)
 
 ```silc
@@ -120,6 +126,11 @@ Catalog primitives such as `ui::page` remain template vocabulary inside
 - Author-defined sink or IPC modules
 - Web-only or terminal-only UI apps
 - Restoring `resource::*` as author-facing ops
+
+**ADR-012 exception:** `game` programs are intentionally web-only for the
+player-facing surface (WebGPU, no terminal chrome). That exemption applies to
+the `game` subject only — not to `app` UI programs — and does not exempt games
+from polyglot Bun/CPython/Go synthesis.
 
 ## Historical note
 

@@ -4,6 +4,7 @@ use crate::app::App;
 use crate::component::{Component, UiTemplate};
 use crate::contract::{Contract, Subset, SubsetPredicate};
 use crate::expr::Expr;
+use crate::game::{validate_game, Game};
 use crate::module::Module;
 use crate::resource::Resource;
 use crate::types::TypeExpr;
@@ -18,6 +19,7 @@ pub struct Program {
     pub components: Vec<Component>,
     pub resources: Vec<Resource>,
     pub apps: Vec<App>,
+    pub games: Vec<Game>,
 }
 
 impl Program {
@@ -75,6 +77,23 @@ impl Program {
             if !names.insert(app.name.clone()) {
                 return Err(format!("duplicate app name `{}`", app.name));
             }
+        }
+        for game in &self.games {
+            if !names.insert(game.name.clone()) {
+                return Err(format!("duplicate game name `{}`", game.name));
+            }
+        }
+        if !self.games.is_empty() && !self.apps.is_empty() {
+            return Err(
+                "cannot mix `game` and `app` in one program; game programs are WebGPU-only"
+                    .into(),
+            );
+        }
+        if self.games.len() > 1 {
+            return Err("only one `game` declaration is allowed per program".into());
+        }
+        for game in &self.games {
+            validate_game(game)?;
         }
 
         let known_types: std::collections::HashSet<&str> = [

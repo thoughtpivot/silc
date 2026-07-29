@@ -67,12 +67,20 @@ impl Corpus {
             include_str!("../../../examples/blogApp/AGENTS.md"),
         );
         corpus.insert(
-            "example/dataCollectorApp/main.silc",
-            include_str!("../../../examples/dataCollectorApp/main.silc"),
+            "example/dataExtractorApp/main.silc",
+            include_str!("../../../examples/dataExtractorApp/main.silc"),
         );
         corpus.insert(
-            "example/dataCollectorApp/AGENTS.md",
-            include_str!("../../../examples/dataCollectorApp/AGENTS.md"),
+            "example/dataExtractorApp/AGENTS.md",
+            include_str!("../../../examples/dataExtractorApp/AGENTS.md"),
+        );
+        corpus.insert(
+            "example/snowFlowGameApp/main.silc",
+            include_str!("../../../examples/snowFlowGameApp/main.silc"),
+        );
+        corpus.insert(
+            "example/snowFlowGameApp/AGENTS.md",
+            include_str!("../../../examples/snowFlowGameApp/AGENTS.md"),
         );
         // The `silc init` starter: the smallest known-good program, used as the
         // skeleton to adapt when assist creates a file from scratch.
@@ -292,12 +300,18 @@ mod tests {
             .contains("@version"));
         assert!(c.get("example/chatApp/AGENTS.md").is_some());
         assert!(c.get("example/blogApp/AGENTS.md").is_some());
-        assert!(c.get("example/dataCollectorApp/main.silc").is_some());
+        assert!(c.get("example/dataExtractorApp/main.silc").is_some());
         assert!(c
-            .get("example/dataCollectorApp/main.silc")
+            .get("example/dataExtractorApp/main.silc")
             .unwrap()
             .contains("doc::extract"));
-        assert!(c.len() >= 15);
+        assert!(c.get("example/snowFlowGameApp/main.silc").is_some());
+        assert!(c
+            .get("example/snowFlowGameApp/main.silc")
+            .unwrap()
+            .contains("game::scene"));
+        assert!(c.get("example/snowFlowGameApp/AGENTS.md").is_some());
+        assert!(c.len() >= 17);
     }
 
     #[test]

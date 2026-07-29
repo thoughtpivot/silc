@@ -8,14 +8,19 @@ use sil_training::{check_source, extract_program};
 
 use crate::complete::{ChatRequest, Completer};
 use crate::corpus::Corpus;
-use crate::progress::{draft_preview, truncate_one_line, ActionKind, ProgressEvent, ProgressReporter};
+use crate::progress::{
+    draft_preview, truncate_one_line, ActionKind, ProgressEvent, ProgressReporter,
+};
 use crate::prompt::AUTHOR_SYSTEM_PROMPT;
 use crate::session::{AssistError, AssistResult};
-use crate::tools::{normalize_typography, Budgets, ToolState, MIN_DRAFT_CHARS, UNCHANGED_SEED_ERROR};
+use crate::tools::{
+    normalize_typography, Budgets, ToolState, MIN_DRAFT_CHARS, UNCHANGED_SEED_ERROR,
+};
 
 /// Soft char budget for the injected context bundle (examples + rules + target).
 const CONTEXT_CHAR_BUDGET: usize = 12_000;
 const EXAMPLE_SLICE: usize = 3_500;
+const GAME_EXAMPLE_SLICE: usize = 8_000;
 const RULES_DIGEST: usize = 2_500;
 
 /// Stop sequences for draft-first chat — prevent the model from inventing
@@ -36,12 +41,15 @@ pub struct AuthorContext {
     pub target: Option<String>,
     /// True when `target` is the `silc init` starter rather than a real file.
     pub target_is_starter: bool,
+    /// Closed `game::*` catalog digest when the task/seed is game-shaped.
+    pub game_catalog: Option<String>,
 }
 
 /// Score corpus docs by keyword overlap with the task; prefer examples/fixtures.
 pub fn select_context(task: &str, corpus: &Corpus, seed: Option<&str>) -> AuthorContext {
     let tokens = task_tokens(task);
     let mut scored: Vec<(i32, String, String)> = Vec::new();
+    let game_shaped = is_game_shaped(task, seed);
 
     for (id, body) in corpus.list().into_iter().filter_map(|(id, _)| {
         let body = corpus.get(&id)?.to_string();
@@ -62,6 +70,11 @@ pub fn select_context(task: &str, corpus: &Corpus, seed: Option<&str>) -> Author
         if is_example {
             score += 1;
         }
+        if game_shaped && body.contains("game::scene") {
+            score += 20;
+        } else if game_shaped && !body.contains("game::scene") {
+            score -= 10;
+        }
         scored.push((score, id, body));
     }
 
@@ -73,24 +86,43 @@ pub fn select_context(task: &str, corpus: &Corpus, seed: Option<&str>) -> Author
         .unwrap_or("");
     let rules = condense_rules(rules_src, RULES_DIGEST);
 
+    let game_catalog = game_shaped.then(sil_core::format_game_catalog_md);
     let mut remaining = CONTEXT_CHAR_BUDGET.saturating_sub(rules.chars().count());
+    if let Some(catalog) = &game_catalog {
+        remaining = remaining.saturating_sub(catalog.chars().count().min(4_000));
+    }
     if let Some(t) = seed {
         remaining = remaining.saturating_sub(t.chars().count().min(4_000));
     }
 
+    let example_slice = if game_shaped {
+        GAME_EXAMPLE_SLICE
+    } else {
+        EXAMPLE_SLICE
+    };
     let mut examples = Vec::new();
     for (_, id, body) in scored.into_iter().take(4) {
         if examples.len() >= 2 || remaining < 400 {
             break;
         }
-        let slice = truncate_chars(&body, EXAMPLE_SLICE.min(remaining));
+        if game_shaped && !body.contains("game::scene") {
+            continue;
+        }
+        let slice = truncate_chars(&body, example_slice.min(remaining));
         remaining = remaining.saturating_sub(slice.chars().count());
         examples.push((id, slice));
     }
 
     // Always include a small form fixture if we somehow got nothing.
     if examples.is_empty() {
-        if let Some(body) = corpus.get("fixture/scored_form.silc") {
+        if game_shaped {
+            if let Some(body) = corpus.get("example/snowFlowGameApp/main.silc") {
+                examples.push((
+                    "example/snowFlowGameApp/main.silc".into(),
+                    truncate_chars(body, GAME_EXAMPLE_SLICE),
+                ));
+            }
+        } else if let Some(body) = corpus.get("fixture/scored_form.silc") {
             examples.push((
                 "fixture/scored_form.silc".into(),
                 truncate_chars(body, EXAMPLE_SLICE),
@@ -101,8 +133,13 @@ pub fn select_context(task: &str, corpus: &Corpus, seed: Option<&str>) -> Author
     // From scratch, the model tends to over-build (inventing resources, queries
     // and processors it gets wrong). Adapting the `silc init` starter — the same
     // shape the modify path succeeds with — keeps the first draft compilable.
+    // Game tasks must not start from the UI form starter.
     let target = match seed {
         Some(s) => Some(s.to_string()),
+        None if game_shaped => corpus
+            .get("example/snowFlowGameApp/main.silc")
+            .map(str::to_string)
+            .or_else(|| corpus.get("starter").map(str::to_string)),
         None => corpus.get("starter").map(str::to_string),
     };
 
@@ -111,7 +148,23 @@ pub fn select_context(task: &str, corpus: &Corpus, seed: Option<&str>) -> Author
         examples,
         target,
         target_is_starter: seed.is_none(),
+        game_catalog,
     }
+}
+
+fn is_game_shaped(task: &str, seed: Option<&str>) -> bool {
+    let lower = task.to_ascii_lowercase();
+    seed.is_some_and(|s| s.contains("game::scene") || s.contains("\ngame "))
+        || lower.contains("game::")
+        || lower.contains("webgpu")
+        || lower.contains("game scene")
+        || (lower.contains("game")
+            && (lower.contains("terrain")
+                || lower.contains("spell")
+                || lower.contains("snow")
+                || lower.contains("babylon")
+                || lower.contains("real-time")
+                || lower.contains("realtime")))
 }
 
 /// Search the entire corpus for snippets that explain a compiler diagnostic.
@@ -217,6 +270,43 @@ pub fn retrieve_for_error(corpus: &Corpus, error: &str) -> Vec<(String, String)>
 pub fn repair_guidance(error: &str) -> Option<String> {
     let lower = error.to_lowercase();
 
+    if lower.contains("unknown game node")
+        || (lower.contains("unknown prop") && lower.contains("game::"))
+    {
+        return Some(format!(
+            "GAME CATALOG RULE: use only closed `game::*` nodes/props.\n{}\nFix: replace the unknown node/prop with a catalog entry above.",
+            sil_core::format_game_catalog_md()
+        ));
+    }
+    if lower.contains("cannot contain game::") || lower.contains("does not accept children") {
+        return Some(
+            "GAME CHILD RULE: each `game::*` node only accepts the children listed in the catalog. \
+             Move disallowed children under `game::scene`, `game::ability`, `game::movement_mode`, \
+             `game::terrain`, or `game::character` as appropriate."
+                .into(),
+        );
+    }
+    if lower.contains("duplicate ability key") {
+        return Some(
+            "ABILITY KEY RULE: every `game::ability` needs a unique `:key(\"…\")` string. \
+             Fix: change the colliding key (typically \"1\"–\"5\")."
+                .into(),
+        );
+    }
+    if lower.contains("cannot mix") && lower.contains("game") {
+        return Some(
+            "GAME SUBJECT RULE: a game program is only `game Name { game::scene(...) }`. \
+             Remove every `app`, `component`, `contract`, `resource`, `service`, and `processor`."
+                .into(),
+        );
+    }
+    if lower.contains("root must be") && lower.contains("game::scene") {
+        return Some(
+            "GAME ROOT RULE: the declaration must be `game Name { game::scene(:title(\"…\"), …) }`."
+                .into(),
+        );
+    }
+
     if lower.contains("in contract") {
         return Some(
             "CONTRACT RULE: a contract holds ONLY field declarations — `has Type $.field;` lines and nothing else. No methods, no `has state`, no default values, no ui:: calls.\nFix: move every method and all state into a `component` (or a `processor` for pipelines) and leave the contract as plain fields."
@@ -275,7 +365,9 @@ pub fn repair_guidance(error: &str) -> Option<String> {
         );
     }
 
-    if lower.contains("closed") && (lower.contains("variant") || lower.contains("tone") || lower.contains("size")) {
+    if lower.contains("closed")
+        && (lower.contains("variant") || lower.contains("tone") || lower.contains("size"))
+    {
         return Some(
             "CLOSED ENUM: `:variant` accepts primary|secondary|destructive|ghost, `:tone` accepts default|muted|info|success|warning|danger, `:size` accepts sm|md|lg. Use bare tokens, not strings."
                 .into(),
@@ -367,7 +459,10 @@ pub fn autofix(program: &str, error: &str) -> Option<(String, String)> {
     }
 
     if let Some((fixed, name)) = hoist_nested_method(program, error) {
-        return Some((fixed, format!("moved nested `{name}` out of its enclosing method")));
+        return Some((
+            fixed,
+            format!("moved nested `{name}` out of its enclosing method"),
+        ));
     }
 
     None
@@ -451,8 +546,16 @@ fn task_pattern(task: &str, target: Option<&str>) -> Option<String> {
     let mut parts: Vec<&'static str> = Vec::new();
 
     let wants_storage = [
-        "store", "save", "persist", "record", "ledger", "database", "keep track",
-        "history", "sqlite", "submit",
+        "store",
+        "save",
+        "persist",
+        "record",
+        "ledger",
+        "database",
+        "keep track",
+        "history",
+        "sqlite",
+        "submit",
     ]
     .iter()
     .any(|k| lower.contains(k));
@@ -480,8 +583,16 @@ Form submit buttons use `:variant(primary)` as a bare token and the `:submit` fl
     }
 
     let wants_ledger = [
-        "ledger", "list page", "view page", "another page", "second page",
-        "see the", "view the", "show the", "table of", "/ledger",
+        "ledger",
+        "list page",
+        "view page",
+        "another page",
+        "second page",
+        "see the",
+        "view the",
+        "show the",
+        "table of",
+        "/ledger",
     ]
     .iter()
     .any(|k| lower.contains(k));
@@ -524,8 +635,17 @@ Rules: the component name MUST differ from every contract/resource/processor/app
     }
 
     let wants_doc_upload = [
-        "upload", "document", "pdf", "docx", "file_input", "doc::extract",
-        "extract text", "data collector", "datacollector",
+        "upload",
+        "document",
+        "pdf",
+        "docx",
+        "file_input",
+        "doc::extract",
+        "extract text",
+        "data extractor",
+        "dataextractor",
+        "data collector",
+        "datacollector",
     ]
     .iter()
     .any(|k| lower.contains(k));
@@ -557,7 +677,7 @@ component UploadPage {
 
     method render() {
         ui::page(
-            :app_bar(ui::app_bar(:title("Data Collector"))),
+            :app_bar(ui::app_bar(:title("Data Extractor"))),
             :side_panel(ui::side_panel(
                 ui::nav_item(:label("Upload"), :to("/"), :active),
                 ui::nav_item(:label("Documents"), :to("/documents"))
@@ -583,7 +703,7 @@ component DocumentsPage {
 
     method render() {
         ui::page(
-            :app_bar(ui::app_bar(:title("Data Collector"))),
+            :app_bar(ui::app_bar(:title("Data Extractor"))),
             :side_panel(ui::side_panel(
                 ui::nav_item(:label("Upload"), :to("/")),
                 ui::nav_item(:label("Documents"), :to("/documents"), :active)
@@ -602,7 +722,7 @@ component DocumentsPage {
     }
 }
 
-app CollectorApp {
+app ExtractorApp {
     route "/" => UploadPage;
     route "/documents" => DocumentsPage;
 }
@@ -618,8 +738,15 @@ Rules: keep contract field names exactly as above so extract can fill them; use 
     }
 
     let wants_toast = [
-        "toast", "snack", "snackbar", "success alert", "show a success",
-        "status message", "flash message", "notify", "notification",
+        "toast",
+        "snack",
+        "snackbar",
+        "success alert",
+        "show a success",
+        "status message",
+        "flash message",
+        "notify",
+        "notification",
     ]
     .iter()
     .any(|k| lower.contains(k));
@@ -652,10 +779,42 @@ Rules: `ui::alert` / `when` must live inside `method render()`; clearing a file 
         );
     }
 
-    if parts.is_empty() {
+    let wants_game = is_game_shaped(
+        task,
+        if target.is_empty() {
+            None
+        } else {
+            Some(target)
+        },
+    );
+    let game_part = if wants_game && !target.contains("game ") {
+        Some(format!(
+            "WebGPU game programs declare ONE `game Name {{ game::scene(...) }}` tree — closed `game::*` catalog only (ADR-012). \
+No `app`, `component`, `resource`, `service`, or `processor`. No hand-written JavaScript/TypeScript in `.silc`. \
+The compiler synthesizes Bun (host) + CPython bake + Go SQLite.\n\n\
+Copy structure from the highest-scoring game example in context and tune props for the task.\n\
+Required systems for a playable scene: terrain+height_layer, surface, deformation, environment, \
+post_process stages, character(+cloth/fur), camera, controls, optional movement_mode, abilities, overlay.\n\n\
+{}\n\
+Rules: use ONLY catalog nodes/props; `:title` is manifest data — never invent title-named compiler branches; \
+default web port 18140; runtime TypeScript/Babylon is compiler-owned; do not mix with UI `app` routes.",
+            sil_core::format_game_catalog_md()
+        ))
+    } else {
+        None
+    };
+
+    if parts.is_empty() && game_part.is_none() {
         None
     } else {
-        Some(parts.join("\n\n"))
+        let mut out = parts.join("\n\n");
+        if let Some(game) = game_part {
+            if !out.is_empty() {
+                out.push_str("\n\n");
+            }
+            out.push_str(&game);
+        }
+        Some(out)
     }
 }
 
@@ -665,6 +824,12 @@ Rules: `ui::alert` / `when` must live inside `method render()`; clearing a file 
 /// produced 17k chars in 91s — so scale from the target and keep the ceiling for
 /// genuinely large files.
 fn draft_token_budget(target: Option<&str>, ceiling: usize) -> usize {
+    // A game scene is one large, nested intent tree that must be returned in
+    // full on every edit. Form-oriented scaling truncates realistic games and
+    // then wastes repair attempts trying to reconstruct a missing tail.
+    if target.is_some_and(|source| source.contains("game::scene")) {
+        return ceiling;
+    }
     let target_chars = target.map_or(0, str::len);
     let estimate = target_chars / 3 + 256;
     (estimate * 3 / 2).clamp(MIN_DRAFT_TOKENS.min(ceiling), ceiling)
@@ -680,7 +845,8 @@ pub fn ensure_version(program: &str) -> Option<String> {
     }
     let looks_silc = program.contains("component ")
         || program.contains("contract ")
-        || program.contains("app ");
+        || program.contains("app ")
+        || program.contains("game ");
     if !looks_silc {
         return None;
     }
@@ -688,6 +854,81 @@ pub fn ensure_version(program: &str) -> Option<String> {
     let insert_at = usize::from(lines.first().is_some_and(|l| l.starts_with("#!")));
     lines.insert(insert_at, "@version(\"0.4.0\")");
     Some(lines.join("\n"))
+}
+
+/// Reject a game edit that silently removes authored intent.
+///
+/// Compiler validity alone is too weak for `silc assist`: a model can produce a
+/// valid game while dropping the camera, controls, movement modes, post stages,
+/// abilities, or their effects. Unless the task explicitly asks for destructive
+/// editing, every `game::*` node present in the seed must remain represented at
+/// least as many times in the revision.
+
+/// Reject mixed UI/resource programs when the task is game-shaped.
+fn game_subject_purity(program: &str) -> Option<String> {
+    let has_game = program.contains("game ") && program.contains("game::scene");
+    if !has_game {
+        return Some(
+            "game-shaped tasks must declare a single `game Name { game::scene(...) }` root".into(),
+        );
+    }
+    for banned in [
+        "\nresource ",
+        "\ncontract ",
+        "\ncomponent ",
+        "\napp ",
+        "\nmethod ",
+        "\nservice ",
+        "\nprocessor ",
+    ] {
+        if program.contains(banned) || program.starts_with(banned.trim_start()) {
+            return Some(format!(
+                "game programs must not mix `{}` declarations with `game::scene`",
+                banned.trim()
+            ));
+        }
+    }
+    None
+}
+
+fn game_intent_regression(seed: &str, candidate: &str, task: &str) -> Option<String> {
+    if !seed.contains("game ") || !seed.contains("game::scene") {
+        return None;
+    }
+    let task = task.to_ascii_lowercase();
+    if ["remove", "delete", "drop", "cut", "replace"]
+        .iter()
+        .any(|verb| task.contains(verb))
+    {
+        return None;
+    }
+
+    let node_re =
+        regex::Regex::new(r"game::([a-z_][a-z0-9_]*)\s*\(").expect("valid game node regex");
+    let counts = |source: &str| {
+        let mut out = std::collections::BTreeMap::<String, usize>::new();
+        for caps in node_re.captures_iter(source) {
+            *out.entry(caps[1].to_string()).or_default() += 1;
+        }
+        out
+    };
+    let before = counts(seed);
+    let after = counts(candidate);
+    let missing: Vec<String> = before
+        .iter()
+        .filter_map(|(node, expected)| {
+            let actual = after.get(node).copied().unwrap_or(0);
+            (actual < *expected).then(|| format!("game::{node} ({actual}/{expected})"))
+        })
+        .collect();
+    if missing.is_empty() {
+        None
+    } else {
+        Some(format!(
+            "game intent regression: the revision removed existing nodes: {}",
+            missing.join(", ")
+        ))
+    }
 }
 
 /// Top-level declaration keywords that share Silc's single namespace.
@@ -714,11 +955,9 @@ fn declarations(program: &str, name: &str) -> Vec<Decl> {
     let bytes = program.as_bytes();
     let mut found = Vec::new();
     for kind in DECL_KINDS {
-        let Ok(re) = regex::Regex::new(&format!(
-            r"(?m)^[ \t]*{}\s+{}\b",
-            kind,
-            regex::escape(name)
-        )) else {
+        let Ok(re) =
+            regex::Regex::new(&format!(r"(?m)^[ \t]*{}\s+{}\b", kind, regex::escape(name)))
+        else {
             continue;
         };
         for m in re.find_iter(program) {
@@ -775,11 +1014,8 @@ fn drop_repeated_declaration(program: &str, name: &str) -> Option<(String, &'sta
         if same.len() < 2 {
             continue;
         }
-        let spans: Vec<(usize, usize)> = same
-            .iter()
-            .skip(1)
-            .map(|d| (d.line_start, d.end))
-            .collect();
+        let spans: Vec<(usize, usize)> =
+            same.iter().skip(1).map(|d| (d.line_start, d.end)).collect();
         return Some((remove_spans(program, &spans)?, kind));
     }
     None
@@ -846,9 +1082,10 @@ fn drop_unused_twin_contracts(program: &str) -> Option<String> {
 
     let mut drop_spans: Vec<(usize, usize)> = Vec::new();
     for (i, (name, start, end, fields)) in contracts.iter().enumerate() {
-        let has_twin = contracts.iter().enumerate().any(|(j, (other, _, _, ofields))| {
-            i != j && other != name && ofields == fields
-        });
+        let has_twin = contracts
+            .iter()
+            .enumerate()
+            .any(|(j, (other, _, _, ofields))| i != j && other != name && ofields == fields);
         if !has_twin {
             continue;
         }
@@ -950,9 +1187,10 @@ fn rename_colliding_declaration(program: &str, name: &str) -> Option<(String, &'
 /// When `component X` and `resource X` collide, rename the resource to `Xs`
 /// (or `XStore`) and update `X.method()` references that follow resource usage.
 fn rename_duplicate_resource(program: &str, name: &str) -> Option<String> {
-    let has_component = regex::Regex::new(&format!(r"(?m)^\s*component\s+{}\b", regex::escape(name)))
-        .ok()?
-        .is_match(program);
+    let has_component =
+        regex::Regex::new(&format!(r"(?m)^\s*component\s+{}\b", regex::escape(name)))
+            .ok()?
+            .is_match(program);
     let resource_re =
         regex::Regex::new(&format!(r"(?m)^(\s*)resource\s+{}\b", regex::escape(name))).ok()?;
     if !resource_re.is_match(program) {
@@ -1361,9 +1599,63 @@ pub fn run_author_with_failure(
         if state.stats.checks >= budgets.max_silc_check {
             break;
         }
-                state.stats.checks += 1;
-                match check_source(&program, None) {
+        if ctx.game_catalog.is_some() {
+            if let Some(error) = game_subject_purity(&program) {
+                state.last_check_ok = false;
+                failure.best_draft = Some(program.clone());
+                failure.last_error = Some(error.clone());
+                last_program = Some(program);
+                last_program_error = Some(error.clone());
+                repair_note = Some(format!(
+                    "{error}\nGAME SUBJECT RULE: emit only `#!/usr/bin/env silc`, `@version(...)`, \
+                     and one `game Name {{ game::scene(...) }}` tree. No resource/contract/component/\
+                     app/method blocks. Output the FULL corrected game program ending with # END."
+                ));
+                emit(
+                    progress,
+                    ProgressEvent::Action {
+                        turn: attempt,
+                        max_turns: attempts,
+                        elapsed_secs: 0.0,
+                        kind: ActionKind::Checked {
+                            ok: false,
+                            detail: truncate_one_line(&error, 80),
+                        },
+                    },
+                );
+                continue;
+            }
+        }
+        state.stats.checks += 1;
+        match check_source(&program, None) {
             Ok(_) => {
+                if let Some(error) =
+                    game_intent_regression(seed.unwrap_or_default(), &program, task)
+                {
+                    state.last_check_ok = false;
+                    failure.best_draft = Some(program.clone());
+                    failure.last_error = Some(error.clone());
+                    last_program = Some(program);
+                    last_program_error = Some(error.clone());
+                    repair_note = Some(format!(
+                        "{error}\nRestore every listed node while making the requested improvement. \
+                         Preserve existing game systems and effect multiplicity unless the task explicitly \
+                         asks to remove them. Output the FULL corrected program ending with # END."
+                    ));
+                    emit(
+                        progress,
+                        ProgressEvent::Action {
+                            turn: attempt,
+                            max_turns: attempts,
+                            elapsed_secs: 0.0,
+                            kind: ActionKind::Checked {
+                                ok: false,
+                                detail: truncate_one_line(&error, 80),
+                            },
+                        },
+                    );
+                    continue;
+                }
                 // Drop unused twin contracts (field-identical copies that nothing
                 // references) — the model invents them and the compiler allows them.
                 let program = match drop_unused_twin_contracts(&program) {
@@ -1439,10 +1731,7 @@ pub fn run_author_with_failure(
                 state.last_check_ok = false;
                 failure.best_draft = Some(program.clone());
                 failure.last_error = Some(error.clone());
-                let stage = error
-                    .split_once(':')
-                    .map(|(s, _)| s)
-                    .unwrap_or("unknown");
+                let stage = error.split_once(':').map(|(s, _)| s).unwrap_or("unknown");
                 emit(
                     progress,
                     ProgressEvent::Action {
@@ -1513,18 +1802,32 @@ pub fn run_author_with_failure(
                 // Structural diagnostics get an explicit rule; only fall back to
                 // corpus grep when no rule matches, since generic hits do not
                 // teach the model which declaration to change.
-                match repair_guidance(&error) {
-                    Some(guidance) => {
-                        evidence.clear();
-                        repair_note = Some(format!(
+                if ctx.game_catalog.is_some()
+                    || seed.is_some_and(|source| source.contains("game::scene"))
+                {
+                    evidence.clear();
+                    repair_note = Some(format!(
+                        "compiler rejected the previous GAME program (stage={stage}): {error}{site}\n\n\
+                         GAME REPAIR RULE: keep a single `game Name {{ game::scene(...) }}` \
+                         structure. Do not invent contracts, components, resources, apps, services, or \
+                         processors. Repair only the game syntax reported by the compiler and preserve \
+                         every existing `game::*` node when modifying.\n\n\
+                         Output the FULL corrected game program ending with # END."
+                    ));
+                } else {
+                    match repair_guidance(&error) {
+                        Some(guidance) => {
+                            evidence.clear();
+                            repair_note = Some(format!(
                             "compiler rejected the previous program (stage={stage}): {error}{site}\n\n{guidance}\n\nOutput the FULL corrected program ending with # END."
                         ));
-                    }
-                    None => {
-                        evidence = retrieve_for_error(corpus, &error);
-                        repair_note = Some(format!(
+                        }
+                        None => {
+                            evidence = retrieve_for_error(corpus, &error);
+                            repair_note = Some(format!(
                             "compiler rejected the previous program (stage={stage}): {error}{site}\nFix using the corpus evidence below and output the FULL corrected program ending with # END."
                         ));
+                        }
                     }
                 }
             }
@@ -1547,6 +1850,11 @@ fn build_user_prompt(
     if !ctx.rules.is_empty() {
         out.push_str("# Silc language rules (condensed)\n");
         out.push_str(&ctx.rules);
+        out.push_str("\n\n");
+    }
+    if let Some(catalog) = &ctx.game_catalog {
+        out.push_str("# Authoritative game::* catalog\n");
+        out.push_str(catalog);
         out.push_str("\n\n");
     }
     for (id, body) in &ctx.examples {
@@ -1575,6 +1883,15 @@ fn build_user_prompt(
         out.push_str(
             "\n# Modify guidance\nPrefer the SMALLEST edit that fulfills the task. Keep existing declarations, names, routes, and handlers unless the task explicitly asks to change them.\nPrefer extending the existing target structure (contract fields + form + optional processor). Do not invent `resource` / seeds unless the task requires a persistent ledger list; if you add seeds every row must include `:id(\"…\")`.\nDo NOT invent extra components, contracts, or processors that the task did not ask for. If the task says DELETE a block, remove only that block.\n`ui::app_bar` only accepts `:title`. `ui::text_input` / `ui::textarea` do not accept `:variant`. Put `:active` only on `ui::nav_item`.\n",
         );
+        if ctx
+            .target
+            .as_deref()
+            .is_some_and(|target| target.contains("game::scene"))
+        {
+            out.push_str(
+                "GAME PRESERVATION RULE: a game edit is additive unless the task explicitly says to remove a system. Preserve every existing `game::*` node, repeated post stage, ability, movement mode, and effect. Never trade away camera, controls, movement, overlay, deformation, character, post-processing, or abilities merely to shorten the output.\n",
+            );
+        }
     } else if ctx.target_is_starter {
         out.push_str(
             "\n# Build guidance\nStart from the skeleton above and change it to fit the task: rename the contract/component/app, set the contract fields, and build the form and render tree the task needs. Keep its structure and syntax.\nKeep `method on_submit() { submit(); }` exactly as written — submission is synthesized, so do not invent pipeline ops or `==>` chains inside it.\nEvery `method` is a SIBLING: close `render()` with `}` before declaring the next method — never nest a method inside another.\nDo not add a `resource`, `query` or `processor` unless the task clearly needs stored records.\n",
@@ -1593,7 +1910,13 @@ fn build_user_prompt(
         if let Some(prev) = last_program {
             // On truncation repairs we already embedded a tail in the note;
             // still include a bounded previous draft for compile failures.
-            let bounded = if prev.lines().count() > 120 {
+            let bounded = if ctx
+                .target
+                .as_deref()
+                .is_some_and(|target| target.contains("game::scene"))
+            {
+                prev.to_string()
+            } else if prev.lines().count() > 120 {
                 draft_tail(prev, 100)
             } else {
                 prev.to_string()
@@ -1630,6 +1953,9 @@ pub fn strip_end_marker(source: &str) -> String {
 
 /// True when a (possibly truncated) draft still has the structural end of an app.
 pub fn looks_complete(program: &str) -> bool {
+    if program.contains("game ") && program.contains("game::scene") {
+        return program.contains("@version(");
+    }
     program.contains("@version(")
         && program.contains("app ")
         && program.contains("route ")
@@ -1745,10 +2071,7 @@ fn task_tokens(task: &str) -> Vec<String> {
 
 fn overlap_score(tokens: &[String], id: &str, body: &str) -> i32 {
     let hay = format!("{id}\n{body}").to_lowercase();
-    tokens
-        .iter()
-        .filter(|t| hay.contains(t.as_str()))
-        .count() as i32
+    tokens.iter().filter(|t| hay.contains(t.as_str())).count() as i32
 }
 
 fn condense_rules(src: &str, max_chars: usize) -> String {
@@ -1763,6 +2086,9 @@ fn condense_rules(src: &str, max_chars: usize) -> String {
                 || lower.contains("contract")
                 || lower.contains("component")
                 || lower.contains("ui::")
+                || lower.contains("game")
+                || lower.contains("webgpu")
+                || lower.contains("adr-012")
                 || lower.contains("quick")
                 || lower.contains("language")
                 || lower.contains("module")
@@ -1776,8 +2102,14 @@ fn condense_rules(src: &str, max_chars: usize) -> String {
         let hard_rule = lower.contains(":id")
             || lower.contains("seed")
             || lower.contains("insert or ignore")
-            || lower.contains("resource ");
-        if in_keep || hard_rule || line.starts_with("@") || line.contains("ui::") {
+            || lower.contains("resource ")
+            || lower.contains("game::");
+        if in_keep
+            || hard_rule
+            || line.starts_with("@")
+            || line.contains("ui::")
+            || line.contains("game::")
+        {
             if kept.chars().count() + line.chars().count() + 1 > max_chars {
                 break;
             }
@@ -1860,6 +2192,9 @@ mod tests {
         assert!(looks_complete(
             "@version(\"0.4.0\")\ncomponent Home {}\napp App { route \"/\" => Home; }\n"
         ));
+        assert!(looks_complete(
+            "@version(\"0.4.0\")\ngame Demo { game::scene(:title(\"T\"), game::overlay(:toggle(\"F1\"))) }\n"
+        ));
     }
 
     #[test]
@@ -1935,7 +2270,10 @@ mod tests {
         let corpus = Corpus::builtin();
         let source = corpus.get("fixture/shopping_app.silc").unwrap();
         let colliding = source
-            .replace("resource Products for Product", "resource ProductCard for Product")
+            .replace(
+                "resource Products for Product",
+                "resource ProductCard for Product",
+            )
             .replace("Products.", "ProductCard.");
         let error = check_source(&colliding, None)
             .expect_err("component/resource name collision must be rejected");
@@ -1984,7 +2322,10 @@ mod tests {
         let ctx = select_context("a hello world greeting page", &corpus, None);
         assert!(ctx.target_is_starter);
         let target = ctx.target.expect("create path should get the starter");
-        assert!(target.contains("@version("), "starter must be a real program");
+        assert!(
+            target.contains("@version("),
+            "starter must be a real program"
+        );
         assert!(check_source(&target, None).is_ok(), "starter must compile");
     }
 
@@ -2098,7 +2439,10 @@ mod tests {
         );
         let error = check_source(program, None).expect_err("collision must be rejected");
         let (fixed, _) = autofix(program, &error).expect("collision should autofix");
-        assert!(fixed.contains("component GuestForm"), "component keeps the name");
+        assert!(
+            fixed.contains("component GuestForm"),
+            "component keeps the name"
+        );
         assert!(
             fixed.contains("processor GuestForms"),
             "processor should be renamed:\n{fixed}"
@@ -2139,7 +2483,7 @@ mod tests {
     #[test]
     fn task_pattern_teaches_doc_upload_extract_shape() {
         let pattern = task_pattern(
-            "build a data collector that uploads PDF and docx files then shows extracted documents",
+            "build a data extractor that uploads PDF and docx files then shows extracted documents",
             None,
         )
         .expect("upload task needs the doc::extract pattern");
@@ -2148,6 +2492,85 @@ mod tests {
         assert!(pattern.contains("POST /upload") || pattern.contains("/upload"));
         assert!(pattern.contains("resource Documents for Document"));
         assert!(pattern.contains("route \"/documents\""));
+    }
+
+    #[test]
+    fn task_pattern_teaches_game_scene_shape() {
+        let pattern = task_pattern("build a webgpu game with terrain and spells", None)
+            .expect("game task needs the game::scene pattern");
+        assert!(pattern.contains("game::scene"));
+        assert!(pattern.contains("game::* catalog"));
+        assert!(pattern.contains("game::movement_mode") || pattern.contains("movement_mode"));
+        assert!(pattern.contains("game::overlay") || pattern.contains("overlay"));
+        assert!(!pattern.contains("app HotelApp"));
+    }
+
+    #[test]
+    fn select_context_injects_game_catalog_for_game_tasks() {
+        let corpus = Corpus::builtin();
+        let ctx = select_context(
+            "improve this webgpu game terrain",
+            &corpus,
+            Some("game Demo { game::scene(:title(\"Demo\"), game::overlay(:toggle(\"F1\"))) }"),
+        );
+        let catalog = ctx.game_catalog.expect("game task needs catalog");
+        assert!(catalog.contains("game::terrain"));
+        assert!(catalog.contains("game::ability"));
+        assert!(
+            ctx.examples
+                .iter()
+                .any(|(_, body)| body.contains("game::scene")),
+            "should prefer a game example"
+        );
+    }
+
+    #[test]
+    fn repair_guidance_covers_unknown_game_prop() {
+        let guidance = repair_guidance("validate: unknown prop `:foo` on game::terrain")
+            .expect("game prop errors need catalog guidance");
+        assert!(guidance.contains("GAME CATALOG RULE"));
+        assert!(guidance.contains("game::terrain"));
+    }
+
+    #[test]
+    fn game_modify_rejects_silent_intent_removal() {
+        let seed = concat!(
+            "game Demo { game::scene(:title(\"Demo\"), ",
+            "game::camera(:mode(third_person)), ",
+            "game::controls(:scheme(wasd_mouse)), ",
+            "game::post_process(:stage(taa)), ",
+            "game::post_process(:stage(sharpen)), ",
+            "game::ability(:name(\"Sweep\"), :key(\"1\"), game::wake(:intensity(1)))",
+            ") }"
+        );
+        let candidate = concat!(
+            "game Demo { game::scene(:title(\"Demo\"), ",
+            "game::post_process(:stage(taa)), ",
+            "game::ability(:name(\"Sweep\"), :key(\"1\"))",
+            ") }"
+        );
+        let error = game_intent_regression(seed, candidate, "make the scene more beautiful")
+            .expect("silent node removal must be rejected");
+        assert!(error.contains("game::camera (0/1)"), "{error}");
+        assert!(error.contains("game::controls (0/1)"), "{error}");
+        assert!(error.contains("game::post_process (1/2)"), "{error}");
+        assert!(error.contains("game::wake (0/1)"), "{error}");
+    }
+
+    #[test]
+    fn game_modify_allows_additive_and_explicit_destructive_edits() {
+        let seed = "game Demo { game::scene(:title(\"Demo\"), game::camera(:mode(third_person))) }";
+        let additive = concat!(
+            "game Demo { game::scene(:title(\"Demo\"), ",
+            "game::camera(:mode(third_person)), game::controls(:scheme(wasd_mouse))) }"
+        );
+        assert!(game_intent_regression(seed, additive, "add controls").is_none());
+
+        let destructive = "game Demo { game::scene(:title(\"Demo\")) }";
+        assert!(
+            game_intent_regression(seed, destructive, "remove the camera").is_none(),
+            "explicit destructive task should be allowed"
+        );
     }
 
     #[test]
@@ -2184,7 +2607,10 @@ mod tests {
         .expect("a storage task without a resource needs the pattern");
         assert!(pattern.contains("resource Guests for Guest"));
         assert!(pattern.contains("Guests.create(Guest.new("));
-        assert!(pattern.contains("processor"), "must explain why not a processor");
+        assert!(
+            pattern.contains("processor"),
+            "must explain why not a processor"
+        );
     }
 
     #[test]
@@ -2217,6 +2643,12 @@ mod tests {
         assert_eq!(draft_token_budget(Some(&"x".repeat(40_000)), 4_096), 4_096);
         // A ceiling below the floor still wins.
         assert_eq!(draft_token_budget(None, 800), 800);
+    }
+
+    #[test]
+    fn draft_token_budget_uses_ceiling_for_game_trees() {
+        let game = "@version(\"0.4.0\")\ngame Demo { game::scene(:title(\"Demo\")) }\n";
+        assert_eq!(draft_token_budget(Some(game), 4_096), 4_096);
     }
 
     #[test]
@@ -2371,6 +2803,7 @@ mod tests {
             examples: vec![],
             target: Some("@version(\"0.4.0\")\n".into()),
             target_is_starter: false,
+            game_catalog: None,
         };
         let prompt = build_user_prompt("hotel form", &ctx, None, None, &[], true);
         assert!(prompt.contains("Prefer extending the existing target"));
@@ -2385,6 +2818,7 @@ mod tests {
             examples: vec![],
             target: Some("@version(\"0.4.0\")\n".into()),
             target_is_starter: true,
+            game_catalog: None,
         };
         let prompt = build_user_prompt("greeting page", &ctx, None, None, &[], false);
         assert!(prompt.contains("Starting skeleton"));

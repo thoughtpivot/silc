@@ -128,6 +128,260 @@ pub fn build_go_api_worker(lock: &RuntimeLock, runtime_root: &Path) -> Result<Pa
     Ok(out)
 }
 
+/// Install Babylon/Vite deps and bundle the WebGPU game surface with Silc-owned Bun.
+pub fn build_game_web(lock: &RuntimeLock, runtime_root: &Path) -> Result<(), String> {
+    let ts_dir = runtime_root.join("typescript");
+    if !ts_dir.join("package.json").is_file() {
+        return Err("missing compiler-generated typescript/package.json for game".into());
+    }
+    if !ts_dir.join("src/main.ts").is_file() {
+        return Err("missing compiler-generated typescript/src/main.ts for game".into());
+    }
+    if !ts_dir.join("vite.config.ts").is_file() {
+        return Err("missing compiler-generated typescript/vite.config.ts for game".into());
+    }
+    if !ts_dir.join("public/manifest.json").is_file() {
+        return Err("missing compiler-generated typescript/public/manifest.json for game".into());
+    }
+
+    let install = Command::new(&lock.bun_bin)
+        .current_dir(&ts_dir)
+        .args(["install", "--frozen-lockfile"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| format!("failed to install game deps with Silc Bun: {e}"))?;
+    if !install.status.success() {
+        return Err(format!(
+            "Silc Bun install for game failed:\n{}\n{}",
+            String::from_utf8_lossy(&install.stdout),
+            String::from_utf8_lossy(&install.stderr)
+        ));
+    }
+
+    let build = Command::new(&lock.bun_bin)
+        .current_dir(&ts_dir)
+        .args(["x", "vite@8.1.5", "build"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .map_err(|e| format!("failed to build game with Vite via Silc Bun: {e}"))?;
+    if !build.status.success() {
+        return Err(format!(
+            "Silc Bun Vite game build failed:\n{}\n{}",
+            String::from_utf8_lossy(&build.stdout),
+            String::from_utf8_lossy(&build.stderr)
+        ));
+    }
+
+    let dist_index = ts_dir.join("dist/index.html");
+    if !dist_index.is_file() {
+        return Err(format!(
+            "game Vite build did not produce {}",
+            dist_index.display()
+        ));
+    }
+    Ok(())
+}
+
+/// Run a game program on the Silc polyglot spine: Bun host + Go store over UDS.
+/// CPython bake runs at compile time (`build_game_python_bake`). No terminal surface.
+pub fn run_game(output: &EmitResult, lock: &RuntimeLock) -> Result<(), String> {
+    let graph = output
+        .graph
+        .as_ref()
+        .ok_or_else(|| "game program missing executable graph".to_string())?;
+    if !graph.has_game() {
+        return Err("run_game requires a game graph".into());
+    }
+    ensure_http_port_available(graph.http_port)?;
+
+    let worker = output.root.join("typescript/worker.ts");
+    if !worker.is_file() {
+        return Err(format!("missing game worker at {}", worker.display()));
+    }
+    let dist_index = output.root.join("typescript/dist/index.html");
+    if !dist_index.is_file() {
+        return Err(format!(
+            "missing built game dist at {}; run compile/build first",
+            dist_index.display()
+        ));
+    }
+    let go_bin = output.root.join("go/worker");
+    if !go_bin.is_file() {
+        return Err(format!(
+            "missing Go game store at {}; run compile/build first",
+            go_bin.display()
+        ));
+    }
+
+    let ipc_dir = output.root.join("ipc");
+    let data_dir = output.root.join("data");
+    fs::create_dir_all(&ipc_dir).map_err(|e| e.to_string())?;
+    fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
+    let _ = fs::write(ipc_dir.join(".metadata_never_index"), b"");
+    let _ = fs::write(data_dir.join(".metadata_never_index"), b"");
+
+    let socket_path = short_socket_path(&output.root)?;
+    let _ = fs::remove_file(&socket_path);
+    let listener =
+        UnixListener::bind(&socket_path).map_err(|e| format!("bind supervisor socket: {e}"))?;
+    // Absolute paths: Bun/Go workers use cwd under typescript/ or go/.
+    let socket_abs = socket_path
+        .canonicalize()
+        .unwrap_or_else(|_| socket_path.clone());
+    let ipc_abs = ipc_dir
+        .canonicalize()
+        .map_err(|e| format!("canonicalize ipc: {e}"))?;
+    let data_abs = data_dir
+        .canonicalize()
+        .map_err(|e| format!("canonicalize data: {e}"))?;
+    let db_path = data_abs.join("app.db");
+    fs::write(
+        output.root.join("run.json"),
+        serde_json::to_string_pretty(&serde_json::json!({
+            "socket": socket_abs,
+            "http_port": graph.http_port,
+            "ipc_dir": ipc_abs,
+            "db": &db_path,
+            "game": true,
+            "engines": ["bun", "cpython-bake", "go"],
+        }))
+        .unwrap(),
+    )
+    .map_err(|e| e.to_string())?;
+
+    let pool = Arc::new(Mutex::new(SlotPool::create(
+        &ipc_abs,
+        output.schema_id,
+        DEFAULT_SLOT_COUNT,
+        DEFAULT_PAYLOAD_CAPACITY,
+    )?));
+    let workers: Arc<Mutex<HashMap<String, WorkerPool>>> = Arc::new(Mutex::new(HashMap::new()));
+    let pending: Arc<Mutex<HashMap<String, Pending>>> = Arc::new(Mutex::new(HashMap::new()));
+    let stop = Arc::new(AtomicBool::new(false));
+
+    let accept_workers = {
+        let workers = Arc::clone(&workers);
+        let pending = Arc::clone(&pending);
+        let pool = Arc::clone(&pool);
+        let stop = Arc::clone(&stop);
+        let listener = listener.try_clone().map_err(|e| e.to_string())?;
+        thread::spawn(move || {
+            accept_loop(
+                listener,
+                workers,
+                pending,
+                pool,
+                stop,
+                ProcessorOp::None,
+                None,
+            )
+        })
+    };
+
+    let mut children = spawn_workers(
+        output,
+        lock,
+        &socket_abs,
+        &ipc_abs,
+        &data_abs,
+        graph,
+        0, // no runtime Python pool — bake is compile-time
+        1,
+        None,
+    )?;
+    wait_for_pool(&workers, "go", 1, Duration::from_secs(90))?;
+
+    let ts_dir = output.root.join("typescript");
+    let bun_child = Command::new(&lock.bun_bin)
+        .arg("worker.ts")
+        .current_dir(&ts_dir)
+        .env("SILC_SOCKET", &socket_abs)
+        .env("SILC_DB_PATH", &db_path)
+        .env("SILC_SQLITE_TABLE", &graph.sqlite_table)
+        .env("SILC_HTTP_PORT", graph.http_port.to_string())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .map_err(|e| format!("failed to spawn game Bun worker: {e}"))?;
+    children.push(bun_child);
+    wait_for_pool(&workers, "bun", 1, Duration::from_secs(30))?;
+
+    println!(
+        "game web: http://127.0.0.1:{}/  (WebGPU required; Bun+Go IPC; Ctrl+C to stop)",
+        graph.http_port
+    );
+    println!("silc: press Ctrl-C to stop");
+    wait_for_ctrl_c();
+    stop.store(true, Ordering::SeqCst);
+    let _ = UnixStream::connect(&socket_abs);
+    let _ = accept_workers.join();
+    if let Ok(map) = workers.lock() {
+        for pool in map.values() {
+            for writer in &pool.writers {
+                if let Ok(mut w) = writer.lock() {
+                    let _ = write_frame(&mut *w, &ControlFrame::Shutdown {});
+                }
+            }
+        }
+    }
+    for child in &mut children {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    let _ = fs::remove_file(&socket_abs);
+    let _ = fs::remove_file(&socket_path);
+    println!("silc: stopped");
+    Ok(())
+}
+
+/// Compile-time CPython bake of terrain/surface buffers into `typescript/public/baked/`.
+pub fn build_game_python_bake(lock: &RuntimeLock, runtime_root: &Path) -> Result<(), String> {
+    let py_dir = runtime_root.join("python");
+    let py = py_dir.join("game_bake_worker.py");
+    let plan = py_dir.join("bake_plan.json");
+    if !py.is_file() {
+        return Err(format!("missing game bake worker at {}", py.display()));
+    }
+    if !plan.is_file() {
+        return Err(format!("missing game bake plan at {}", plan.display()));
+    }
+    let out = runtime_root.join("typescript/public/baked");
+    fs::create_dir_all(&out).map_err(|e| format!("create baked out: {e}"))?;
+
+    let py_dir_abs = py_dir
+        .canonicalize()
+        .map_err(|e| format!("canonicalize python dir: {e}"))?;
+    let plan_abs = plan
+        .canonicalize()
+        .map_err(|e| format!("canonicalize bake plan: {e}"))?;
+    let out_abs = out
+        .canonicalize()
+        .map_err(|e| format!("canonicalize baked out: {e}"))?;
+
+    // Script arg must be cwd-relative (same class of bug as Bun worker path).
+    let status = Command::new(&lock.python_bin)
+        .arg("game_bake_worker.py")
+        .current_dir(&py_dir_abs)
+        .env("SILC_GAME_BAKE_PLAN", &plan_abs)
+        .env("SILC_GAME_BAKE_OUT", &out_abs)
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()
+        .map_err(|e| format!("failed to run game CPython bake: {e}"))?;
+    if !status.success() {
+        return Err(format!("game CPython bake failed with {status}"));
+    }
+    if !out_abs.join("bake.json").is_file() {
+        return Err(format!(
+            "game bake did not produce {}",
+            out_abs.join("bake.json").display()
+        ));
+    }
+    Ok(())
+}
+
 /// Install compiler-pinned React/Tailwind deps and bundle ui::web assets with Silc-owned Bun.
 pub fn build_ui_web(lock: &RuntimeLock, runtime_root: &Path) -> Result<(), String> {
     let ts_dir = runtime_root.join("typescript");

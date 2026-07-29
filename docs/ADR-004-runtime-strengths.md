@@ -9,6 +9,7 @@
   [ADR-006](ADR-006-scrape-namespace.md),
   [ADR-009](ADR-009-compiler-synthesized-runtime.md),
   [ADR-010](ADR-010-tensor-minilm-pipeline.md),
+  [ADR-012](ADR-012-webgpu-game-subject.md),
   [ARCHITECTURE.md](ARCHITECTURE.md)
 
 ## Context
@@ -40,7 +41,9 @@ Persistence sinks and dual-surface UI workers are compiler-synthesized
 
 **Typical assignment:** `service` modules; namespaces `http`, `html`, `ws`,
 `ui`; static `scrape::page` / `scrape::select` (ADR-006 adapter
-`bun-fetch-v1`); pipeline ingress helper for tensor programs (ADR-010).
+`bun-fetch-v1`); pipeline ingress helper for tensor programs (ADR-010);
+`game` WebGPU host, Vite bundle, and HTTP for settings/saves/telemetry
+([ADR-012](ADR-012-webgpu-game-subject.md)).
 
 ### CPython
 
@@ -57,7 +60,8 @@ binding and local GGUF catalog (ADR-005). `tensor::tokenize` / `tensor::infer`
 use CPU-only ONNX MiniLM ([ADR-010](ADR-010-tensor-minilm-pipeline.md));
 `:prefer(CUDA)` is rejected for the 0.4.0 tensor path.
 `scrape::render`, `scrape::extract`, and `:js(true|auto)` escalation use
-Playwright (ADR-006 adapter `python-playwright-v1`).
+Playwright (ADR-006 adapter `python-playwright-v1`). Compile-time `game`
+asset bake (height/noise/mask buffers) for WebGPU scenes (ADR-012).
 
 ### Go
 
@@ -70,7 +74,8 @@ Playwright (ADR-006 adapter `python-playwright-v1`).
 
 **Typical assignment:** compiler-synthesized SQLite persistence
 (`storage(SQLite)`); namespaces `store`, `ipc`, `sys` as runtime-owned stages;
-`scrape::site` crawl workers (ADR-006 adapter `go-colly-v1`). Authors do not
+`scrape::site` crawl workers (ADR-006 adapter `go-colly-v1`); synthesized
+`game_saves` / telemetry store for `game` programs (ADR-012). Authors do not
 declare `sink` modules in 0.4.0.
 
 ### Single-file north star

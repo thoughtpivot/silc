@@ -451,7 +451,7 @@ Compiler-owned (do not invent alternatives):
 8. Validate with `silc build`; report errors instead of patching `.runtime/`.
 <!-- END SILC_AGENTS_TEMPLATE -->
 
-## App-specific notes (dataCollectorApp)
+## App-specific notes (dataExtractorApp)
 
 - Routes: `/` upload form with `ui::file_input`; `/documents` ledger table.
 - Resource: `Documents for Document` (title, headings, body, tables, filename, mime, format, char_count).

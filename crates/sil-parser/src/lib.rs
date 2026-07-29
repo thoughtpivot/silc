@@ -1,10 +1,10 @@
 //! Recursive-descent parser for Silc 0.4.0 grammar.
 
 use sil_core::{
-    App, CompField, Component, Contract, EmitDecl, EventBinding, Expr, Field, Handler, Method,
-    Module, ModuleKind, Param, Pipeline, PipelineStep, Program, QueryBinding, Resource,
-    ResourceKind, ResourceMethod, ResourceSeed, Route, SlotDecl, Span, Subset, SubsetPredicate,
-    TraitArg, TypeExpr, UiNode, UiTemplate,
+    App, CompField, Component, Contract, EmitDecl, EventBinding, Expr, Field, Game, GameNode,
+    Handler, Method, Module, ModuleKind, Param, Pipeline, PipelineStep, Program, QueryBinding,
+    Resource, ResourceKind, ResourceMethod, ResourceSeed, Route, SlotDecl, Span, Subset,
+    SubsetPredicate, TraitArg, TypeExpr, UiNode, UiTemplate,
 };
 use sil_lexer::{lex, SpannedToken, Token};
 
@@ -44,6 +44,7 @@ enum ClassKind {
     Component,
     Resource,
     App,
+    Game,
 }
 
 struct Parser {
@@ -85,6 +86,9 @@ impl Parser {
                 Some(Token::App) => {
                     self.parse_subject_into(&mut program, ClassKind::App, "app")?
                 }
+                Some(Token::Game) => {
+                    self.parse_subject_into(&mut program, ClassKind::Game, "game")?
+                }
                 Some(Token::Service) => self.parse_subject_into(
                     &mut program,
                     ClassKind::Module(ModuleKind::Service),
@@ -108,7 +112,7 @@ impl Parser {
                 Some(Token::Class) => return Err(self.legacy_class_error()),
                 _ => {
                     return Err(self.error_here(
-                        "unsupported construct; expected `subset`, `contract`, `component`, `resource`, `app`, `service`, `processor`, or `task`",
+                        "unsupported construct; expected `subset`, `contract`, `component`, `resource`, `app`, `game`, `service`, `processor`, or `task`",
                     ))
                 }
             }
@@ -239,6 +243,15 @@ impl Parser {
                 self.expect_simple(Token::RBrace, "`}` after app")?;
                 app.span = self.finish_span(start);
                 program.apps.push(app);
+            }
+            ClassKind::Game => {
+                let root = self.parse_game_node()?;
+                self.expect_simple(Token::RBrace, "`}` after game")?;
+                program.games.push(Game {
+                    name,
+                    root,
+                    span: self.finish_span(start),
+                });
             }
             ClassKind::Contract => {
                 let mut fields = Vec::new();
@@ -924,6 +937,89 @@ impl Parser {
             serve: None,
             span: self.finish_span(start),
         })
+    }
+
+    fn at_game_node(&self) -> bool {
+        matches!(self.peek(), Some(Token::Ident(n)) if n == "game")
+            || matches!(self.peek(), Some(Token::Game))
+    }
+
+    fn parse_game_node(&mut self) -> Result<GameNode, ParseError> {
+        let start = self.current_span();
+        match self.peek() {
+            Some(Token::Ident(n)) if n == "game" => {
+                self.advance();
+            }
+            Some(Token::Game) => {
+                self.advance();
+            }
+            _ => return Err(self.error_here("expected `game` namespace")),
+        }
+        self.expect_simple(Token::DoubleColon, "`::` after game")?;
+        let (name, name_span) = self.expect_ident_spanned("game node name")?;
+        self.expect_simple(Token::LParen, "`(` after game node")?;
+        let mut props = Vec::new();
+        let mut prop_spans = Vec::new();
+        let mut children = Vec::new();
+        while !matches!(self.peek(), Some(Token::RParen)) {
+            if matches!(self.peek(), Some(Token::Comma)) {
+                self.advance();
+                continue;
+            }
+            if matches!(self.peek(), Some(Token::Colon)) {
+                self.advance();
+                let (key, key_span) = self.expect_ident_spanned("game prop name")?;
+                if matches!(self.peek(), Some(Token::LParen)) {
+                    self.advance();
+                    if matches!(self.peek(), Some(Token::RParen)) {
+                        self.advance();
+                        props.push((key, Expr::Bool(true)));
+                        prop_spans.push(key_span);
+                    } else if self.at_game_node() {
+                        let child = self.parse_game_node()?;
+                        self.expect_simple(Token::RParen, "`)` after nested game node")?;
+                        children.push(child);
+                    } else {
+                        let expr = self.parse_game_prop_expr()?;
+                        self.expect_simple(Token::RParen, "`)` after game prop")?;
+                        props.push((key, expr));
+                        prop_spans.push(key_span);
+                    }
+                } else {
+                    props.push((key, Expr::Bool(true)));
+                    prop_spans.push(key_span);
+                }
+            } else if self.at_game_node() {
+                children.push(self.parse_game_node()?);
+            } else {
+                return Err(self.error_here("expected `:prop(...)` or `game::node(...)`"));
+            }
+        }
+        self.expect_simple(Token::RParen, "`)` after game node")?;
+        Ok(GameNode {
+            name,
+            name_span,
+            props,
+            prop_spans,
+            children,
+            span: self.finish_span(start),
+        })
+    }
+
+    fn parse_game_prop_expr(&mut self) -> Result<Expr, ParseError> {
+        match self.peek() {
+            Some(Token::UnitLiteral(_)) => {
+                let Token::UnitLiteral(raw) = self.advance_token()? else {
+                    unreachable!();
+                };
+                let digits: String = raw
+                    .chars()
+                    .take_while(|c| c.is_ascii_digit() || *c == '.')
+                    .collect();
+                Ok(Expr::Number(digits))
+            }
+            _ => self.parse_expr(),
+        }
     }
 
     // --- Expressions (Pratt) ---
@@ -1617,6 +1713,7 @@ fn ident_like_name(token: &Token) -> Option<String> {
         Token::Component => Some("component".into()),
         Token::Resource => Some("resource".into()),
         Token::App => Some("app".into()),
+        Token::Game => Some("game".into()),
         Token::Service => Some("service".into()),
         Token::Processor => Some("processor".into()),
         Token::Sink => Some("sink".into()),
@@ -1937,5 +2034,29 @@ app App {
         let program = parse(src).expect("parse");
         let err = program.validate().unwrap_err();
         assert!(err.contains("does not satisfy subset `Uri`"), "{err}");
+    }
+
+    #[test]
+    fn parses_minimal_game_scene() {
+        let src = r#"
+@version("0.4.0")
+game Foo {
+    game::scene(
+        :title("T"),
+        game::overlay(:toggle("F1"))
+    )
+}
+"#;
+        let program = parse(src).expect("parse");
+        assert_eq!(program.games.len(), 1);
+        assert_eq!(program.games[0].name, "Foo");
+        assert_eq!(program.games[0].root.name, "scene");
+        assert_eq!(
+            program.games[0].root.prop("title").and_then(|e| e.as_string_literal()),
+            Some("T")
+        );
+        assert_eq!(program.games[0].root.children.len(), 1);
+        assert_eq!(program.games[0].root.children[0].name, "overlay");
+        program.validate().expect("validate minimal game");
     }
 }

@@ -20,7 +20,8 @@ root [README](../README.md).
 | [008](ADR-008-recursive-silclm-assist.md) | Recursive silclm assist (`silc assist`) | Accepted (Phase 1) | Distinct from in-app `llm::complete` |
 | [009](ADR-009-compiler-synthesized-runtime.md) | Compiler-synthesized runtime (0.4.0) | Accepted | Partially supersedes authoring examples in 002/003/005/007 |
 | [010](ADR-010-tensor-minilm-pipeline.md) | Tensor / MiniLM embedding pipeline | Accepted | Closed CPU pipeline; `pipelineApp` |
-| [011](ADR-011-document-extract.md) | Document extract (`doc::*`) | Accepted | Upload + Python extract; `dataCollectorApp` |
+| [011](ADR-011-document-extract.md) | Document extract (`doc::*`) | Accepted | Upload + Python extract; `dataExtractorApp` |
+| [012](ADR-012-webgpu-game-subject.md) | WebGPU game subject (`game::*`) | Accepted | Web-only surface; Bun+CPython+Go spine |
 
 ### Partial supersession (0.4.0)
 

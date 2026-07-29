@@ -1,4 +1,4 @@
-# ADR-011: Document Extract (`doc::*`) and dataCollectorApp
+# ADR-011: Document Extract (`doc::*`) and dataExtractorApp
 
 - **Status:** Accepted
 - **Date:** 2026-07-28
@@ -64,7 +64,7 @@ extract. Only structured fields + metadata land in the resource table.
   for v1 (fields are left suitable for that pass). Those two ops remain
   mutually exclusive with each other.
 
-### dataCollectorApp
+### dataExtractorApp
 
 North-star example: upload form (`ui::file_input` + submit), documents ledger
 table, and a detail view of one extracted document — authored via

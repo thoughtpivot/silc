@@ -1,6 +1,6 @@
-# dataCollectorApp
+# dataExtractorApp
 
-Standalone Silc 0.4.0 document collector:
+Standalone Silc 0.4.0 document extractor:
 
 - Upload PDF, DOCX, ODT, Markdown, HTML, or plain text via `ui::file_input`
 - Compiler synthesizes multipart `POST /upload` and `doc::extract` (Python-native — no Pandoc)

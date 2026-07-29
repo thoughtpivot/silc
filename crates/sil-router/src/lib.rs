@@ -286,6 +286,7 @@ mod tests {
             components: vec![],
             resources: vec![],
             apps: vec![],
+            games: vec![],
         };
         let decisions = route_program(&program);
         assert_eq!(decisions.len(), 1);

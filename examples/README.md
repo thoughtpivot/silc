@@ -23,7 +23,7 @@ The shared block between `<!-- BEGIN SILC_AGENTS_TEMPLATE -->` and
 byte-for-byte. App-specific notes go **after** the end marker only.
 
 Tracked examples today: `chatApp`, `inventoryApp`, `scraperApp`,
-`pipelineApp`, `blogApp`, and `dataCollectorApp`.
+`pipelineApp`, `blogApp`, `dataExtractorApp`, and `snowFlowGameApp`.
 
 ## Current apps
 
@@ -34,7 +34,8 @@ Tracked examples today: `chatApp`, `inventoryApp`, `scraperApp`,
 | [`scraperApp/`](scraperApp/) | URL + depth form; site crawl via `scrape::*`; results table | 18110 | 18111 |
 | [`pipelineApp/`](pipelineApp/) | One-shot scrape → MiniLM/ONNX → SQLite pipeline | — | — |
 | [`blogApp/`](blogApp/) | Seeded blog: home filters + grounded search + admin modal CRUD | 18120 | 18121 |
-| [`dataCollectorApp/`](dataCollectorApp/) | File upload + `doc::extract` → documents ledger | 18130 | 18131 |
+| [`dataExtractorApp/`](dataExtractorApp/) | File upload + `doc::extract` → documents ledger | 18130 | 18131 |
+| [`snowFlowGameApp/`](snowFlowGameApp/) | WebGPU snow tech demo (`game::scene` only) | 18140 | — |
 
 ## Conventions
 
@@ -51,6 +52,8 @@ Tracked examples today: `chatApp`, `inventoryApp`, `scraperApp`,
 7. Pipeline-only programs (`pipelineApp`) run with
    `silc run main.silc --input-json '{"url":"…"}'`
    ([ADR-010](../docs/ADR-010-tensor-minilm-pipeline.md)).
+8. Game programs declare `game { game::scene(...) }` only —
+   web/WebGPU surface, no terminal ([ADR-012](../docs/ADR-012-webgpu-game-subject.md)).
 
 ## Build / run
 

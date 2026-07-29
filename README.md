@@ -428,6 +428,8 @@ then provisions pinned engines on first use.
 | [`examples/scraperApp/`](examples/scraperApp/) | URL + depth crawl; results table + summaries |
 | [`examples/pipelineApp/`](examples/pipelineApp/) | Scrape → MiniLM/ONNX → SQLite |
 | [`examples/blogApp/`](examples/blogApp/) | Seeded blog; year/month filters; admin modal CRUD; grounded search |
+| [`examples/dataExtractorApp/`](examples/dataExtractorApp/) | File upload + `doc::extract` → documents ledger |
+| [`examples/snowFlowGameApp/`](examples/snowFlowGameApp/) | WebGPU snow tech demo (`game::scene` subject) |
 
 See [`examples/README.md`](examples/README.md).
 

@@ -10,6 +10,7 @@ pub mod component;
 pub mod constraint;
 pub mod contract;
 pub mod expr;
+pub mod game;
 pub mod model_catalog;
 pub mod module;
 pub mod operation;
@@ -29,6 +30,11 @@ pub use component::{
 pub use constraint::TraitArg;
 pub use contract::{Contract, Field, Subset, SubsetPredicate};
 pub use expr::{BinOp, Expr, InterpPart, SpannedExpr, UnaryOp};
+pub use game::{
+    catalog_game_node_names, format_game_catalog_md, lookup_game_node, validate_game,
+    validate_game_node, Game, GameCapabilities, GameChildPolicy, GameNode, GameNodeSpec,
+    GamePropKind, GamePropSpec, GameSurface, DEFAULT_GAME_FPS, DEFAULT_GAME_PORT, GAME_NODE_CATALOG,
+};
 pub use model_catalog::{
     is_known_embedding_model_id, is_known_model_id, lookup_embedding_model, lookup_model,
     validate_embedding_model_id, validate_model_id, EmbeddingModelCatalogEntry, ModelArtifact,
@@ -183,6 +189,7 @@ mod tests {
             components: vec![],
             resources: vec![],
             apps: vec![],
+            games: vec![],
         }
     }
 }

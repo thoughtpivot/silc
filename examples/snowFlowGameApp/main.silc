@@ -1,0 +1,93 @@
+#!/usr/bin/env silc
+@version("0.4.0")
+
+game SnowFlow {
+    game::scene(
+        :title("SNOWFLOW"),
+        :renderer(webgpu),
+        :target_fps(90),
+        game::terrain(
+            :extent_m(800),
+            :near_spacing_cm(8),
+            :wind_dir(35),
+            game::height_layer(:kind(dune), :amplitude_m(14), :wavelength_m(70), :shear(0.12)),
+            game::height_layer(:kind(drift), :amplitude_m(3.2), :wavelength_m(10), :shear(0.28)),
+            game::height_layer(:kind(sastrugi), :amplitude_m(0.55), :wavelength_m(1.8), :shear(0.45)),
+            game::height_layer(:kind(ripple), :amplitude_m(0.12), :wavelength_m(0.45), :shear(0.22))
+        ),
+        game::surface(:profile(snow), :glint(0.3), :scatter(0.9)),
+        game::deformation(:coverage_m(80), :resolution(512), :texel_cm(16), :refill_rate(0.02)),
+        game::environment(
+            :sun_elevation_deg(14),
+            :sun_azimuth_deg(135),
+            :fog_density(0.01),
+            :spindrift
+        ),
+        game::post_process(:stage(taa), :enabled(true)),
+        game::post_process(:stage(bloom), :enabled(true)),
+        game::post_process(:stage(tonemap), :enabled(true)),
+        game::post_process(:stage(sharpen), :enabled(true)),
+        game::post_process(:stage(ssao), :enabled(false)),
+        game::post_process(:stage(ssr), :enabled(false)),
+        game::post_process(:stage(dof), :enabled(false)),
+        game::post_process(:stage(grain), :enabled(false)),
+        game::character(
+            :style(robe),
+            :move_speed(4.5),
+            game::cloth(:region(hem)),
+            game::cloth(:region(sleeves)),
+            game::cloth(:region(mantle)),
+            game::fur(:region(hood), :shells(32)),
+            game::fur(:region(cuffs), :shells(24))
+        ),
+        game::ability(
+            :name("Sweep"),
+            :key("1"),
+            game::ribbon(:kind(water), :width_m(2.5)),
+            game::wake(:intensity(0.9)),
+            game::terrain_brush(:shape(channel), :depth_m(0.25), :radius_m(1.8)),
+            game::particle_emitter(:kind(spray), :count(256)),
+            game::dynamic_light(:radius_m(5), :intensity(1.2), :color("#a8d4ff")),
+            game::camera_impulse(:strength(0.15))
+        ),
+        game::ability(
+            :name("Ribbon"),
+            :key("2"),
+            game::ribbon(:kind(water), :width_m(0.6)),
+            game::terrain_brush(:shape(score), :depth_m(0.08), :radius_m(0.4)),
+            game::state_write(:channel(wetness), :amount(0.6)),
+            game::dynamic_light(:radius_m(3), :intensity(0.8), :color("#7ec8ff"))
+        ),
+        game::ability(
+            :name("Bloom"),
+            :key("3"),
+            game::particle_emitter(:kind(powder), :count(1200)),
+            game::terrain_brush(:shape(crater), :depth_m(0.45), :radius_m(2.5)),
+            game::wake(:intensity(1.1)),
+            game::dynamic_light(:radius_m(6), :intensity(1.5), :color("#fff4e0")),
+            game::camera_impulse(:strength(0.25))
+        ),
+        game::ability(
+            :name("Crystallize"),
+            :key("4"),
+            game::crystal_growth(:scale_m(1.2)),
+            game::state_write(:channel(ice), :amount(1.0)),
+            game::dynamic_light(:radius_m(4), :intensity(1.0), :color("#c8e8ff")),
+            game::particle_emitter(:kind(sparkle), :count(180))
+        ),
+        game::ability(
+            :name("Vortex"),
+            :key("5"),
+            game::particle_emitter(:kind(drift), :count(2000)),
+            game::wake(:intensity(1.4)),
+            game::terrain_brush(:shape(ring), :depth_m(0.2), :radius_m(4.0)),
+            game::state_write(:channel(compression), :amount(0.5)),
+            game::dynamic_light(:radius_m(5), :intensity(1.3), :color("#e0f0ff")),
+            game::camera_impulse(:strength(0.2))
+        ),
+        game::camera(:mode(third_person), :distance_m(4.5), :shoulder_offset_m(0.6)),
+        game::controls(:scheme(wasd_mouse)),
+        game::movement_mode(:name(snow_surf), :hold(RMB), game::wake(:intensity(1.2)), game::terrain_brush(:shape(groove), :depth_m(0.35), :radius_m(1.2)), game::state_write(:channel(compression), :amount(0.8)), game::particle_emitter(:kind(spray), :count(512))),
+        game::overlay(:toggle("F1"))
+    )
+}

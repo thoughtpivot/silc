@@ -54,6 +54,7 @@ meaningful edit. Stop and report limits instead of inventing substrates.
 | `component X` | **Component** — props, `has state`, slots, `emit`, handlers, `render()` |
 | `resource X for Contract` | **Resource** — capability CRUD (`query list;`, `mutation create;`, …) |
 | `app X` | **App** — `route` table (dual-surface serving is synthesized) |
+| `game X` | **Game** — web-only WebGPU scene tree (`game::scene(...)`; ADR-012). Do not mix with `app` / UI routes |
 | `service X` / `processor X` / `task X` | Optional workflow modules |
 | `==>` | Pipeline feed between values and `ns::op(...)` calls |
 

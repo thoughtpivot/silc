@@ -21,6 +21,8 @@ pub enum Token {
     Resource,
     #[token("app")]
     App,
+    #[token("game")]
+    Game,
     #[token("service")]
     Service,
     #[token("processor")]
@@ -125,7 +127,7 @@ pub enum Token {
     #[regex(r"@[a-zA-Z_][a-zA-Z0-9_]*", |lex| lex.slice().trim_start_matches('@').to_string())]
     Annotation(String),
 
-    #[regex(r"[0-9]+(ms|s|MB|GB|rps|ops)", |lex| lex.slice().to_string())]
+    #[regex(r"[0-9]+(ms|s|MB|GB|rps|ops|cm|m|deg|fps|px)", |lex| lex.slice().to_string())]
     UnitLiteral(String),
 
     #[regex(r"[0-9]+(\.[0-9]+)?", |lex| lex.slice().to_string())]
