@@ -57,17 +57,17 @@ Point the editor at a local binary without reinstalling:
 
 | Silc construct | Example | Scope |
 | --- | --- | --- |
-| Declarations | `contract`, `component`, `resource`, `app`, `service`, `processor`, `sink`, `task`, `subset`, `class` | `storage.type.declaration.silc` |
+| Declarations | `contract`, `component`, `resource`, `app`, `game`, `service`, `processor`, `sink`, `task`, `subset`, `class` | `storage.type.declaration.silc` |
 | Members | `has`, `method`, `query`, `mutation`, `seed`, `slot`, `emit`, `state` | `keyword.other.member.silc` |
 | Control | `when`, `else`, `for`, `await`, `route` | `keyword.control.silc` |
 | Modifiers | `is`, `of`, `where` | `storage.modifier.silc` |
 | Builtin types | `Str`, `UUID`, `Bool`, `Int`, `num32`, `num64`, `int32`, `int64` | `support.type.builtin.silc` |
-| Namespaced calls | `ui::stack`, `llm::complete`, `scrape::site` | `support.class.namespace.silc` + `support.function.builtin.silc` |
+| Namespaced calls | `ui::stack`, `llm::complete`, `scrape::site`, `game::scene` | `support.class.namespace.silc` + `support.function.builtin.silc` |
 | Colon pairs | `:label("Save")`, `:sortable` | `entity.other.attribute-name.silc` |
 | Attributes | `$.title`, `$record` | `variable.other.member.silc` |
 | Feed / arrows | `==>`, `=>`, `->` | `keyword.operator.feed.silc`, `keyword.operator.arrow.silc` |
 | Annotations | `@version("0.4.0")` | `entity.name.function.decorator.silc` |
-| Unit literals | `250ms`, `512MB`, `100rps` | `constant.numeric.unit.silc` |
+| Unit literals | `250ms`, `512MB`, `90fps`, `8cm`, `14deg` | `constant.numeric.unit.silc` |
 
 ## Maintaining
 

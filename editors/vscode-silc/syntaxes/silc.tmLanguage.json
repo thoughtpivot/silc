@@ -62,7 +62,7 @@
     },
 
     "declaration": {
-      "match": "\\b(subset|class|contract|component|resource|app|service|processor|sink|task)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+      "match": "\\b(subset|class|contract|component|resource|app|game|service|processor|sink|task)\\s+([A-Za-z_][A-Za-z0-9_]*)",
       "captures": {
         "1": { "name": "storage.type.declaration.silc" },
         "2": { "name": "entity.name.type.silc" }
@@ -133,7 +133,7 @@
         },
         {
           "name": "storage.type.declaration.silc",
-          "match": "\\b(subset|class|contract|component|resource|app|service|processor|sink|task)\\b"
+          "match": "\\b(subset|class|contract|component|resource|app|game|service|processor|sink|task)\\b"
         }
       ]
     },
@@ -145,7 +145,7 @@
 
     "unit-literal": {
       "name": "constant.numeric.unit.silc",
-      "match": "\\b[0-9]+(?:ms|s|MB|GB|rps|ops)\\b"
+      "match": "\\b[0-9]+(?:ms|s|MB|GB|rps|ops|cm|m|deg|fps|px)\\b"
     },
 
     "number": {
