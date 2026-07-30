@@ -34,7 +34,8 @@ impl Default for Budgets {
             wall_clock_secs: 120,
             // ~10s per attempt, so five fit inside the wall clock with retrieval.
             max_draft_attempts: 5,
-            draft_max_tokens: 4096,
+            // Game scene trees routinely exceed 4k new tokens on additive FPS edits.
+            draft_max_tokens: 8192,
             allow_explore: false,
         }
     }

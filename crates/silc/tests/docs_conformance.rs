@@ -37,6 +37,28 @@ fn template_common_block(template: &str) -> &str {
 }
 
 #[test]
+fn game_catalog_lines_present_in_agents_template() {
+    let template = read_workspace("crates/silc/templates/AGENTS.md");
+    assert_eq!(
+        sil_core::GAME_NODE_CATALOG.len(),
+        44,
+        "game catalog size changed; update docs and this assertion"
+    );
+    for spec in sil_core::GAME_NODE_CATALOG {
+        let line = sil_core::format_game_catalog_line(spec);
+        assert!(
+            template.contains(&line),
+            "AGENTS template missing catalog line for game::{}:\n{line}",
+            spec.name
+        );
+    }
+    assert!(
+        template.contains("### Complete game::* catalog (ADR-012)"),
+        "AGENTS must include the game catalog section"
+    );
+}
+
+#[test]
 fn ui_catalog_lines_present_in_agents_template() {
     let template = read_workspace("crates/silc/templates/AGENTS.md");
     let readme = read_workspace("README.md");
@@ -189,7 +211,7 @@ fn tracked_example_agents_embed_template_common_block() {
         "pipelineApp",
         "blogApp",
         "dataExtractorApp",
-        "snowFlowGameApp",
+        "arenaGameApp",
     ] {
         let agents = read_workspace(&format!("examples/{app}/AGENTS.md"));
         let actual = template_common_block(&agents);
@@ -213,7 +235,7 @@ fn canonical_silc_sources_omit_runtime_plumbing() {
         "examples/pipelineApp/main.silc",
         "examples/blogApp/main.silc",
         "examples/dataExtractorApp/main.silc",
-        "examples/snowFlowGameApp/main.silc",
+        "examples/arenaGameApp/main.silc",
         "crates/silc/templates/main.silc",
         "crates/silc/tests/fixtures/scored_form.silc",
         "crates/silc/tests/fixtures/shopping_app.silc",

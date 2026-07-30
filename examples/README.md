@@ -23,7 +23,7 @@ The shared block between `<!-- BEGIN SILC_AGENTS_TEMPLATE -->` and
 byte-for-byte. App-specific notes go **after** the end marker only.
 
 Tracked examples today: `chatApp`, `inventoryApp`, `scraperApp`,
-`pipelineApp`, `blogApp`, `dataExtractorApp`, and `snowFlowGameApp`.
+`pipelineApp`, `blogApp`, `dataExtractorApp`, and `arenaGameApp`.
 
 ## Current apps
 
@@ -35,7 +35,7 @@ Tracked examples today: `chatApp`, `inventoryApp`, `scraperApp`,
 | [`pipelineApp/`](pipelineApp/) | One-shot scrape → MiniLM/ONNX → SQLite pipeline | — | — |
 | [`blogApp/`](blogApp/) | Seeded blog: home filters + grounded search + admin modal CRUD | 18120 | 18121 |
 | [`dataExtractorApp/`](dataExtractorApp/) | File upload + `doc::extract` → documents ledger | 18130 | 18131 |
-| [`snowFlowGameApp/`](snowFlowGameApp/) | WebGPU snow tech demo (`game::scene` only) | 18140 | — |
+| [`arenaGameApp/`](arenaGameApp/) | WebGPU game kernel (Godot/Unity/Unreal synthesis on Babylon) | 18140 | — |
 
 ## Conventions
 

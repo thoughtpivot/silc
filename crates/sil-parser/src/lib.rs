@@ -968,7 +968,8 @@ impl Parser {
             }
             if matches!(self.peek(), Some(Token::Colon)) {
                 self.advance();
-                let (key, key_span) = self.expect_ident_spanned("game prop name")?;
+                // Prop names may reuse reserved words (`:slot`, `:state`, `:route`, …).
+                let (key, key_span) = self.expect_ident_like_spanned("game prop name")?;
                 if matches!(self.peek(), Some(Token::LParen)) {
                     self.advance();
                     if matches!(self.peek(), Some(Token::RParen)) {
@@ -1017,6 +1018,11 @@ impl Parser {
                     .take_while(|c| c.is_ascii_digit() || *c == '.')
                     .collect();
                 Ok(Expr::Number(digits))
+            }
+            Some(Token::Minus) => {
+                self.advance();
+                let inner = self.parse_game_prop_expr()?;
+                Ok(negate_game_prop_expr(inner))
             }
             _ => self.parse_expr(),
         }
@@ -1379,6 +1385,21 @@ impl Parser {
         }
     }
 
+    fn expect_ident_like_spanned(&mut self, what: &str) -> Result<(String, Span), ParseError> {
+        let span = self.current_span();
+        let token = self.advance_token()?;
+        if let Some(name) = ident_like_name(&token) {
+            let span = self
+                .tokens
+                .get(self.pos.saturating_sub(1))
+                .map(|t| Span::new(t.start, t.end, t.line, t.col))
+                .unwrap_or(span);
+            Ok((name, span))
+        } else {
+            Err(self.error_here(&format!("expected {what}")))
+        }
+    }
+
     fn current_span(&self) -> Span {
         self.tokens
             .get(self.pos)
@@ -1703,6 +1724,21 @@ fn parse_step(tokens: &[SpannedToken]) -> Result<PipelineStep, String> {
         "unrecognized pipeline step near `{}`",
         tokens.first().map(|t| t.slice.as_str()).unwrap_or("?")
     ))
+}
+
+/// Game props are declarative literals, so `:x(-4)` must fold to the number
+/// `-4` rather than a negation expression the lowering layer would discard.
+fn negate_game_prop_expr(expr: Expr) -> Expr {
+    match expr {
+        Expr::Number(n) => match n.strip_prefix('-') {
+            Some(rest) => Expr::Number(rest.to_string()),
+            None => Expr::Number(format!("-{n}")),
+        },
+        other => Expr::Unary {
+            op: sil_core::UnaryOp::Neg,
+            expr: Box::new(other),
+        },
+    }
 }
 
 /// Identifiers and reserved words that are still valid as names / namespaces.

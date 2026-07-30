@@ -248,6 +248,10 @@ pub fn builtin_type_doc(name: &str) -> Option<&'static str> {
             "64-bit floating numeric type. Prefer it for general-purpose fractional values \
              when embedding-style density is not required."
         }
+        "Vec" => {
+            "Fixed-length vector type written `Vec[T; N]` (for example `Vec[num32; 384]` for \
+             MiniLM embeddings). Distinct from open arrays `[T]`."
+        }
         _ => return None,
     })
 }
@@ -402,6 +406,11 @@ pub fn executable_op_doc(namespace: &str, name: &str) -> Option<String> {
             "Extracts structured fields into a contract from selected nodes. Bridges raw HTML \
              into typed Silc values that resources and UI can consume."
         }
+        ("doc", "extract") => {
+            "Extracts structured fields from an uploaded document into a contract \
+             (`doc::extract(:into(Contract))`). Pair with `ui::file_input` so multipart uploads \
+             become typed resource rows (ADR-011)."
+        }
         ("tensor", "tokenize") => {
             "Tokenizes input for an embedding or inference model. Pair it with `tensor::infer` \
              in a processor pipeline; tokenization alone does not produce embeddings."
@@ -416,6 +425,103 @@ pub fn executable_op_doc(namespace: &str, name: &str) -> Option<String> {
         }
     };
     Some(format!("Runnable operation `{namespace}::{name}`.\n\n{summary}"))
+}
+
+/// Documentation for colon-pair props on executable / runnable ops.
+pub fn op_prop_doc(namespace: &str, op: &str, prop: &str) -> Option<&'static str> {
+    Some(match (namespace, op, prop) {
+        (_, _, "into") => {
+            "Target contract for structured extraction. The op writes fields that match the \
+             contract shape (required for `doc::extract` and `scrape::extract`)."
+        }
+        (_, _, "model") => {
+            "Closed model id from the Silc model catalog (for example `silclm` or `minilm-l6-v2`)."
+        }
+        (_, _, "prefer") => {
+            "Preferred execution device. Silc 0.4.0 accepts `CPU` for tensor inference; `CUDA` is rejected."
+        }
+        (_, _, "port") => {
+            "TCP port for the HTTP API surface when used with `service::http`."
+        }
+        (_, _, "route") => {
+            "HTTP route path fragment for a service handler binding."
+        }
+        (_, _, "method") => {
+            "HTTP verb for a service route (`GET`, `POST`, `PUT`, `DELETE`, `PATCH`)."
+        }
+        ("scrape", _, "css") => {
+            "CSS selector used to project nodes from scraped HTML before extract."
+        }
+        ("scrape", _, "js") => {
+            "JavaScript render mode for the fetch (`false`, `auto`, or `true`)."
+        }
+        ("scrape", _, "depth") => {
+            "Maximum crawl depth for `scrape::site` (capped by MAX_SITE_DEPTH)."
+        }
+        ("scrape", _, "same_host") => {
+            "When set, site crawls stay on the seed host and do not follow off-site links."
+        }
+        ("scrape", _, "link_css") => {
+            "CSS selector that discovers next-page / crawl links during `scrape::site`."
+        }
+        ("scrape", _, "timeout_ms") => {
+            "Network timeout for the scrape fetch in milliseconds."
+        }
+        ("scrape", _, "as") => {
+            "Optional projection alias for selected nodes before extract."
+        }
+        _ => return None,
+    })
+}
+
+/// Unit literal teaching prose (`90fps`, `16cm`, …).
+pub fn unit_literal_doc(lit: &str) -> Option<&'static str> {
+    let suffix = lit
+        .trim_start_matches(|c: char| c.is_ascii_digit() || c == '.')
+        .to_string();
+    Some(match suffix.as_str() {
+        "ms" => "Milliseconds duration literal (for example `250ms`, `5000ms`).",
+        "s" => "Seconds duration literal (for example `2s`).",
+        "MB" => "Megabyte size literal (for example `512MB`).",
+        "GB" => "Gigabyte size literal (for example `2GB`).",
+        "rps" => "Requests-per-second rate literal.",
+        "ops" => "Operations-per-second rate literal.",
+        "cm" => "Centimeter length literal used by game near-field spacing and texel sizes.",
+        "m" => "Meter length literal used by game extents, distances, and brush radii.",
+        "deg" => "Degree angle literal used by game sun elevation/azimuth and wind direction.",
+        "fps" => "Frames-per-second literal used by `game::scene :target_fps`.",
+        "px" => "Pixel size literal for screen-space quantities.",
+        _ => return None,
+    })
+}
+
+/// Builtin calls / members that are not resource methods.
+pub fn builtin_call_doc(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "submit" => {
+            "Builtin that submits the enclosing form. Prefer a `:submit` button for ordinary UX; \
+             call `submit()` from handlers when you need an imperative commit."
+        }
+        "navigate" => {
+            "Builtin navigation call `navigate(\"/path\")` that changes the active app route. \
+             Prefer `:to` on `nav_item` when a simple link suffices."
+        }
+        "new" => {
+            "Contract constructor member. Write `Contract.new(:field(value), …)` to build a \
+             typed row for seeds, mutations, and emits."
+        }
+        "contains" => {
+            "String / collection membership test. On Str subsets it is a closed `where` \
+             predicate; on arrays it checks whether an element is present."
+        }
+        "starts-with" | "starts_with" => {
+            "Closed Str subset predicate: the value must start with the given prefix."
+        }
+        "ends-with" | "ends_with" => {
+            "Closed Str subset predicate: the value must end with the given suffix."
+        }
+        _ => return None,
+    })
 }
 
 pub fn stub_op_doc(namespace: &str, name: &str) -> String {
@@ -472,4 +578,4 @@ pub const KEYWORD_NAMES: &[&str] = &[
 ];
 
 pub const BUILTIN_TYPE_NAMES: &[&str] =
-    &["Str", "UUID", "num32", "num64", "int32", "int64", "Bool", "Int"];
+    &["Str", "UUID", "num32", "num64", "int32", "int64", "Bool", "Int", "Vec"];

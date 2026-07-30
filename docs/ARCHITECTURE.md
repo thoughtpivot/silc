@@ -203,10 +203,13 @@ write `method serve()`, `ui::web`, or `ui::terminal` as program operations.
 
 **Game subject (web-only surface, polyglot spine).** Real-time WebGPU programs
 declare `game Name { game::scene(...) }` with the closed `game::*` catalog
-([ADR-012](ADR-012-webgpu-game-subject.md)). They synthesize a browser WebGPU
+([ADR-012](ADR-012-webgpu-game-subject.md)). The catalog synthesizes Godot-style
+trees/signals, Unity prefabs/data, and Unreal mode/pawn/controller on a Silc
+kernel with Babylon as the WebGPU adapter. They synthesize a browser WebGPU
 surface only — ADR-009 dual-surface parity applies to `app`, not `game` — but
-still use Silc’s Bun (host), CPython (compile-time bake), and Go (SQLite store)
-engines. A program must not mix `game` with `app` / UI resources in v1.
+still use Silc’s Bun (host + HTTP), CPython (compile-time `game_bake.json`), and
+Go (SQLite saves/runs/events) engines. A program must not mix `game` with `app`
+/ UI resources in v1.
 
 Codegen consumes one component graph and emits equal web and terminal adapters.
 Web lowers to compiler-owned React/Tailwind templates. Terminal lowers to a

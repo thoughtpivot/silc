@@ -237,6 +237,12 @@ pub fn run_game(output: &EmitResult, lock: &RuntimeLock) -> Result<(), String> {
         .canonicalize()
         .map_err(|e| format!("canonicalize data: {e}"))?;
     let db_path = data_abs.join("app.db");
+    let mind_refs = game_mind_refs(output);
+    let cognition_port = graph.http_port.saturating_add(1);
+    let mut engines = vec!["bun", "cpython-bake", "go"];
+    if !mind_refs.is_empty() {
+        engines.push("cpython-cognition");
+    }
     fs::write(
         output.root.join("run.json"),
         serde_json::to_string_pretty(&serde_json::json!({
@@ -245,7 +251,9 @@ pub fn run_game(output: &EmitResult, lock: &RuntimeLock) -> Result<(), String> {
             "ipc_dir": ipc_abs,
             "db": &db_path,
             "game": true,
-            "engines": ["bun", "cpython-bake", "go"],
+            "mind_refs": mind_refs,
+            "cognition_port": if mind_refs.is_empty() { serde_json::Value::Null } else { cognition_port.into() },
+            "engines": engines,
         }))
         .unwrap(),
     )
@@ -293,14 +301,28 @@ pub fn run_game(output: &EmitResult, lock: &RuntimeLock) -> Result<(), String> {
     )?;
     wait_for_pool(&workers, "go", 1, Duration::from_secs(90))?;
 
+    if !mind_refs.is_empty() {
+        if let Err(err) = spawn_game_cognition_worker(
+            output,
+            lock,
+            &mut children,
+            cognition_port,
+        ) {
+            eprintln!("silc: game cognition worker skipped ({err}); Bun fallback remains active");
+        }
+    }
+
     let ts_dir = output.root.join("typescript");
-    let bun_child = Command::new(&lock.bun_bin)
+    let mut bun_cmd = Command::new(&lock.bun_bin);
+    bun_cmd
         .arg("worker.ts")
         .current_dir(&ts_dir)
         .env("SILC_SOCKET", &socket_abs)
         .env("SILC_DB_PATH", &db_path)
         .env("SILC_SQLITE_TABLE", &graph.sqlite_table)
         .env("SILC_HTTP_PORT", graph.http_port.to_string())
+        .env("SILC_COGNITION_PORT", cognition_port.to_string());
+    let bun_child = bun_cmd
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .spawn()
@@ -309,8 +331,13 @@ pub fn run_game(output: &EmitResult, lock: &RuntimeLock) -> Result<(), String> {
     wait_for_pool(&workers, "bun", 1, Duration::from_secs(30))?;
 
     println!(
-        "game web: http://127.0.0.1:{}/  (WebGPU required; Bun+Go IPC; Ctrl+C to stop)",
-        graph.http_port
+        "game web: http://127.0.0.1:{}/  (WebGPU required; Bun+Go IPC{}; Ctrl+C to stop)",
+        graph.http_port,
+        if mind_refs.is_empty() {
+            ""
+        } else {
+            "+Silclm cognition"
+        }
     );
     println!("silc: press Ctrl-C to stop");
     wait_for_ctrl_c();
@@ -336,7 +363,80 @@ pub fn run_game(output: &EmitResult, lock: &RuntimeLock) -> Result<(), String> {
     Ok(())
 }
 
-/// Compile-time CPython bake of terrain/surface buffers into `typescript/public/baked/`.
+fn game_mind_refs(output: &EmitResult) -> Vec<String> {
+    let candidates = [
+        output.root.join("python/bake_plan.json"),
+        output
+            .root
+            .join("typescript/public/baked/game_bake.json"),
+    ];
+    for path in candidates {
+        let Ok(raw) = fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
+            continue;
+        };
+        if let Some(arr) = value.get("mindRefs").and_then(|v| v.as_array()) {
+            let refs: Vec<String> = arr
+                .iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect();
+            if !refs.is_empty() {
+                return refs;
+            }
+        }
+    }
+    Vec::new()
+}
+
+fn spawn_game_cognition_worker(
+    output: &EmitResult,
+    lock: &RuntimeLock,
+    children: &mut Vec<std::process::Child>,
+    cognition_port: u16,
+) -> Result<(), String> {
+    let py = output.root.join("python/game_cognition_worker.py");
+    if !py.is_file() {
+        return Err(format!("missing {}", py.display()));
+    }
+    let py_dir = output.root.join("python");
+    // Optional: reuse a already-provisioned Silclm cache. Never download during game boot —
+    // cognition falls back to deterministic tactics when weights are absent.
+    let model_path = sil_core::validate_model_id(sil_core::DEFAULT_MODEL_ID)
+        .ok()
+        .and_then(|entry| crate::models::model_path(entry).ok())
+        .filter(|p| p.is_file());
+    let mut cmd = Command::new(&lock.python_bin);
+    cmd.arg("game_cognition_worker.py")
+        .current_dir(&py_dir)
+        .env("SILC_COGNITION_PORT", cognition_port.to_string())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    if let Some(path) = model_path.as_ref() {
+        cmd.env("SILC_MODEL_PATH", path);
+    }
+    let child = cmd
+        .spawn()
+        .map_err(|e| format!("failed to spawn game cognition worker: {e}"))?;
+    children.push(child);
+    // Best-effort readiness probe; Bun always has a local fallback.
+    let deadline = std::time::Instant::now() + Duration::from_secs(8);
+    let url = format!("http://127.0.0.1:{cognition_port}/health");
+    while std::time::Instant::now() < deadline {
+        if let Ok(resp) = ureq::get(&url).call() {
+            if resp.status() >= 200 && resp.status() < 300 {
+                println!("silc: game cognition ready on {url}");
+                return Ok(());
+            }
+        }
+        std::thread::sleep(Duration::from_millis(150));
+    }
+    println!("silc: game cognition starting (Bun will fall back until ready)");
+    Ok(())
+}
+
+/// Compile-time CPython bake of prefab/data/collider registry into `typescript/public/baked/`.
 pub fn build_game_python_bake(lock: &RuntimeLock, runtime_root: &Path) -> Result<(), String> {
     let py_dir = runtime_root.join("python");
     let py = py_dir.join("game_bake_worker.py");

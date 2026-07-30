@@ -14,9 +14,9 @@
 
 ## Context
 
-Authors need a first-class way to declare real-time WebGPU scene and effect
-trees (terrain, materials, deformation, characters, movement modes, abilities,
-post-process). Dual-surface `app` + React/OpenTUI (ADR-003 / ADR-009) cannot
+Authors need a first-class way to declare real-time WebGPU scenes with a
+general game framework (entity trees, prefabs, signals, mode/pawn/controller,
+abilities). Dual-surface `app` + React/OpenTUI (ADR-003 / ADR-009) cannot
 express those systems as intent.
 
 Silc already provisions Bun, CPython, and Go for runnable programs. A `game`
@@ -32,13 +32,13 @@ spine (ADR-001 / ADR-004).
    does **not** apply to `game` (no OpenTUI / terminal chrome).
 3. **No mix with route UI.** A program may not declare both `game` and `app`
    (or UI `component` / `resource`) in v1.
-4. **Lower → manifest → generic runtime.** `game_lower` encodes the scene tree
-   as JSON. Compiler-owned TypeScript/Babylon/Vite templates consume that
-   manifest. Emit follows Silc conventions (TypeScript, Bun, pinned Vite).
+4. **Lower → manifest → kernel runtime.** `game_lower` encodes the scene tree
+   as JSON (prefabs, data assets, signals, mode). Compiler-owned TypeScript
+   templates implement a Silc game kernel on Babylon WebGPU + Vite + Bun.
 5. **Polyglot synthesis (locked).** Every game program synthesizes:
-   - **Bun** — WebGPU host, static `dist/` serve, HTTP for settings/saves/telemetry, UDS client
-   - **CPython** — compile-time asset bake derived from terrain/surface (numpy), outputs under `public/baked/`
-   - **Go** — synthesized SQLite persistence (`game_saves` + shared `app_events`), UDS store role
+   - **Bun** — WebGPU host, static `dist/` serve, HTTP for settings/saves/telemetry/runs, UDS client
+   - **CPython** — compile-time asset bake (`game_bake.json`: resolved data refs, collider hulls, spawn/signal tables)
+   - **Go** — SQLite migrations and durable tables (`game_saves`, `game_runs`, `game_events`, `game_settings`)
 6. **Pins.** `@babylonjs/*` **9.16.2**, Vite **8.1.5**. No CDN asset fetches;
    no WebGL/mobile fallback. Missing `navigator.gpu` → one-line stop.
 7. **No title-named compiler branches.** Runtime behavior is driven by the
@@ -53,18 +53,19 @@ spine (ADR-001 / ADR-004).
 - Example apps under `examples/` prove capability; they are not the product
   definition of the subject.
 
-## Addendum: GPU terrain architecture (2026-07-29)
+## Addendum: game kernel synthesis (2026-07-29)
 
-Templates under `templates/game/` absorb Noniv/snowflow_demo techniques without
-title-branched compiler paths:
+Templates under `templates/game/` implement a Silc-owned gameplay kernel with
+Babylon as the WebGPU adapter only:
 
-| System | Technique |
-|---|---|
-| Clipmap | One static mesh; verts = `(gridI, level, gridJ)`; CDLOD + displace in VS |
-| Height | One-time bake → float texture + CPU mirror for grounding |
-| Deformation | RGBA16F ping-pong ProceduralTexture; brush staging tex; toroidal UV |
-| Sky | Analytic dome + equirect LUT + low-order SH (no HDRI) |
-| Water / wake | Shared swept-spine meshes driven by data textures |
-| Shadows | 3-cascade PCF CSM with near-field splits; custom depth VS follow-on |
+| Layer | Pattern | Silc surface |
+|---|---|---|
+| Hierarchy | Godot node tree | Nested `game::entity`; parent/child transforms |
+| Messaging | Godot signals / groups | `game::signal`, `game::group`, manifest edges |
+| Reuse | Unity prefabs + ScriptableObjects | `game::prefab`, `game::spawn` overrides, `game::data` + `:ref` |
+| Ownership | Unreal Mode / Pawn / Controller | `game::mode`, `game::pawn`, `game::controller` |
+| Abilities | GAS-lite | `game::ability` + cue children; cost/cooldown/attributes |
+| Bake | Unity-style import | CPython → `public/baked/game_bake.json` |
+| Persist | Unreal save / analytics | Go SQLite + Bun HTTP edge |
 
 Author intent remains `main.silc` + `AGENTS.md` only.

@@ -1107,6 +1107,8 @@ fn shared_prop_doc(prop: &str) -> Option<&'static str> {
         "loading" => "Expression that is truthy while an async operation is in flight. The control can show busy chrome until it clears.",
         "context" => "Extra context blob supplied to scored or agent-assisted controls. Use it for embeddings, filters, or prior turns the model should see.",
         "persona" => "Named persona or agent identity that shapes how an assisted control behaves. Keep personas stable so scores and completions stay comparable.",
+        "accept" => "MIME / extension filter for `ui::file_input` (for example `\".pdf,.docx\"` or `\"image/*\"`). Narrows the OS file picker.",
+        "multiple" => "When set on `ui::file_input`, allows selecting more than one file in a single picker interaction.",
         _ => return None,
     })
 }

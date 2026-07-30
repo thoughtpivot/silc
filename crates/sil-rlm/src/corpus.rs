@@ -75,12 +75,12 @@ impl Corpus {
             include_str!("../../../examples/dataExtractorApp/AGENTS.md"),
         );
         corpus.insert(
-            "example/snowFlowGameApp/main.silc",
-            include_str!("../../../examples/snowFlowGameApp/main.silc"),
+            "example/arenaGameApp/main.silc",
+            include_str!("../../../examples/arenaGameApp/main.silc"),
         );
         corpus.insert(
-            "example/snowFlowGameApp/AGENTS.md",
-            include_str!("../../../examples/snowFlowGameApp/AGENTS.md"),
+            "example/arenaGameApp/AGENTS.md",
+            include_str!("../../../examples/arenaGameApp/AGENTS.md"),
         );
         // The `silc init` starter: the smallest known-good program, used as the
         // skeleton to adapt when assist creates a file from scratch.
@@ -305,12 +305,12 @@ mod tests {
             .get("example/dataExtractorApp/main.silc")
             .unwrap()
             .contains("doc::extract"));
-        assert!(c.get("example/snowFlowGameApp/main.silc").is_some());
+        assert!(c.get("example/arenaGameApp/main.silc").is_some());
         assert!(c
-            .get("example/snowFlowGameApp/main.silc")
+            .get("example/arenaGameApp/main.silc")
             .unwrap()
             .contains("game::scene"));
-        assert!(c.get("example/snowFlowGameApp/AGENTS.md").is_some());
+        assert!(c.get("example/arenaGameApp/AGENTS.md").is_some());
         assert!(c.len() >= 17);
     }
 

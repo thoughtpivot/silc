@@ -1,93 +1,19 @@
 {
-  "title": "Snow Field",
+  "title": "Silc Game",
   "targetFps": 90,
   "renderer": "webgpu",
-  "terrain": {
-    "windDeg": 45,
-    "layers": [
-      { "kind": "dune", "scaleM": 80, "amplitudeM": 6 },
-      { "kind": "drift", "scaleM": 12, "amplitudeM": 1.2 },
-      { "kind": "sastrugi", "scaleM": 2.5, "amplitudeM": 0.15 }
-    ]
+  "data": {},
+  "prefabs": {},
+  "scene": { "children": [] },
+  "mode": { "id": "default", "possess": null, "spawns": [] },
+  "controller": { "scheme": "wasd_mouse" },
+  "camera": {
+    "mode": "third_person",
+    "distanceM": 4.5,
+    "shoulderOffsetM": 0.6,
+    "follow": "pawn"
   },
-  "surface": { "profile": "snow" },
-  "deformation": { "extentM": 80, "texelCm": 2 },
-  "environment": {
-    "sunElevationDeg": 12,
-    "fogDensity": 0.0008
-  },
-  "post": [
-    { "name": "taa", "enabled": true },
-    { "name": "ssao", "enabled": true },
-    { "name": "ssr", "enabled": true },
-    { "name": "dof", "enabled": false },
-    { "name": "bloom", "enabled": true },
-    { "name": "tonemap", "enabled": true },
-    { "name": "grain", "enabled": true },
-    { "name": "sharpen", "enabled": true }
-  ],
-  "character": { "robe": true, "fur": true, "cloth": true },
-  "camera": { "mode": "spring_arm", "fovDeg": 55 },
-  "controls": { "move": "wasd", "look": "mouse", "zoom": "scroll" },
-  "movementModes": [
-    {
-      "name": "surf",
-      "hold": "rmb",
-      "effects": [
-        { "type": "wake", "props": { "intensity": 1.2 } },
-        { "type": "terrain_brush", "props": { "depthM": 0.35, "radiusM": 0.8 } },
-        { "type": "state_write", "props": { "channel": "compression", "amount": 0.6 } }
-      ]
-    }
-  ],
-  "abilities": [
-    {
-      "name": "Sweep",
-      "key": "1",
-      "effects": [
-        { "type": "ribbon", "props": { "kind": "water", "widthM": 2.5 } },
-        { "type": "terrain_brush", "props": { "shape": "crescent", "depthM": 0.4 } },
-        { "type": "particle_emitter", "props": { "kind": "spray", "count": 120 } }
-      ]
-    },
-    {
-      "name": "Ribbon",
-      "key": "2",
-      "effects": [
-        { "type": "ribbon", "props": { "kind": "water", "widthM": 0.4 } },
-        { "type": "terrain_brush", "props": { "shape": "line", "depthM": 0.08 } },
-        { "type": "state_write", "props": { "channel": "wetness", "amount": 0.9 } }
-      ]
-    },
-    {
-      "name": "Bloom",
-      "key": "3",
-      "effects": [
-        { "type": "particle_emitter", "props": { "kind": "powder", "count": 400 } },
-        { "type": "terrain_brush", "props": { "shape": "crater", "depthM": 0.6, "radiusM": 3 } },
-        { "type": "dynamic_light", "props": { "radiusM": 8, "intensity": 2.5, "color": "#ffe8c0" } },
-        { "type": "camera_impulse", "props": { "strength": 0.15 } }
-      ]
-    },
-    {
-      "name": "Crystallize",
-      "key": "4",
-      "effects": [
-        { "type": "crystal_growth", "props": { "scaleM": 1.2 } },
-        { "type": "state_write", "props": { "channel": "ice", "amount": 1.0 } },
-        { "type": "dynamic_light", "props": { "radiusM": 5, "intensity": 1.8, "color": "#c0e8ff" } }
-      ]
-    },
-    {
-      "name": "Vortex",
-      "key": "5",
-      "effects": [
-        { "type": "particle_emitter", "props": { "kind": "vortex", "count": 600 } },
-        { "type": "terrain_brush", "props": { "shape": "ring", "depthM": 0.25, "radiusM": 4 } },
-        { "type": "camera_impulse", "props": { "strength": 0.08 } }
-      ]
-    }
-  ],
-  "overlay": { "toggle": "F1" },
-  "dynamicLights": []
+  "signals": [],
+  "post": [],
+  "overlay": { "toggle": "F1" }
 }

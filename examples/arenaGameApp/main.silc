@@ -1,0 +1,2776 @@
+#!/usr/bin/env silc
+@version("0.4.0")
+
+game Arena {
+    game::scene(
+        :title("MEGASTRUCTURE"),
+        :renderer(webgpu),
+        :target_fps(90),
+        game::data(:name("WalkDefault"), :speed(5.5)),
+        game::data(:name("BlastProfile"), :cooldown(0.8), :cost(10)),
+        game::prefab(
+            :name("Player"),
+            game::mesh(:shape(capsule), :size(1.8), :color("#6ec8ff")),
+            game::collider(:shape(capsule), :size(1.8)),
+            game::movement(:style(first_person), :ref("WalkDefault")),
+            game::attribute(:name("health"), :value(100), :max(100)),
+            game::attribute(:name("stamina"), :value(100), :max(100)),
+            game::pawn(),
+            game::group(:name("player")),
+            game::signal(:name(ability_cast)),
+            game::ability(
+                :name("Blast"),
+                :key("1"),
+                :ref("BlastProfile"),
+                :cost_attr("stamina"),
+                game::particle_emitter(:kind(burst), :count(96)),
+                game::dynamic_light(:radius_m(5), :intensity(1.4), :color("#a8d4ff")),
+                game::camera_impulse(:strength(0.2))
+            ),
+            game::ability(
+                :name("Spark"),
+                :key("2"),
+                :cooldown(0.4),
+                game::particle_emitter(:kind(spark), :count(48)),
+                game::camera_impulse(:strength(0.1))
+            )
+        ),
+        game::entity(
+            :name("World"),
+            game::entity(
+                :name("Ground"),
+                :y(0),
+                game::mesh(:shape(plane), :size(40), :color("#3d5a45")),
+                game::collider(:shape(plane), :size(40))
+            ),
+            game::entity(
+                :name("Sun"),
+                game::light(:kind(directional), :intensity(1.1), :color("#fff4e0"))
+            )
+        ),
+        game::spawn(:prefab("Player"), :x(0), :y(1), :z(0), :as_pawn),
+        game::mode(:id("arena"), :possess("Player")),
+        game::controller(:scheme(wasd_mouse)),
+        game::camera(:mode(first_person), :distance_m(5), :shoulder_offset_m(0.55), :follow(pawn)),
+        game::signal(:name(ability_cast), :on("Mode.on_ability_cast")),
+        game::post_process(:stage(bloom), :enabled(true)),
+        game::post_process(:stage(tonemap), :enabled(true)),
+        game::post_process(:stage(sharpen), :enabled(true)),
+        game::overlay(:toggle("F1")),
+        game::hud(:show_crosshair(true), :show_ammo(true), :show_health(true)),
+        game::environment(:fog_density(0.012), :fog_color("#8aa0b8"), :sky_color("#6a84a8"), :exposure(1.1)),
+        game::shadow(:enabled(true)),
+        game::data(:name("VanguardData"), :damage(16), :fire_rate(9), :magazine(30), :reload(1.7), :spread(0.018)),
+        game::data(:name("BreachData"), :damage(12), :fire_rate(1.2), :magazine(6), :reload(2.4), :spread(0.08), :pellet_count(10)),
+        game::data(:name("ArcData"), :damage(28), :fire_rate(3.5), :magazine(18), :reload(2.0), :spread(0.01)),
+        game::data(:name("RailData"), :damage(95), :fire_rate(0.7), :magazine(4), :reload(2.8), :spread(0.002)),
+        game::weapon(:name("VanguardAR"), :slot(1), :fire_mode(hitscan), :ref("VanguardData")),
+        game::weapon(:name("Breach12"), :slot(2), :fire_mode(pellet), :ref("BreachData")),
+        game::weapon(
+                    :name("ArcCarbine"),
+                    :slot(3),
+                    :fire_mode(projectile),
+                    :ref("ArcData"),
+                    game::projectile(:kind(plasma), :speed(28), :lifetime(2.5), :splash_radius(2.2), :color("#66ffcc"))
+                ),
+        game::weapon(
+                    :name("LongshotRailgun"),
+                    :slot(4),
+                    :fire_mode(beam),
+                    :ref("RailData"),
+                    game::projectile(:kind(rail), :speed(200), :lifetime(0.2), :color("#88ccff"))
+                ),
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        
+        game::data(:name("SuppressorMind"), :persona("Suppressor — hold angles, controlled bursts."), :aggression(0.65), :morale(0.7), :cadence_s(4)),
+        game::data(:name("FlankerMind"), :persona("Flanker — cut left, keep moving."), :aggression(0.75), :morale(0.6), :cadence_s(3.5)),
+        game::data(:name("BreacherMind"), :persona("Breacher — push hard, close distance."), :aggression(0.9), :morale(0.55), :cadence_s(3)),
+        game::data(:name("HostileWalk"), :speed(3.4)),
+        game::prefab(
+                    :name("Suppressor"),
+                    game::mesh(:shape(capsule), :size(1.8), :color("#c45c5c")),
+                    game::collider(:shape(capsule), :size(1.8)),
+                    game::movement(:style(walk), :ref("HostileWalk")),
+                    game::attribute(:name("health"), :value(100), :max(100)),
+                    game::npc(:archetype(suppressor), :faction(hostile)),
+                    game::perception(:sight_m(28), :hear_m(14), :fov_deg(110)),
+                    game::behavior(:tree(patrol_combat), :default_tactic(suppress)),
+                    game::mind(:ref("SuppressorMind"), :cadence_s(4)),
+                    game::nav_agent(:radius(0.35), :height(1.8), :max_speed(3.4)),
+                    game::group(:name("hostiles"))
+                ),
+        game::prefab(
+                    :name("Flanker"),
+                    game::mesh(:shape(capsule), :size(1.75), :color("#d4a24c")),
+                    game::collider(:shape(capsule), :size(1.75)),
+                    game::movement(:style(walk), :ref("HostileWalk")),
+                    game::attribute(:name("health"), :value(90), :max(90)),
+                    game::npc(:archetype(flanker), :faction(hostile)),
+                    game::perception(:sight_m(30), :hear_m(16), :fov_deg(120)),
+                    game::behavior(:tree(patrol_combat), :default_tactic(flank)),
+                    game::mind(:ref("FlankerMind"), :cadence_s(3.5)),
+                    game::nav_agent(:radius(0.32), :height(1.75), :max_speed(3.8)),
+                    game::group(:name("hostiles"))
+                ),
+        game::prefab(
+                    :name("Breacher"),
+                    game::mesh(:shape(capsule), :size(1.9), :color("#7a4cc4")),
+                    game::collider(:shape(capsule), :size(1.9)),
+                    game::movement(:style(walk), :ref("HostileWalk")),
+                    game::attribute(:name("health"), :value(120), :max(120)),
+                    game::npc(:archetype(breacher), :faction(hostile)),
+                    game::perception(:sight_m(24), :hear_m(12), :fov_deg(100)),
+                    game::behavior(:tree(patrol_combat), :default_tactic(push)),
+                    game::mind(:ref("BreacherMind"), :cadence_s(3)),
+                    game::nav_agent(:radius(0.4), :height(1.9), :max_speed(3.2)),
+                    game::group(:name("hostiles"))
+                ),
+        
+        game::objective(:id("clear_hostiles"), :kind(clear_hostiles), :target("hostiles")),
+        
+        game::zone(
+                :name("SecurityLobby"),
+                :kind(room),
+                    game::entity(
+                                :name("LobbyFloor_0_0"),
+                                :x(-20),
+                                :y(0),
+                                :z(-4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyFloor_0_1"),
+                                :x(-20),
+                                :y(0),
+                                :z(-2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyFloor_0_2"),
+                                :x(-20),
+                                :y(0),
+                                :z(0),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyFloor_0_3"),
+                                :x(-20),
+                                :y(0),
+                                :z(2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyFloor_0_4"),
+                                :x(-20),
+                                :y(0),
+                                :z(4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyFloor_1_0"),
+                                :x(-18),
+                                :y(0),
+                                :z(-4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyFloor_1_1"),
+                                :x(-18),
+                                :y(0),
+                                :z(-2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyFloor_1_2"),
+                                :x(-18),
+                                :y(0),
+                                :z(0),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyFloor_1_3"),
+                                :x(-18),
+                                :y(0),
+                                :z(2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyFloor_1_4"),
+                                :x(-18),
+                                :y(0),
+                                :z(4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyFloor_2_0"),
+                                :x(-16),
+                                :y(0),
+                                :z(-4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyFloor_2_1"),
+                                :x(-16),
+                                :y(0),
+                                :z(-2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyFloor_2_2"),
+                                :x(-16),
+                                :y(0),
+                                :z(0),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyFloor_2_3"),
+                                :x(-16),
+                                :y(0),
+                                :z(2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyFloor_2_4"),
+                                :x(-16),
+                                :y(0),
+                                :z(4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyFloor_3_0"),
+                                :x(-14),
+                                :y(0),
+                                :z(-4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyFloor_3_1"),
+                                :x(-14),
+                                :y(0),
+                                :z(-2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyFloor_3_2"),
+                                :x(-14),
+                                :y(0),
+                                :z(0),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyFloor_3_3"),
+                                :x(-14),
+                                :y(0),
+                                :z(2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyFloor_3_4"),
+                                :x(-14),
+                                :y(0),
+                                :z(4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyFloor_4_0"),
+                                :x(-12),
+                                :y(0),
+                                :z(-4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyFloor_4_1"),
+                                :x(-12),
+                                :y(0),
+                                :z(-2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyFloor_4_2"),
+                                :x(-12),
+                                :y(0),
+                                :z(0),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyFloor_4_3"),
+                                :x(-12),
+                                :y(0),
+                                :z(2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyFloor_4_4"),
+                                :x(-12),
+                                :y(0),
+                                :z(4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyWallN_0"),
+                                :x(-20),
+                                :y(0),
+                                :z(-5),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyWallS_0"),
+                                :x(-20),
+                                :y(0),
+                                :z(5),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyWallN_1"),
+                                :x(-18),
+                                :y(0),
+                                :z(-5),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyWallS_1"),
+                                :x(-18),
+                                :y(0),
+                                :z(5),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyWallN_2"),
+                                :x(-16),
+                                :y(0),
+                                :z(-5),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyWallS_2"),
+                                :x(-16),
+                                :y(0),
+                                :z(5),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyWallN_3"),
+                                :x(-14),
+                                :y(0),
+                                :z(-5),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyWallS_3"),
+                                :x(-14),
+                                :y(0),
+                                :z(5),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyWallN_4"),
+                                :x(-12),
+                                :y(0),
+                                :z(-5),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyWallS_4"),
+                                :x(-12),
+                                :y(0),
+                                :z(5),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyWallW_0"),
+                                :x(-21),
+                                :y(0),
+                                :z(-4),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyWallE_0"),
+                                :x(-11),
+                                :y(0),
+                                :z(-4),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyWallW_1"),
+                                :x(-21),
+                                :y(0),
+                                :z(-2),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyWallE_1"),
+                                :x(-11),
+                                :y(0),
+                                :z(-2),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyWallW_2"),
+                                :x(-21),
+                                :y(0),
+                                :z(0),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyDoorE"),
+                                :x(-11),
+                                :y(0),
+                                :z(0),
+                                :yaw(90),
+                                game::mesh(:asset("wall_door_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyWallW_3"),
+                                :x(-21),
+                                :y(0),
+                                :z(2),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyWallE_3"),
+                                :x(-11),
+                                :y(0),
+                                :z(2),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyWallW_4"),
+                                :x(-21),
+                                :y(0),
+                                :z(4),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyWallE_4"),
+                                :x(-11),
+                                :y(0),
+                                :z(4),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyDesk"),
+                                :x(-14),
+                                :y(0.2),
+                                :z(0),
+                                game::mesh(:asset("desk_1.6"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyChair"),
+                                :x(-14),
+                                :y(0.2),
+                                :z(1.2),
+                                :yaw(180),
+                                game::mesh(:asset("chair_0.5"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyLocker"),
+                                :x(-18),
+                                :y(0.2),
+                                :z(-2),
+                                game::mesh(:asset("locker_0.6"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyCover"),
+                                :x(-12),
+                                :y(0.2),
+                                :z(2),
+                                game::mesh(:asset("cover_low"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LobbyLamp"),
+                                :x(-14),
+                                :y(2.6),
+                                :z(0),
+                                game::light(:kind(spot), :intensity(1.4), :color("#cfe8ff"), :radius_m(10), :cast_shadows(true))
+                            )
+                ),
+        game::zone(
+                :name("OpsControl"),
+                :kind(room),
+                    game::entity(
+                                :name("OpsFloor_0_0"),
+                                :x(-4),
+                                :y(0),
+                                :z(-4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsFloor_0_1"),
+                                :x(-4),
+                                :y(0),
+                                :z(-2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsFloor_0_2"),
+                                :x(-4),
+                                :y(0),
+                                :z(0),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsFloor_0_3"),
+                                :x(-4),
+                                :y(0),
+                                :z(2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsFloor_0_4"),
+                                :x(-4),
+                                :y(0),
+                                :z(4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsFloor_1_0"),
+                                :x(-2),
+                                :y(0),
+                                :z(-4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsFloor_1_1"),
+                                :x(-2),
+                                :y(0),
+                                :z(-2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsFloor_1_2"),
+                                :x(-2),
+                                :y(0),
+                                :z(0),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsFloor_1_3"),
+                                :x(-2),
+                                :y(0),
+                                :z(2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsFloor_1_4"),
+                                :x(-2),
+                                :y(0),
+                                :z(4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsFloor_2_0"),
+                                :x(0),
+                                :y(0),
+                                :z(-4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsFloor_2_1"),
+                                :x(0),
+                                :y(0),
+                                :z(-2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsFloor_2_2"),
+                                :x(0),
+                                :y(0),
+                                :z(0),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsFloor_2_3"),
+                                :x(0),
+                                :y(0),
+                                :z(2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsFloor_2_4"),
+                                :x(0),
+                                :y(0),
+                                :z(4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsFloor_3_0"),
+                                :x(2),
+                                :y(0),
+                                :z(-4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsFloor_3_1"),
+                                :x(2),
+                                :y(0),
+                                :z(-2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsFloor_3_2"),
+                                :x(2),
+                                :y(0),
+                                :z(0),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsFloor_3_3"),
+                                :x(2),
+                                :y(0),
+                                :z(2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsFloor_3_4"),
+                                :x(2),
+                                :y(0),
+                                :z(4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsFloor_4_0"),
+                                :x(4),
+                                :y(0),
+                                :z(-4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsFloor_4_1"),
+                                :x(4),
+                                :y(0),
+                                :z(-2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsFloor_4_2"),
+                                :x(4),
+                                :y(0),
+                                :z(0),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsFloor_4_3"),
+                                :x(4),
+                                :y(0),
+                                :z(2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsFloor_4_4"),
+                                :x(4),
+                                :y(0),
+                                :z(4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsWallN_0"),
+                                :x(-4),
+                                :y(0),
+                                :z(-5),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsWallS_0"),
+                                :x(-4),
+                                :y(0),
+                                :z(5),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsWallN_1"),
+                                :x(-2),
+                                :y(0),
+                                :z(-5),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsWallS_1"),
+                                :x(-2),
+                                :y(0),
+                                :z(5),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsDoorN"),
+                                :x(0),
+                                :y(0),
+                                :z(-5),
+                                game::mesh(:asset("wall_door_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsDoorS"),
+                                :x(0),
+                                :y(0),
+                                :z(5),
+                                game::mesh(:asset("wall_door_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsWallN_3"),
+                                :x(2),
+                                :y(0),
+                                :z(-5),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsWallS_3"),
+                                :x(2),
+                                :y(0),
+                                :z(5),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsWallN_4"),
+                                :x(4),
+                                :y(0),
+                                :z(-5),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsWallS_4"),
+                                :x(4),
+                                :y(0),
+                                :z(5),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsWallW_0"),
+                                :x(-5),
+                                :y(0),
+                                :z(-4),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsWallE_0"),
+                                :x(5),
+                                :y(0),
+                                :z(-4),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsWallW_1"),
+                                :x(-5),
+                                :y(0),
+                                :z(-2),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsWallE_1"),
+                                :x(5),
+                                :y(0),
+                                :z(-2),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsDoorW"),
+                                :x(-5),
+                                :y(0),
+                                :z(0),
+                                :yaw(90),
+                                game::mesh(:asset("wall_door_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsDoorE"),
+                                :x(5),
+                                :y(0),
+                                :z(0),
+                                :yaw(90),
+                                game::mesh(:asset("wall_door_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsWallW_3"),
+                                :x(-5),
+                                :y(0),
+                                :z(2),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsWallE_3"),
+                                :x(5),
+                                :y(0),
+                                :z(2),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsWallW_4"),
+                                :x(-5),
+                                :y(0),
+                                :z(4),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsWallE_4"),
+                                :x(5),
+                                :y(0),
+                                :z(4),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsConsole"),
+                                :x(-3),
+                                :y(0.2),
+                                :z(3),
+                                game::mesh(:asset("desk_1.6"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsChair"),
+                                :x(-3),
+                                :y(0.2),
+                                :z(1.6),
+                                :yaw(180),
+                                game::mesh(:asset("chair_0.5"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsCrate"),
+                                :x(2),
+                                :y(0.2),
+                                :z(-2),
+                                game::mesh(:asset("crate_1"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("OpsLamp"),
+                                :x(0),
+                                :y(2.8),
+                                :z(0),
+                                game::light(:kind(point), :intensity(1.2), :color("#a8d4ff"), :radius_m(12))
+                            )
+                ),
+        game::zone(
+                :name("ResearchLab"),
+                :kind(room),
+                    game::entity(
+                                :name("LabFloor_0_0"),
+                                :x(12),
+                                :y(0),
+                                :z(-4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabFloor_0_1"),
+                                :x(12),
+                                :y(0),
+                                :z(-2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabFloor_0_2"),
+                                :x(12),
+                                :y(0),
+                                :z(0),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabFloor_0_3"),
+                                :x(12),
+                                :y(0),
+                                :z(2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabFloor_0_4"),
+                                :x(12),
+                                :y(0),
+                                :z(4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabFloor_1_0"),
+                                :x(14),
+                                :y(0),
+                                :z(-4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabFloor_1_1"),
+                                :x(14),
+                                :y(0),
+                                :z(-2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabFloor_1_2"),
+                                :x(14),
+                                :y(0),
+                                :z(0),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabFloor_1_3"),
+                                :x(14),
+                                :y(0),
+                                :z(2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabFloor_1_4"),
+                                :x(14),
+                                :y(0),
+                                :z(4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabFloor_2_0"),
+                                :x(16),
+                                :y(0),
+                                :z(-4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabFloor_2_1"),
+                                :x(16),
+                                :y(0),
+                                :z(-2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabFloor_2_2"),
+                                :x(16),
+                                :y(0),
+                                :z(0),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabFloor_2_3"),
+                                :x(16),
+                                :y(0),
+                                :z(2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabFloor_2_4"),
+                                :x(16),
+                                :y(0),
+                                :z(4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabFloor_3_0"),
+                                :x(18),
+                                :y(0),
+                                :z(-4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabFloor_3_1"),
+                                :x(18),
+                                :y(0),
+                                :z(-2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabFloor_3_2"),
+                                :x(18),
+                                :y(0),
+                                :z(0),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabFloor_3_3"),
+                                :x(18),
+                                :y(0),
+                                :z(2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabFloor_3_4"),
+                                :x(18),
+                                :y(0),
+                                :z(4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabFloor_4_0"),
+                                :x(20),
+                                :y(0),
+                                :z(-4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabFloor_4_1"),
+                                :x(20),
+                                :y(0),
+                                :z(-2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabFloor_4_2"),
+                                :x(20),
+                                :y(0),
+                                :z(0),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabFloor_4_3"),
+                                :x(20),
+                                :y(0),
+                                :z(2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabFloor_4_4"),
+                                :x(20),
+                                :y(0),
+                                :z(4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabWallN_0"),
+                                :x(12),
+                                :y(0),
+                                :z(-5),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabWallS_0"),
+                                :x(12),
+                                :y(0),
+                                :z(5),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabWallN_1"),
+                                :x(14),
+                                :y(0),
+                                :z(-5),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabWallS_1"),
+                                :x(14),
+                                :y(0),
+                                :z(5),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabWallN_2"),
+                                :x(16),
+                                :y(0),
+                                :z(-5),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabWallS_2"),
+                                :x(16),
+                                :y(0),
+                                :z(5),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabWallN_3"),
+                                :x(18),
+                                :y(0),
+                                :z(-5),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabWallS_3"),
+                                :x(18),
+                                :y(0),
+                                :z(5),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabWallN_4"),
+                                :x(20),
+                                :y(0),
+                                :z(-5),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabWallS_4"),
+                                :x(20),
+                                :y(0),
+                                :z(5),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabWallW_0"),
+                                :x(11),
+                                :y(0),
+                                :z(-4),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabWallE_0"),
+                                :x(21),
+                                :y(0),
+                                :z(-4),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabWallW_1"),
+                                :x(11),
+                                :y(0),
+                                :z(-2),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabWallE_1"),
+                                :x(21),
+                                :y(0),
+                                :z(-2),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabDoorW"),
+                                :x(11),
+                                :y(0),
+                                :z(0),
+                                :yaw(90),
+                                game::mesh(:asset("wall_door_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabWallE_2"),
+                                :x(21),
+                                :y(0),
+                                :z(0),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabWallW_3"),
+                                :x(11),
+                                :y(0),
+                                :z(2),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabWallE_3"),
+                                :x(21),
+                                :y(0),
+                                :z(2),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabWallW_4"),
+                                :x(11),
+                                :y(0),
+                                :z(4),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabWallE_4"),
+                                :x(21),
+                                :y(0),
+                                :z(4),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabTable1"),
+                                :x(16),
+                                :y(0.2),
+                                :z(0),
+                                game::mesh(:asset("lab_table_2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabTable2"),
+                                :x(18),
+                                :y(0.2),
+                                :z(-2),
+                                :yaw(90),
+                                game::mesh(:asset("lab_table_2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabLocker"),
+                                :x(14),
+                                :y(0.2),
+                                :z(2),
+                                game::mesh(:asset("locker_0.6"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabCover"),
+                                :x(20),
+                                :y(0.2),
+                                :z(0),
+                                :yaw(90),
+                                game::mesh(:asset("cover_high"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("LabLamp"),
+                                :x(16),
+                                :y(2.6),
+                                :z(0),
+                                game::light(:kind(spot), :intensity(1.3), :color("#d0ffe8"), :radius_m(10), :cast_shadows(true))
+                            )
+                ),
+        game::zone(
+                :name("BarracksLounge"),
+                :kind(room),
+                    game::entity(
+                                :name("BarracksFloor_0_0"),
+                                :x(-4),
+                                :y(0),
+                                :z(-20),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksFloor_0_1"),
+                                :x(-4),
+                                :y(0),
+                                :z(-18),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksFloor_0_2"),
+                                :x(-4),
+                                :y(0),
+                                :z(-16),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksFloor_0_3"),
+                                :x(-4),
+                                :y(0),
+                                :z(-14),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksFloor_0_4"),
+                                :x(-4),
+                                :y(0),
+                                :z(-12),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksFloor_1_0"),
+                                :x(-2),
+                                :y(0),
+                                :z(-20),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksFloor_1_1"),
+                                :x(-2),
+                                :y(0),
+                                :z(-18),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksFloor_1_2"),
+                                :x(-2),
+                                :y(0),
+                                :z(-16),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksFloor_1_3"),
+                                :x(-2),
+                                :y(0),
+                                :z(-14),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksFloor_1_4"),
+                                :x(-2),
+                                :y(0),
+                                :z(-12),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksFloor_2_0"),
+                                :x(0),
+                                :y(0),
+                                :z(-20),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksFloor_2_1"),
+                                :x(0),
+                                :y(0),
+                                :z(-18),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksFloor_2_2"),
+                                :x(0),
+                                :y(0),
+                                :z(-16),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksFloor_2_3"),
+                                :x(0),
+                                :y(0),
+                                :z(-14),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksFloor_2_4"),
+                                :x(0),
+                                :y(0),
+                                :z(-12),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksFloor_3_0"),
+                                :x(2),
+                                :y(0),
+                                :z(-20),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksFloor_3_1"),
+                                :x(2),
+                                :y(0),
+                                :z(-18),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksFloor_3_2"),
+                                :x(2),
+                                :y(0),
+                                :z(-16),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksFloor_3_3"),
+                                :x(2),
+                                :y(0),
+                                :z(-14),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksFloor_3_4"),
+                                :x(2),
+                                :y(0),
+                                :z(-12),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksFloor_4_0"),
+                                :x(4),
+                                :y(0),
+                                :z(-20),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksFloor_4_1"),
+                                :x(4),
+                                :y(0),
+                                :z(-18),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksFloor_4_2"),
+                                :x(4),
+                                :y(0),
+                                :z(-16),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksFloor_4_3"),
+                                :x(4),
+                                :y(0),
+                                :z(-14),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksFloor_4_4"),
+                                :x(4),
+                                :y(0),
+                                :z(-12),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksWallN_0"),
+                                :x(-4),
+                                :y(0),
+                                :z(-21),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksWallS_0"),
+                                :x(-4),
+                                :y(0),
+                                :z(-11),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksWallN_1"),
+                                :x(-2),
+                                :y(0),
+                                :z(-21),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksWallS_1"),
+                                :x(-2),
+                                :y(0),
+                                :z(-11),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksWallN_2"),
+                                :x(0),
+                                :y(0),
+                                :z(-21),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksDoorS"),
+                                :x(0),
+                                :y(0),
+                                :z(-11),
+                                game::mesh(:asset("wall_door_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksWallN_3"),
+                                :x(2),
+                                :y(0),
+                                :z(-21),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksWallS_3"),
+                                :x(2),
+                                :y(0),
+                                :z(-11),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksWallN_4"),
+                                :x(4),
+                                :y(0),
+                                :z(-21),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksWallS_4"),
+                                :x(4),
+                                :y(0),
+                                :z(-11),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksWallW_0"),
+                                :x(-5),
+                                :y(0),
+                                :z(-20),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksWallE_0"),
+                                :x(5),
+                                :y(0),
+                                :z(-20),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksWallW_1"),
+                                :x(-5),
+                                :y(0),
+                                :z(-18),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksWallE_1"),
+                                :x(5),
+                                :y(0),
+                                :z(-18),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksWallW_2"),
+                                :x(-5),
+                                :y(0),
+                                :z(-16),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksWallE_2"),
+                                :x(5),
+                                :y(0),
+                                :z(-16),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksWallW_3"),
+                                :x(-5),
+                                :y(0),
+                                :z(-14),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksWallE_3"),
+                                :x(5),
+                                :y(0),
+                                :z(-14),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksWallW_4"),
+                                :x(-5),
+                                :y(0),
+                                :z(-12),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksWallE_4"),
+                                :x(5),
+                                :y(0),
+                                :z(-12),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("Bunk1"),
+                                :x(-2),
+                                :y(0.2),
+                                :z(-16),
+                                game::mesh(:asset("bunk_2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("Bunk2"),
+                                :x(2),
+                                :y(0.2),
+                                :z(-16),
+                                game::mesh(:asset("bunk_2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksLocker"),
+                                :x(-2),
+                                :y(0.2),
+                                :z(-18),
+                                game::mesh(:asset("locker_0.6"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("BarracksBench"),
+                                :x(0),
+                                :y(0.2),
+                                :z(-14),
+                                game::mesh(:asset("chair_0.5"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            )
+                ),
+        game::zone(
+                :name("ReactorHall"),
+                :kind(room),
+                    game::entity(
+                                :name("ReactorFloor_0_0"),
+                                :x(-4),
+                                :y(0),
+                                :z(12),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorFloor_0_1"),
+                                :x(-4),
+                                :y(0),
+                                :z(14),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorFloor_0_2"),
+                                :x(-4),
+                                :y(0),
+                                :z(16),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorFloor_0_3"),
+                                :x(-4),
+                                :y(0),
+                                :z(18),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorFloor_0_4"),
+                                :x(-4),
+                                :y(0),
+                                :z(20),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorFloor_1_0"),
+                                :x(-2),
+                                :y(0),
+                                :z(12),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorFloor_1_1"),
+                                :x(-2),
+                                :y(0),
+                                :z(14),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorFloor_1_2"),
+                                :x(-2),
+                                :y(0),
+                                :z(16),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorFloor_1_3"),
+                                :x(-2),
+                                :y(0),
+                                :z(18),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorFloor_1_4"),
+                                :x(-2),
+                                :y(0),
+                                :z(20),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorFloor_2_0"),
+                                :x(0),
+                                :y(0),
+                                :z(12),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorFloor_2_1"),
+                                :x(0),
+                                :y(0),
+                                :z(14),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorFloor_2_2"),
+                                :x(0),
+                                :y(0),
+                                :z(16),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorFloor_2_3"),
+                                :x(0),
+                                :y(0),
+                                :z(18),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorFloor_2_4"),
+                                :x(0),
+                                :y(0),
+                                :z(20),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorFloor_3_0"),
+                                :x(2),
+                                :y(0),
+                                :z(12),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorFloor_3_1"),
+                                :x(2),
+                                :y(0),
+                                :z(14),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorFloor_3_2"),
+                                :x(2),
+                                :y(0),
+                                :z(16),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorFloor_3_3"),
+                                :x(2),
+                                :y(0),
+                                :z(18),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorFloor_3_4"),
+                                :x(2),
+                                :y(0),
+                                :z(20),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorFloor_4_0"),
+                                :x(4),
+                                :y(0),
+                                :z(12),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorFloor_4_1"),
+                                :x(4),
+                                :y(0),
+                                :z(14),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorFloor_4_2"),
+                                :x(4),
+                                :y(0),
+                                :z(16),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorFloor_4_3"),
+                                :x(4),
+                                :y(0),
+                                :z(18),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorFloor_4_4"),
+                                :x(4),
+                                :y(0),
+                                :z(20),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorWallN_0"),
+                                :x(-4),
+                                :y(0),
+                                :z(11),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorWallS_0"),
+                                :x(-4),
+                                :y(0),
+                                :z(21),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorWallN_1"),
+                                :x(-2),
+                                :y(0),
+                                :z(11),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorWallS_1"),
+                                :x(-2),
+                                :y(0),
+                                :z(21),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorDoorN"),
+                                :x(0),
+                                :y(0),
+                                :z(11),
+                                game::mesh(:asset("wall_door_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorDoorS"),
+                                :x(0),
+                                :y(0),
+                                :z(21),
+                                game::mesh(:asset("wall_door_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorWallN_3"),
+                                :x(2),
+                                :y(0),
+                                :z(11),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorWallS_3"),
+                                :x(2),
+                                :y(0),
+                                :z(21),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorWallN_4"),
+                                :x(4),
+                                :y(0),
+                                :z(11),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorWallS_4"),
+                                :x(4),
+                                :y(0),
+                                :z(21),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorWallW_0"),
+                                :x(-5),
+                                :y(0),
+                                :z(12),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorWallE_0"),
+                                :x(5),
+                                :y(0),
+                                :z(12),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorWallW_1"),
+                                :x(-5),
+                                :y(0),
+                                :z(14),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorWallE_1"),
+                                :x(5),
+                                :y(0),
+                                :z(14),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorWallW_2"),
+                                :x(-5),
+                                :y(0),
+                                :z(16),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorWallE_2"),
+                                :x(5),
+                                :y(0),
+                                :z(16),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorWallW_3"),
+                                :x(-5),
+                                :y(0),
+                                :z(18),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorWallE_3"),
+                                :x(5),
+                                :y(0),
+                                :z(18),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorWallW_4"),
+                                :x(-5),
+                                :y(0),
+                                :z(20),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorWallE_4"),
+                                :x(5),
+                                :y(0),
+                                :z(20),
+                                :yaw(90),
+                                game::mesh(:asset("wall_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorColumn"),
+                                :x(0),
+                                :y(0.2),
+                                :z(16),
+                                game::mesh(:asset("column_0.4"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorCrate1"),
+                                :x(-2),
+                                :y(0.2),
+                                :z(14),
+                                game::mesh(:asset("crate_1"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorCrate2"),
+                                :x(2),
+                                :y(0.2),
+                                :z(18),
+                                :yaw(15),
+                                game::mesh(:asset("crate_1"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorCover"),
+                                :x(0),
+                                :y(0.2),
+                                :z(14),
+                                game::mesh(:asset("cover_high"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ReactorLamp"),
+                                :x(0),
+                                :y(3.0),
+                                :z(16),
+                                game::light(:kind(point), :intensity(1.6), :color("#ffd0a0"), :radius_m(14))
+                            )
+                ),
+        game::zone(
+                :name("GlassBridge"),
+                :kind(walkway),
+                    game::entity(
+                                :name("GlassBridgeFloor_0_0"),
+                                :x(-12),
+                                :y(0),
+                                :z(-2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("GlassBridgeFloor_0_1"),
+                                :x(-12),
+                                :y(0),
+                                :z(0),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("GlassBridgeFloor_1_0"),
+                                :x(-10),
+                                :y(0),
+                                :z(-2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("GlassBridgeFloor_1_1"),
+                                :x(-10),
+                                :y(0),
+                                :z(0),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("GlassBridgeFloor_2_0"),
+                                :x(-8),
+                                :y(0),
+                                :z(-2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("GlassBridgeFloor_2_1"),
+                                :x(-8),
+                                :y(0),
+                                :z(0),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("GlassBridgeFloor_3_0"),
+                                :x(-6),
+                                :y(0),
+                                :z(-2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("GlassBridgeFloor_3_1"),
+                                :x(-6),
+                                :y(0),
+                                :z(0),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("GlassWin1"),
+                                :x(-10),
+                                :y(0),
+                                :z(-3),
+                                game::mesh(:asset("wall_window_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("GlassWin2"),
+                                :x(-10),
+                                :y(0),
+                                :z(1),
+                                game::mesh(:asset("wall_window_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            )
+                ),
+        game::zone(
+                :name("IndustrialCatwalk"),
+                :kind(walkway),
+                    game::entity(
+                                :name("CatwalkFloor_0_0"),
+                                :x(4),
+                                :y(0),
+                                :z(-2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CatwalkFloor_0_1"),
+                                :x(4),
+                                :y(0),
+                                :z(0),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CatwalkFloor_1_0"),
+                                :x(6),
+                                :y(0),
+                                :z(-2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CatwalkFloor_1_1"),
+                                :x(6),
+                                :y(0),
+                                :z(0),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CatwalkFloor_2_0"),
+                                :x(8),
+                                :y(0),
+                                :z(-2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CatwalkFloor_2_1"),
+                                :x(8),
+                                :y(0),
+                                :z(0),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CatwalkFloor_3_0"),
+                                :x(10),
+                                :y(0),
+                                :z(-2),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CatwalkFloor_3_1"),
+                                :x(10),
+                                :y(0),
+                                :z(0),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CatwalkRail1"),
+                                :x(6),
+                                :y(0.2),
+                                :z(-3),
+                                game::mesh(:asset("cover_low"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CatwalkRail2"),
+                                :x(8),
+                                :y(0.2),
+                                :z(1),
+                                game::mesh(:asset("cover_low"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            )
+                ),
+        game::zone(
+                :name("ServiceCorridor"),
+                :kind(walkway),
+                    game::entity(
+                                :name("ServiceFloor_0_0"),
+                                :x(-2),
+                                :y(0),
+                                :z(-12),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ServiceFloor_0_1"),
+                                :x(-2),
+                                :y(0),
+                                :z(-10),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ServiceFloor_0_2"),
+                                :x(-2),
+                                :y(0),
+                                :z(-8),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ServiceFloor_0_3"),
+                                :x(-2),
+                                :y(0),
+                                :z(-6),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ServiceFloor_1_0"),
+                                :x(0),
+                                :y(0),
+                                :z(-12),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ServiceFloor_1_1"),
+                                :x(0),
+                                :y(0),
+                                :z(-10),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ServiceFloor_1_2"),
+                                :x(0),
+                                :y(0),
+                                :z(-8),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ServiceFloor_1_3"),
+                                :x(0),
+                                :y(0),
+                                :z(-6),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ServiceVent"),
+                                :x(0),
+                                :y(2.5),
+                                :z(-10),
+                                game::mesh(:asset("vent_1.2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("ServiceCrate"),
+                                :x(-2),
+                                :y(0.2),
+                                :z(-8),
+                                game::mesh(:asset("crate_1"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            )
+                ),
+        game::zone(
+                :name("ExteriorSkywalk"),
+                :kind(walkway),
+                    game::entity(
+                                :name("SkywalkFloor_0_0"),
+                                :x(-2),
+                                :y(0),
+                                :z(4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("SkywalkFloor_0_1"),
+                                :x(-2),
+                                :y(0),
+                                :z(6),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("SkywalkFloor_0_2"),
+                                :x(-2),
+                                :y(0),
+                                :z(8),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("SkywalkFloor_0_3"),
+                                :x(-2),
+                                :y(0),
+                                :z(10),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("SkywalkFloor_1_0"),
+                                :x(0),
+                                :y(0),
+                                :z(4),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("SkywalkFloor_1_1"),
+                                :x(0),
+                                :y(0),
+                                :z(6),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("SkywalkFloor_1_2"),
+                                :x(0),
+                                :y(0),
+                                :z(8),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("SkywalkFloor_1_3"),
+                                :x(0),
+                                :y(0),
+                                :z(10),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("SkywalkWin"),
+                                :x(-3),
+                                :y(0),
+                                :z(8),
+                                :yaw(90),
+                                game::mesh(:asset("wall_window_2x3"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            )
+                ),
+        game::zone(
+                :name("RooftopCourtyard"),
+                :kind(outdoor),
+                    game::entity(
+                                :name("CourtFloor_0_0"),
+                                :x(-6),
+                                :y(0),
+                                :z(20),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CourtFloor_0_1"),
+                                :x(-6),
+                                :y(0),
+                                :z(22),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CourtFloor_0_2"),
+                                :x(-6),
+                                :y(0),
+                                :z(24),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CourtFloor_0_3"),
+                                :x(-6),
+                                :y(0),
+                                :z(26),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CourtFloor_1_0"),
+                                :x(-4),
+                                :y(0),
+                                :z(20),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CourtFloor_1_1"),
+                                :x(-4),
+                                :y(0),
+                                :z(22),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CourtFloor_1_2"),
+                                :x(-4),
+                                :y(0),
+                                :z(24),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CourtFloor_1_3"),
+                                :x(-4),
+                                :y(0),
+                                :z(26),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CourtFloor_2_0"),
+                                :x(-2),
+                                :y(0),
+                                :z(20),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CourtFloor_2_1"),
+                                :x(-2),
+                                :y(0),
+                                :z(22),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CourtFloor_2_2"),
+                                :x(-2),
+                                :y(0),
+                                :z(24),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CourtFloor_2_3"),
+                                :x(-2),
+                                :y(0),
+                                :z(26),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CourtFloor_3_0"),
+                                :x(0),
+                                :y(0),
+                                :z(20),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CourtFloor_3_1"),
+                                :x(0),
+                                :y(0),
+                                :z(22),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CourtFloor_3_2"),
+                                :x(0),
+                                :y(0),
+                                :z(24),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CourtFloor_3_3"),
+                                :x(0),
+                                :y(0),
+                                :z(26),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CourtFloor_4_0"),
+                                :x(2),
+                                :y(0),
+                                :z(20),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CourtFloor_4_1"),
+                                :x(2),
+                                :y(0),
+                                :z(22),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CourtFloor_4_2"),
+                                :x(2),
+                                :y(0),
+                                :z(24),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CourtFloor_4_3"),
+                                :x(2),
+                                :y(0),
+                                :z(26),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CourtFloor_5_0"),
+                                :x(4),
+                                :y(0),
+                                :z(20),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CourtFloor_5_1"),
+                                :x(4),
+                                :y(0),
+                                :z(22),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CourtFloor_5_2"),
+                                :x(4),
+                                :y(0),
+                                :z(24),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CourtFloor_5_3"),
+                                :x(4),
+                                :y(0),
+                                :z(26),
+                                game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("Planter1"),
+                                :x(-4),
+                                :y(0.2),
+                                :z(22),
+                                game::mesh(:asset("planter_1"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("Planter2"),
+                                :x(4),
+                                :y(0.2),
+                                :z(22),
+                                game::mesh(:asset("planter_1"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("VentUnit1"),
+                                :x(0),
+                                :y(0.2),
+                                :z(26),
+                                game::mesh(:asset("vent_1.2"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CourtCover1"),
+                                :x(-2),
+                                :y(0.2),
+                                :z(24),
+                                game::mesh(:asset("cover_low"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CourtCover2"),
+                                :x(2),
+                                :y(0.2),
+                                :z(24),
+                                :yaw(90),
+                                game::mesh(:asset("cover_high"), :size(1), :color("#808080")),
+                                game::collider(:shape(box), :size(1))
+                            ),
+                    game::entity(
+                                :name("CourtSunFill"),
+                                :x(0),
+                                :y(8),
+                                :z(24),
+                                game::light(:kind(directional), :intensity(0.35), :color("#fff4e0"))
+                            )
+                ),
+        game::encounter(
+                    :id("wave_alpha"),
+                    :wave(1),
+                    game::spawn(:prefab("Suppressor"), :x(-17), :y(1), :z(2)),
+                    game::spawn(:prefab("Flanker"), :x(13), :y(1), :z(-2)),
+                    game::spawn(:prefab("Breacher"), :x(-2), :y(1), :z(18)),
+                    game::spawn(:prefab("Suppressor"), :x(0), :y(1), :z(22))
+                )
+        )
+}

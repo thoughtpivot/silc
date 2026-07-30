@@ -8,6 +8,7 @@
 pub mod author;
 pub mod complete;
 pub mod corpus;
+pub mod fps_inject;
 pub mod progress;
 pub mod prompt;
 pub mod session;

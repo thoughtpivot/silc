@@ -1,0 +1,18 @@
+---
+description: Edit arenaGameApp main.silc only via silc assist; improve assist when the catalog/kernel changes.
+globs: examples/arenaGameApp/**
+alwaysApply: false
+---
+
+# Arena game authoring
+
+When changing [`examples/arenaGameApp/main.silc`](examples/arenaGameApp/main.silc):
+
+1. **Do not hand-edit** the scene tree. Use `silc assist "<task>" examples/arenaGameApp/main.silc` (or the equivalent from that directory).
+2. After assist writes the file, validate with `silc build examples/arenaGameApp/main.silc` (and run if needed).
+3. Runtime / pixel / kernel fixes belong in `crates/sil-codegen/templates/game/` (and related lower/catalog code), not in hand-patched `.silc`.
+
+When assist produces invalid or snow-era shapes (terrain, wake, controls, mixed `app`+`game`):
+
+- Fix **`silc assist`** in `crates/sil-rlm` (author prompts, `task_pattern`, `is_game_shaped`, preservation/purity checks, corpus) and game catalog docs as needed.
+- Then re-run assist against `main.silc` — do not bypass with a manual patch unless assist is blocked and you are only unblocking tooling.

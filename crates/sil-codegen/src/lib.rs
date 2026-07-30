@@ -28,7 +28,9 @@ const APP_WORKER_TS: &str = include_str!("../templates/app_worker.ts");
 const PIPELINE_WORKER_TS: &str = include_str!("../templates/pipeline_worker.ts");
 const PROCESSOR_WORKER_PY: &str = include_str!("../templates/processor_worker.py");
 const STORE_WORKER_GO: &str = include_str!("../templates/store_worker.go");
+const GAME_STORE_WORKER_GO: &str = include_str!("../templates/game_store_worker.go");
 const GAME_BAKE_WORKER_PY: &str = include_str!("../templates/game_bake_worker.py");
+const GAME_COGNITION_WORKER_PY: &str = include_str!("../templates/game_cognition_worker.py");
 const LLM_REQUIREMENTS: &str = include_str!("../templates/llm_requirements.txt");
 /// Compiler-owned Python dependencies for a generated tensor runtime.
 pub const TENSOR_REQUIREMENTS: &str = include_str!("../templates/tensor_requirements.txt");
@@ -603,10 +605,24 @@ fn emit_game(
     .map_err(|error| format!("write {}: {error}", bake_py.display()))?;
     generated.push(bake_py);
 
+    let cognition_py = root.join("python/game_cognition_worker.py");
+    fs::write(
+        &cognition_py,
+        GAME_COGNITION_WORKER_PY.replace("__COMPILER_VERSION__", compiler_version),
+    )
+    .map_err(|error| format!("write {}: {error}", cognition_py.display()))?;
+    generated.push(cognition_py);
+
     let go_files = [
         (
             root.join("go/worker.go"),
-            render_template(STORE_WORKER_GO, program, graph, schema_id, compiler_version),
+            render_template(
+                GAME_STORE_WORKER_GO,
+                program,
+                graph,
+                schema_id,
+                compiler_version,
+            ),
         ),
         (root.join("go/go.mod"), STORE_GOMOD.to_string()),
     ];
@@ -2554,8 +2570,8 @@ class BadView is view {
     #[test]
     fn emits_game_program_without_cdn_or_title_branching() {
         const GAME_SOURCE: &str =
-            include_str!("../../../examples/snowFlowGameApp/main.silc");
-        let (_program, _result, output) = parse_emit(GAME_SOURCE, "snowflow_game");
+            include_str!("../../../examples/arenaGameApp/main.silc");
+        let (_program, _result, output) = parse_emit(GAME_SOURCE, "arena_game");
 
         let pkg = fs::read_to_string(output.join("typescript/package.json")).unwrap();
         assert!(
@@ -2576,6 +2592,8 @@ class BadView is view {
             "SnowFlow",
             "SNOWFLOW",
             "title ===",
+            "snowMaterial",
+            "snow_surf",
         ] {
             assert!(
                 !joined.contains(needle),
@@ -2585,9 +2603,16 @@ class BadView is view {
 
         let manifest =
             fs::read_to_string(output.join("typescript/public/manifest.json")).unwrap();
-        assert!(manifest.contains("\"title\": \"SNOWFLOW\""));
+        assert!(
+            manifest.contains("\"title\": \"MEGASTRUCTURE\""),
+            "arenaGameApp should lower cinematic FPS title"
+        );
         assert!(manifest.contains("\"renderer\": \"webgpu\""));
+        assert!(manifest.contains("\"prefabs\""));
         assert!(manifest.contains("\"toggle\": \"F1\""));
+        assert!(manifest.contains("\"first_person\""));
+        assert!(manifest.contains("VanguardAR") || manifest.contains("\"weapons\""));
+        assert!(manifest.contains("SecurityLobby") || manifest.contains("\"zones\""));
 
         assert!(
             output.join("python/game_bake_worker.py").is_file(),
@@ -2597,10 +2622,16 @@ class BadView is view {
             output.join("python/bake_plan.json").is_file(),
             "game emit must include bake plan"
         );
+        let bake_plan = fs::read_to_string(output.join("python/bake_plan.json")).unwrap();
+        assert!(bake_plan.contains("cpython-bake-v1"));
+        assert!(bake_plan.contains("WalkDefault") || bake_plan.contains("prefabs"));
         assert!(
             output.join("go/worker.go").is_file(),
             "game emit must include Go store worker"
         );
+        let go_worker = fs::read_to_string(output.join("go/worker.go")).unwrap();
+        assert!(go_worker.contains("game_saves"));
+        assert!(go_worker.contains("game_runs"));
         let root_manifest = fs::read_to_string(output.join("manifest.json")).unwrap();
         assert!(root_manifest.contains("python_bake"));
         assert!(root_manifest.contains("go_source"));

@@ -54,6 +54,7 @@ meaningful edit. Stop and report limits instead of inventing substrates.
 | `component X` | **Component** — props, `has state`, slots, `emit`, handlers, `render()` |
 | `resource X for Contract` | **Resource** — capability CRUD (`query list;`, `mutation create;`, …) |
 | `app X` | **App** — `route` table (dual-surface serving is synthesized) |
+| `game X` | **Game** — web-only WebGPU scene tree (`game::scene(...)`; ADR-012). Do not mix with `app` / UI routes |
 | `service X` / `processor X` / `task X` | Optional workflow modules |
 | `==>` | Pipeline feed between values and `ns::op(...)` calls |
 
@@ -176,6 +177,57 @@ API contract (props / events / slots / children).
 - `ui::dialog` — props: `open` (required), `title?`; events: `confirm`, `cancel`; slots: none; children: any; surfaces: web+terminal
 - `ui::loading` — props: `text?`; events: none; slots: none; children: none; surfaces: web+terminal
 - `ui::empty` — props: `text?`; events: none; slots: none; children: none; surfaces: web+terminal
+
+### Complete game::* catalog (ADR-012)
+
+WebGPU-only. One `game Name { game::scene(...) }` root. Godot tree+signals, Unity prefabs/data/components, Unreal mode/pawn/controller. Do not mix with `app` / `component` / `resource`.
+
+- `game::scene` — props: `title`, `renderer?`, `target_fps?`; children: `entity`, `prefab`, `spawn`, `data`, `asset`, `material`, `mode`, `controller`, `camera`, `post_process`, `overlay`, `hud`, `environment`, `shadow`, `zone`, `weapon`, `encounter`, `objective`, `signal`, `group`
+- `game::entity` — props: `name`, `x?`, `y?`, `z?`, `yaw?`, `pitch?`, `roll?`, `sx?`, `sy?`, `sz?`; children: `entity`, `mesh`, `light`, `collider`, `movement`, `attribute`, `pawn`, `ability`, `weapon`, `ammo`, `damage`, `pickup`, `npc`, `perception`, `behavior`, `mind`, `nav_agent`, `door`, `trigger`, `cover`, `audio`, `signal`, `group`, `spawn`
+- `game::prefab` — props: `name`, `x?`, `y?`, `z?`, `yaw?`, `pitch?`, `roll?`, `sx?`, `sy?`, `sz?`; children: `entity`, `mesh`, `light`, `collider`, `movement`, `attribute`, `pawn`, `ability`, `weapon`, `ammo`, `damage`, `pickup`, `npc`, `perception`, `behavior`, `mind`, `nav_agent`, `door`, `trigger`, `cover`, `audio`, `signal`, `group`, `spawn`
+- `game::spawn` — props: `prefab`, `x?`, `y?`, `z?`, `as_pawn?` (flag); children: none
+- `game::data` — props: `name`, `speed?`, `cooldown?`, `cost?`, `damage?`, `range?`, `fire_rate?`, `magazine?`, `reload?`, `spread?`, `pellet_count?`, `charge_time?`, `splash_radius?`, `cadence_s?`, `persona?`, `aggression?`, `morale?`, `health?`, `armor?`; children: none
+- `game::signal` — props: `name`, `on?`; children: none
+- `game::group` — props: `name`; children: none
+- `game::mesh` — props: `shape?`, `asset?`, `material?`, `size?`, `color?`; children: none
+- `game::light` — props: `kind`, `intensity?`, `color?`, `radius_m?`, `cast_shadows?`; children: none
+- `game::collider` — props: `shape`, `size?`; children: none
+- `game::movement` — props: `style?`, `speed?`, `jump_speed?`, `sprint_mul?`, `ref?`; children: none
+- `game::attribute` — props: `name`, `value?`, `max?`; children: none
+- `game::mode` — props: `id`, `possess?`; children: `spawn`, `encounter`, `objective`
+- `game::pawn` — props: none; children: none
+- `game::controller` — props: `scheme?`; children: none
+- `game::camera` — props: `mode?`, `distance_m?`, `shoulder_offset_m?`, `follow?`; children: none
+- `game::ability` — props: `name`, `key`, `cooldown?`, `cost?`, `cost_attr?`, `ref?`; children: `particle_emitter`, `dynamic_light`, `camera_impulse`, `audio`
+- `game::particle_emitter` — props: `kind`, `count?`; children: none
+- `game::dynamic_light` — props: `radius_m?`, `intensity?`, `color?`; children: none
+- `game::camera_impulse` — props: `strength?`; children: none
+- `game::post_process` — props: `stage`, `enabled?`; children: none
+- `game::overlay` — props: `toggle`; children: none
+- `game::asset` — props: `name`, `path`, `kind`; children: none
+- `game::material` — props: `name`, `albedo?`, `normal?`, `roughness?`, `metallic?`, `ao?`, `emissive?`, `tiling?`; children: none
+- `game::zone` — props: `name`, `kind`; children: `entity`, `spawn`, `light`, `signal`, `group`
+- `game::weapon` — props: `name`, `slot?`, `fire_mode`, `ref?`, `damage?`, `fire_rate?`, `magazine?`, `reload?`, `spread?`; children: `projectile`, `particle_emitter`, `dynamic_light`, `camera_impulse`, `audio`
+- `game::projectile` — props: `kind`, `speed?`, `lifetime?`, `splash_radius?`, `color?`, `size?`; children: none
+- `game::ammo` — props: `name`, `amount?`, `max?`; children: none
+- `game::damage` — props: `amount`, `type_ident`; children: none
+- `game::pickup` — props: `kind`, `ref`, `amount?`; children: none
+- `game::hud` — props: `show_crosshair?`, `show_ammo?`, `show_health?`; children: none
+- `game::npc` — props: `archetype`, `faction`; children: none
+- `game::perception` — props: `sight_m?`, `hear_m?`, `fov_deg?`; children: none
+- `game::behavior` — props: `tree`, `default_tactic?`; children: none
+- `game::mind` — props: `ref`, `cadence_s?`; children: none
+- `game::nav_agent` — props: `radius?`, `height?`, `max_speed?`; children: none
+- `game::encounter` — props: `id`, `wave?`; children: `spawn`
+- `game::objective` — props: `id`, `kind`, `target?`; children: none
+- `game::audio` — props: `kind`, `path?`, `ref?`, `volume?`; children: none
+- `game::environment` — props: `fog_density?`, `fog_color?`, `sky_color?`, `exposure?`; children: none
+- `game::shadow` — props: `enabled?`, `cascade_count?`; children: none
+- `game::door` — props: `state?`, `auto?`; children: none
+- `game::trigger` — props: `kind`, `on`; children: none
+- `game::cover` — props: `quality`; children: none
+
+Closed enums: `:renderer(webgpu)`; mesh/collider `:shape(plane|box|capsule|sphere)`; mesh `:asset` XOR `:shape`; light `:kind(directional|point|spot)`; movement `:style(walk|first_person|sprint|jump)`; controller `:scheme(wasd_mouse)`; camera `:mode(third_person|first_person)`; asset `:kind(gltf|texture|audio|navmesh)`; zone `:kind(room|walkway|outdoor)`; weapon `:fire_mode(hitscan|pellet|projectile|beam)`; projectile `:kind(tracer|shell|plasma|rail)`; damage `:type_ident(bullet|pellet|plasma|rail|melee)`; pickup `:kind(weapon|ammo|health)`; npc `:archetype(suppressor|flanker|breacher)` `:faction(hostile|neutral)`; behavior `:tree(patrol_combat|guard)` `:default_tactic(suppress|flank|push|retreat)`; objective `:kind(clear_hostiles|reach)`; audio `:kind(oneshot|loop)`; door `:state(open|closed)`; trigger `:kind(enter|exit)`; cover `:quality(low|med|high)`; particle `:kind(burst|spark|smoke)`; post `:stage(taa|ssao|ssr|dof|bloom|tonemap|grain|sharpen)`.
 
 ## Valid patterns
 

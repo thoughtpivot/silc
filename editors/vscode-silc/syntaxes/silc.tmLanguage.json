@@ -215,7 +215,7 @@
 
     "builtin-type": {
       "name": "support.type.builtin.silc",
-      "match": "\\b(Str|UUID|Bool|Int|num32|num64|int32|int64)\\b"
+      "match": "\\b(Str|UUID|Bool|Int|num32|num64|int32|int64|Vec)\\b"
     },
 
     "static-call": {

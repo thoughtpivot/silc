@@ -2,7 +2,7 @@
   "name": "silc-language",
   "displayName": "Silc Language",
   "description": "Syntax highlighting and semantic hover for Silc (.silc) intent-native source files.",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "publisher": "thoughtpivot",
   "license": "MIT",
   "engines": {

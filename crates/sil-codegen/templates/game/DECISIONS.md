@@ -1,10 +1,11 @@
-# Spec deviations
+# Spec decisions (game kernel)
 
-- **SSR post stage**: Toggle present in manifest/overlay; Babylon 9.16 DefaultRenderingPipeline has no SSR hook — stage is reserved for a future custom pass.
-- **Cloth simulation**: CPU Verlet with 32 particles per cloth region instead of GPU cloth — acceptable per SPEC; keeps WebGPU shader budget for terrain and snow.
-- **Distant mountains**: Procedural ridgeline ring with matte fog tint instead of impostor billboards — cheaper, reads correctly at demo scale.
-- **Spell water**: Ribbon mesh + particle spray instead of screen-space fluid — full SSFR exceeds 90 FPS budget on target hardware.
-- **HDRI**: Procedural hemispherical sky + directional sun instead of vendored HDRI — no CDN/runtime fetch; vendored path documented in ASSETS.md.
-- **4096² deformation RT**: Default 2048² R16F with 2 cm texels at 80 m extent — 4096 optional via manifest; 2048 fits warm-up time budget.
-- **Shell fur**: 24 shells with procedural strand noise — below SPEC 20–40 range lower bound when GPU-bound; tunable via character manifest.
-- **Polyglot spine (ADR-012)**: Bun serves WebGPU + UDS; CPython bakes height buffers at compile time into `public/baked/`; Go owns SQLite `game_saves` (+ Bun creates settings/telemetry tables on the same DB). Hot loop stays in-browser.
+- **Kernel synthesis**: Godot entity tree + signals/groups; Unity prefabs, spawn overrides, and `game::data` assets; Unreal mode/pawn/controller ownership. Authors write `.silc` only.
+- **Babylon adapter**: WebGPU-only (`WebGPUEngine`). Mesh/light/camera wrap Babylon nodes; no WebGL fallback.
+- **CPython bake**: Always-on asset registry (`game_bake.json`) resolving data refs, collider hulls, spawns, signals, procedural PBR textures, kit metadata, and materials — not heightfield octaves.
+- **Megastructure FPS vertical slice**: Havok physics + Recast nav + procedural PBR kit (compiler-owned, no CDN). First-person camera (`game::camera :mode(first_person)`). Async Silclm cognition for NPC `game::mind` refs.
+- **Bun host**: Serves Vite `dist/`, `manifest.json`, baked assets; HTTP for settings/saves/telemetry/runs.
+- **Go store**: Owns SQLite migrations for `game_saves`, `game_runs`, `game_events`, `game_settings` on the shared DB.
+- **Physics**: Havok-backed capsule/box colliders from baked hulls (thin plane fallback for arena sandboxes).
+- **Post**: Babylon `DefaultRenderingPipeline` subset (bloom/tonemap/sharpen/grain); SSR reserved.
+- **Hot loop**: Stays in-browser; spine is bake/host/persist.
