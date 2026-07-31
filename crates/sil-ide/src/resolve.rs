@@ -1512,4 +1512,29 @@ component Page {
             );
         }
     }
+
+    #[test]
+    fn hovers_game_entity_node() {
+        let src = r#"
+game Arena {
+    game::scene(:title("Test"), :renderer(webgpu),
+        game::entity(:name("Player"), :x(0), :y(0), :z(0))
+    )
+}
+"#;
+        // Hover on "entity" after "game::"
+        let offset = src.find("game::entity").unwrap() + "game::".len();
+        let d = doc(src);
+        let h = resolve_hover(&d, offset as u32).expect("hover");
+        assert!(
+            h.markdown.contains("game node") && h.markdown.contains("game::entity"),
+            "expected game node hover, got:\n{}",
+            h.markdown
+        );
+        assert!(
+            h.markdown.contains("Named node in the scene tree"),
+            "expected entity description, got:\n{}",
+            h.markdown
+        );
+    }
 }

@@ -28,7 +28,7 @@ import sys
 from llama_cpp import Llama
 
 MODEL_PATH = os.environ["SILC_LLM_MODEL_PATH"]
-N_CTX = int(os.environ.get("SILC_LLM_N_CTX", "16384"))
+N_CTX = int(os.environ.get("SILC_LLM_N_CTX", "32768"))
 DEFAULT_MAX_TOKENS = int(os.environ.get("SILC_LLM_MAX_TOKENS", "4096"))
 N_GPU_LAYERS = int(os.environ.get("SILC_LLM_N_GPU_LAYERS", "-1"))
 

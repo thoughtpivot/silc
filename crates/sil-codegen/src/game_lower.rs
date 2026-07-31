@@ -27,6 +27,7 @@ pub fn lower_game(game: &Game) -> Result<Value, String> {
     let mut materials = Map::new();
     let mut weapons = Map::new();
     let mut zones = Vec::new();
+    let mut tilemaps = Vec::new();
     let mut encounters = Vec::new();
     let mut objectives = Vec::new();
     let mut scene_children = Vec::new();
@@ -126,6 +127,14 @@ pub fn lower_game(game: &Game) -> Result<Value, String> {
                 }
             }
             "group" => {}
+            "tilemap" => {
+                tilemaps.push(json!({
+                    "asset": string_prop(child, "asset").unwrap_or_default(),
+                    "tileset": string_prop(child, "tileset").unwrap_or_default(),
+                    "tileSize": number_prop(child, "tile_size"),
+                    "collisionLayer": string_prop(child, "collision_layer"),
+                }));
+            }
             other => {
                 return Err(format!(
                     "game::scene cannot contain top-level `game::{other}`"
@@ -164,6 +173,7 @@ pub fn lower_game(game: &Game) -> Result<Value, String> {
         "materials": materials,
         "weapons": weapons,
         "zones": zones,
+        "tilemaps": tilemaps,
         "encounters": encounters,
         "objectives": objectives,
         "prefabs": prefabs,
@@ -661,6 +671,13 @@ fn lower_entity_like(node: &GameNode, forced_name: Option<&str>) -> Result<Value
     let mut trigger = Value::Null;
     let mut cover = Value::Null;
     let mut audio = Value::Null;
+    // Platformer components
+    let mut sprite = Value::Null;
+    let mut collectible = Value::Null;
+    let mut interactable = Value::Null;
+    let mut patrol = Value::Null;
+    let mut warp = Value::Null;
+    let mut level_end = Value::Null;
     let mut is_pawn = false;
 
     for child in &node.children {
@@ -686,9 +703,20 @@ fn lower_entity_like(node: &GameNode, forced_name: Option<&str>) -> Result<Value
             }
             "collider" => {
                 components.push("collider");
+                let size = number_prop(child, "size").unwrap_or(1.0);
+                let sx = number_prop(node, "sx").unwrap_or(1.0);
+                let sy = number_prop(node, "sy").unwrap_or(1.0);
+                let sz = number_prop(node, "sz").unwrap_or(1.0);
                 collider = json!({
                     "shape": ident_prop(child, "shape").unwrap_or_else(|| "box".into()),
-                    "size": number_prop(child, "size").unwrap_or(1.0),
+                    "size": size,
+                    "hull": {
+                        "aabb": {
+                            "x": size * sx,
+                            "y": size * sy,
+                            "z": size * sz
+                        }
+                    }
                 });
             }
             "movement" => {
@@ -827,6 +855,62 @@ fn lower_entity_like(node: &GameNode, forced_name: Option<&str>) -> Result<Value
                     "volume": number_prop(child, "volume").unwrap_or(1.0),
                 });
             }
+            // Platformer components
+            "sprite" => {
+                components.push("sprite");
+                sprite = json!({
+                    "atlas": string_prop(child, "atlas").unwrap_or_default(),
+                    "frame": string_prop(child, "frame"),
+                    "width": number_prop(child, "width"),
+                    "height": number_prop(child, "height"),
+                    "animation": string_prop(child, "animation"),
+                    "flipX": bool_prop(child, "flip_x"),
+                    "billboard": bool_prop(child, "billboard"),
+                });
+            }
+            "collectible" => {
+                components.push("collectible");
+                collectible = json!({
+                    "kind": ident_prop(child, "kind").unwrap_or_else(|| "coin".into()),
+                    "value": number_prop(child, "value"),
+                    "onCollect": string_prop(child, "on_collect"),
+                    "respawn": number_prop(child, "respawn"),
+                });
+            }
+            "interactable" => {
+                components.push("interactable");
+                interactable = json!({
+                    "kind": ident_prop(child, "kind").unwrap_or_else(|| "bumpable".into()),
+                    "contents": string_prop(child, "contents"),
+                    "health": number_prop(child, "health"),
+                    "onInteract": string_prop(child, "on_interact"),
+                });
+            }
+            "patrol" => {
+                components.push("patrol");
+                patrol = json!({
+                    "behavior": ident_prop(child, "behavior").unwrap_or_else(|| "walk_reverse".into()),
+                    "speed": number_prop(child, "speed"),
+                    "bounds": number_prop(child, "bounds"),
+                    "onStomp": string_prop(child, "on_stomp"),
+                    "onTouch": string_prop(child, "on_touch"),
+                });
+            }
+            "warp" => {
+                components.push("warp");
+                warp = json!({
+                    "target": string_prop(child, "target").unwrap_or_default(),
+                    "direction": ident_prop(child, "direction"),
+                    "onWarp": string_prop(child, "on_warp"),
+                });
+            }
+            "level_end" => {
+                components.push("levelEnd");
+                level_end = json!({
+                    "onComplete": string_prop(child, "on_complete"),
+                    "nextLevel": string_prop(child, "next_level"),
+                });
+            }
             other => {
                 return Err(format!(
                     "game::{} cannot contain game::{other}",
@@ -864,6 +948,13 @@ fn lower_entity_like(node: &GameNode, forced_name: Option<&str>) -> Result<Value
         "cover": cover,
         "audio": audio,
         "pawn": is_pawn,
+        // Platformer components
+        "sprite": sprite,
+        "collectible": collectible,
+        "interactable": interactable,
+        "patrol": patrol,
+        "warp": warp,
+        "levelEnd": level_end,
     }))
 }
 

@@ -15,11 +15,17 @@ import { DEFAULT_MANIFEST } from "./manifest.ts";
 import { createAiSystem } from "./systems/ai.ts";
 import { createCameraSystem } from "./systems/camera.ts";
 import { createCognitionSystem } from "./systems/cognition.ts";
+import { createCollectibleSystem } from "./systems/collectible.ts";
 import { createHudSystem } from "./systems/hud.ts";
+import { createInteractableSystem } from "./systems/interactable.ts";
 import { createOverlaySystem } from "./systems/overlay.ts";
+import { createPatrolSystem } from "./systems/patrol.ts";
 import { createPhysicsSystem } from "./systems/physics.ts";
 import { createPostSystem } from "./systems/post.ts";
+import { createSpriteSystem } from "./systems/sprite.ts";
+import { createTilemapSystem } from "./systems/tilemap.ts";
 import { createTransformSyncSystem } from "./systems/transformSync.ts";
+import { createWarpSystem } from "./systems/warp.ts";
 import {
   createProjectileSystem,
   createWeaponSystem,
@@ -101,7 +107,15 @@ async function bootGame(canvas: HTMLCanvasElement): Promise<() => void> {
   for (const s of createFrameworkSystems(world, groups, signals, handles, resources, possession)) {
     schedule.add(s);
   }
+  // Platformer systems (order matters: tilemap first for collision data)
+  schedule.add(createTilemapSystem(world, handles, resources));
+  schedule.add(createSpriteSystem(world, handles, resources));
   schedule.add(createPhysicsSystem(world));
+  schedule.add(createPatrolSystem(world, handles, resources, signals, possession));
+  schedule.add(createCollectibleSystem(world, handles, resources, signals, possession));
+  schedule.add(createInteractableSystem(world, groups, handles, resources, signals, possession));
+  schedule.add(createWarpSystem(world, handles, resources, signals, possession));
+  // FPS systems
   schedule.add(createAiSystem(world, handles, resources, possession, combat));
   schedule.add(createWeaponSystem(world, signals, handles, resources, possession, combat));
   schedule.add(createProjectileSystem(world, handles, combat));

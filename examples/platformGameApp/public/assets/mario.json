@@ -1,0 +1,28 @@
+{
+  "frameWidth": 32,
+  "frameHeight": 32,
+  "columns": 4,
+  "rows": 4,
+  "animations": {
+    "idle": {
+      "frames": [0],
+      "frameDuration": 1.0,
+      "loop": true
+    },
+    "walk": {
+      "frames": [1, 2, 3, 2],
+      "frameDuration": 0.12,
+      "loop": true
+    },
+    "jump": {
+      "frames": [4],
+      "frameDuration": 1.0,
+      "loop": false
+    },
+    "fall": {
+      "frames": [5],
+      "frameDuration": 1.0,
+      "loop": false
+    }
+  }
+}

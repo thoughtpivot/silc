@@ -544,7 +544,7 @@ impl LlamaCompleter {
         );
 
         // Assist needs more room than in-app chat: target + examples + draft.
-        const ASSIST_N_CTX: u32 = 16_384;
+        const ASSIST_N_CTX: u32 = 32_768;
         let n_ctx = std::env::var("SILC_LLM_N_CTX")
             .ok()
             .and_then(|s| s.parse().ok())

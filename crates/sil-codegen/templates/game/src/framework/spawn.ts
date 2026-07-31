@@ -106,9 +106,11 @@ export function spawnEntityDef(
         def.mesh.material ?? undefined,
         resources.kitMaterials,
       );
-      if (def.pawn || resources.manifest.camera?.mode === "first_person") {
-        // Hide local pawn body in first-person.
-        if (def.pawn) mesh.isVisible = false;
+      // Hide pawn mesh in first-person mode, or in platformer mode when sprite exists
+      const isPlatformer = resources.manifest.camera?.mode === "side_scroll";
+      const isFirstPerson = resources.manifest.camera?.mode === "first_person";
+      if (def.pawn && (isFirstPerson || (isPlatformer && def.sprite))) {
+        mesh.isVisible = false;
       }
     }
     world.addComponent("mesh", id, { ...def.mesh });
@@ -136,7 +138,7 @@ export function spawnEntityDef(
       hull: baked ??
         (piece
           ? { aabb: { x: piece.size.x, y: piece.size.y, z: piece.size.z } }
-          : null),
+          : def.collider.hull ?? null),
       parts: piece ? kitColliderParts(piece) : null,
       static: !(def.movement || def.pawn || def.npc),
     });
@@ -218,6 +220,32 @@ export function spawnEntityDef(
   }
   if (def.audio) {
     world.addComponent("audio", id, { ...def.audio });
+  }
+  if (def.sprite) {
+    world.addComponent("sprite", id, {
+      atlas: def.sprite.atlas,
+      frame: def.sprite.frame ?? null,
+      width: def.sprite.width ?? 1,
+      height: def.sprite.height ?? 1,
+      animation: def.sprite.animation ?? "idle",
+      flipX: def.sprite.flipX ?? false,
+      billboard: def.sprite.billboard ?? true,
+    });
+  }
+  if (def.collectible) {
+    world.addComponent("collectible", id, { ...def.collectible });
+  }
+  if (def.interactable) {
+    world.addComponent("interactable", id, { ...def.interactable });
+  }
+  if (def.patrol) {
+    world.addComponent("patrol", id, { ...def.patrol });
+  }
+  if (def.warp) {
+    world.addComponent("warp", id, { ...def.warp });
+  }
+  if (def.levelEnd) {
+    world.addComponent("levelEnd", id, { ...def.levelEnd });
   }
   if (def.signals?.length) {
     world.addComponent(

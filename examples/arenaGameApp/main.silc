@@ -80,16 +80,6 @@ game Arena {
                     :ref("RailData"),
                     game::projectile(:kind(rail), :speed(200), :lifetime(0.2), :color("#88ccff"))
                 ),
-        
-        
-        
-        
-        
-        
-        
-        
-        
-        
         game::data(:name("SuppressorMind"), :persona("Suppressor — hold angles, controlled bursts."), :aggression(0.65), :morale(0.7), :cadence_s(4)),
         game::data(:name("FlankerMind"), :persona("Flanker — cut left, keep moving."), :aggression(0.75), :morale(0.6), :cadence_s(3.5)),
         game::data(:name("BreacherMind"), :persona("Breacher — push hard, close distance."), :aggression(0.9), :morale(0.55), :cadence_s(3)),
@@ -1023,6 +1013,8 @@ game Arena {
                                 game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
                                 game::collider(:shape(box), :size(1))
                             ),
+
+                    # NOTE: This floor is not used in the game, but it is here for completeness.
                     game::entity(
                                 :name("LabFloor_1_3"),
                                 :x(14),
@@ -1031,6 +1023,7 @@ game Arena {
                                 game::mesh(:asset("floor_2x2"), :size(1), :color("#808080")),
                                 game::collider(:shape(box), :size(1))
                             ),
+                    # NOTE: This floor is not used in the game, but it is here for completeness.
                     game::entity(
                                 :name("LabFloor_1_4"),
                                 :x(14),

@@ -21,8 +21,24 @@ export function createCameraSystem(
       const pos = world.worldPosition(pawnId);
       possession.impulse = Math.max(0, possession.impulse - ctx.dt * 2);
       const shake = possession.impulse * 0.12;
+      const cameraMode = resources.manifest.camera?.mode;
 
-      if (handles.firstPerson || resources.manifest.camera?.mode === "first_person") {
+      if (cameraMode === "side_scroll") {
+        // Side-scroll: orthographic camera looking at XY plane from +Z
+        const dist = resources.manifest.camera?.distanceM ?? 15;
+        handles.orbitCamera.mode = 1; // Orthographic
+        handles.orbitCamera.orthoLeft = -dist;
+        handles.orbitCamera.orthoRight = dist;
+        handles.orbitCamera.orthoTop = dist * 0.6;
+        handles.orbitCamera.orthoBottom = -dist * 0.6;
+        handles.orbitCamera.setTarget(new Vector3(pos.x, pos.y + 1, 0));
+        handles.orbitCamera.alpha = -Math.PI / 2; // Camera at +Z looking toward origin
+        handles.orbitCamera.beta = Math.PI / 2; // Level with horizon
+        handles.orbitCamera.radius = 20;
+        if (handles.scene.activeCamera !== handles.orbitCamera) {
+          handles.scene.activeCamera = handles.orbitCamera;
+        }
+      } else if (handles.firstPerson || cameraMode === "first_person") {
         const eyeY = 1.65 + shake * 0.05;
         handles.fpCamera.position.set(pos.x + shake * 0.02, pos.y + eyeY, pos.z);
         handles.fpCamera.rotation.y = possession.yaw;
@@ -31,8 +47,8 @@ export function createCameraSystem(
           handles.scene.activeCamera = handles.fpCamera;
         }
       } else {
-        const dist = resources.manifest.camera.distanceM ?? 4.5;
-        const shoulder = resources.manifest.camera.shoulderOffsetM ?? 0.6;
+        const dist = resources.manifest.camera?.distanceM ?? 4.5;
+        const shoulder = resources.manifest.camera?.shoulderOffsetM ?? 0.6;
         handles.orbitCamera.setTarget(
           new Vector3(pos.x + shoulder * 0.2 + shake, pos.y + 1.2, pos.z),
         );

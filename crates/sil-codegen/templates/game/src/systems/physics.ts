@@ -103,7 +103,7 @@ export function createPhysicsSystem(world: World): GameSystem {
         let x = t.x + vel.vx * ctx.fixedDt;
         let y = t.y + vel.vy * ctx.fixedDt;
         let z = t.z + vel.vz * ctx.fixedDt;
-        vel.vy -= 18 * ctx.fixedDt;
+        vel.vy -= 26 * ctx.fixedDt;
         if (vel.vy < -30) vel.vy = -30;
 
         // Resolve support first, taking the highest surface underfoot. Doing
@@ -131,6 +131,27 @@ export function createPhysicsSystem(world: World): GameSystem {
           y = groundY;
           if (vel.vy < 0) vel.vy = 0;
           grounded = true;
+        }
+
+        // Head-bump detection: check if head hits ceiling while moving up
+        let headBumped = false;
+        if (vel.vy > 0) {
+          const head = y + halfH * 2;
+          for (const s of solids) {
+            if (s.ground) continue;
+            const horizontalOverlap =
+              x > s.minX - radius &&
+              x < s.maxX + radius &&
+              z > s.minZ - radius &&
+              z < s.maxZ + radius;
+            // Head hitting bottom of solid
+            if (horizontalOverlap && head >= s.minY - 0.1 && head <= s.minY + 0.2) {
+              vel.vy = 0;
+              y = s.minY - halfH * 2 - 0.01;
+              headBumped = true;
+              break;
+            }
+          }
         }
 
         for (const s of solids) {
@@ -166,6 +187,7 @@ export function createPhysicsSystem(world: World): GameSystem {
         world.setTransform(id, { x, y, z });
         world.addComponent("velocity", id, vel);
         world.addComponent("grounded", id, { value: grounded });
+        world.addComponent("headBumped", id, { value: headBumped });
       }
     },
   };

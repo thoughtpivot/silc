@@ -1,0 +1,169 @@
+#!/usr/bin/env silc
+@version("0.4.0")
+
+game MarioBros {
+    game::scene(
+        :title("Super Mario Bros"),
+        :renderer(webgpu),
+        :target_fps(60),
+        game::data(:name("MarioStats"), :speed(6), :jump_height(4.5), :gravity(20)),
+
+        game::prefab(:name("Mario"),
+            game::mesh(:shape(box), :size(1), :color("#e52521")),
+            game::sprite(:atlas("mario"), :width(1), :height(1.5), :animation("idle")),
+            game::collider(:shape(box), :size(1)),
+            game::movement(:style(platformer), :speed(6), :jump_speed(14)),
+            game::attribute(:name("health"), :value(3), :max(3)),
+            game::attribute(:name("coins"), :value(0), :max(999)),
+            game::pawn(),
+            game::group(:name("player"))
+        ),
+
+        game::prefab(:name("Goomba"),
+            game::mesh(:shape(box), :size(0.8), :color("#8b4513")),
+            game::collider(:shape(box), :size(0.8)),
+            game::patrol(:behavior(walk_reverse), :speed(2), :bounds(5)),
+            game::group(:name("enemy"))
+        ),
+
+        game::prefab(:name("Koopa"),
+            game::mesh(:shape(box), :size(1), :color("#228b22")),
+            game::collider(:shape(box), :size(1)),
+            game::patrol(:behavior(walk_reverse), :speed(1.5), :bounds(4)),
+            game::group(:name("enemy"))
+        ),
+
+        game::prefab(:name("Coin"),
+            game::mesh(:shape(sphere), :size(0.5), :color("#ffd700")),
+            game::collider(:shape(box), :size(0.5)),
+            game::collectible(:kind(coin), :value(1))
+        ),
+
+        game::prefab(:name("Mushroom"),
+            game::mesh(:shape(box), :size(0.8), :color("#ff6347")),
+            game::collider(:shape(box), :size(0.8)),
+            game::collectible(:kind(powerup), :value(1))
+        ),
+
+        game::prefab(:name("QuestionBlock"),
+            game::mesh(:shape(box), :size(1), :color("#ffcc00")),
+            game::collider(:shape(box), :size(1)),
+            game::interactable(:kind(bumpable), :contents("Coin"))
+        ),
+
+        game::prefab(:name("BrickBlock"),
+            game::mesh(:shape(box), :size(1), :color("#8b4513")),
+            game::collider(:shape(box), :size(1)),
+            game::interactable(:kind(breakable), :health(1))
+        ),
+
+        game::prefab(:name("Pipe"),
+            game::mesh(:shape(box), :size(2), :color("#228b22")),
+            game::collider(:shape(box), :size(2))
+        ),
+
+        game::prefab(:name("FlagPole"),
+            game::mesh(:shape(capsule), :size(0.3), :color("#ffffff")),
+            game::collider(:shape(capsule), :size(0.3)),
+            game::level_end(:on_complete("level_complete"))
+        ),
+
+        game::entity(:name("Ground"), :x(0), :y(-0.5), :sx(200), :sy(1), :sz(2),
+            game::mesh(:shape(box), :size(1), :color("#8b4513")),
+            game::collider(:shape(box), :size(1))
+        ),
+
+        game::entity(:name("GroundAfterPit"), :x(140), :y(-0.5), :sx(60), :sy(1), :sz(2),
+            game::mesh(:shape(box), :size(1), :color("#8b4513")),
+            game::collider(:shape(box), :size(1))
+        ),
+
+        game::entity(:name("Platform1"), :x(15), :y(3), :sx(4), :sy(1), :sz(1),
+            game::mesh(:shape(box), :size(1), :color("#8b4513")),
+            game::collider(:shape(box), :size(1))
+        ),
+
+        game::entity(:name("Platform2"), :x(25), :y(5), :sx(3), :sy(1), :sz(1),
+            game::mesh(:shape(box), :size(1), :color("#8b4513")),
+            game::collider(:shape(box), :size(1))
+        ),
+
+        game::entity(:name("Platform3"), :x(35), :y(3), :sx(5), :sy(1), :sz(1),
+            game::mesh(:shape(box), :size(1), :color("#8b4513")),
+            game::collider(:shape(box), :size(1))
+        ),
+
+        game::entity(:name("Stair1"), :x(150), :y(0.5), :sx(1), :sy(1), :sz(1),
+            game::mesh(:shape(box), :size(1), :color("#8b4513")),
+            game::collider(:shape(box), :size(1))
+        ),
+        game::entity(:name("Stair2"), :x(151), :y(1), :sx(1), :sy(2), :sz(1),
+            game::mesh(:shape(box), :size(1), :color("#8b4513")),
+            game::collider(:shape(box), :size(1))
+        ),
+        game::entity(:name("Stair3"), :x(152), :y(1.5), :sx(1), :sy(3), :sz(1),
+            game::mesh(:shape(box), :size(1), :color("#8b4513")),
+            game::collider(:shape(box), :size(1))
+        ),
+        game::entity(:name("Stair4"), :x(153), :y(2), :sx(1), :sy(4), :sz(1),
+            game::mesh(:shape(box), :size(1), :color("#8b4513")),
+            game::collider(:shape(box), :size(1))
+        ),
+
+        game::spawn(:prefab("QuestionBlock"), :x(10), :y(3), :z(0)),
+        game::spawn(:prefab("QuestionBlock"), :x(20), :y(3), :z(0)),
+        game::spawn(:prefab("QuestionBlock"), :x(21), :y(3), :z(0)),
+        game::spawn(:prefab("QuestionBlock"), :x(22), :y(3), :z(0)),
+        game::spawn(:prefab("QuestionBlock"), :x(40), :y(6), :z(0)),
+
+        game::spawn(:prefab("BrickBlock"), :x(19), :y(3), :z(0)),
+        game::spawn(:prefab("BrickBlock"), :x(23), :y(3), :z(0)),
+        game::spawn(:prefab("BrickBlock"), :x(30), :y(3), :z(0)),
+        game::spawn(:prefab("BrickBlock"), :x(31), :y(3), :z(0)),
+        game::spawn(:prefab("BrickBlock"), :x(32), :y(3), :z(0)),
+
+        game::spawn(:prefab("Coin"), :x(5), :y(2), :z(0)),
+        game::spawn(:prefab("Coin"), :x(6), :y(2), :z(0)),
+        game::spawn(:prefab("Coin"), :x(7), :y(2), :z(0)),
+        game::spawn(:prefab("Coin"), :x(15), :y(5), :z(0)),
+        game::spawn(:prefab("Coin"), :x(16), :y(5), :z(0)),
+        game::spawn(:prefab("Coin"), :x(25), :y(7), :z(0)),
+        game::spawn(:prefab("Coin"), :x(26), :y(7), :z(0)),
+        game::spawn(:prefab("Coin"), :x(27), :y(7), :z(0)),
+
+        game::spawn(:prefab("Goomba"), :x(12), :y(1), :z(0)),
+        game::spawn(:prefab("Goomba"), :x(28), :y(1), :z(0)),
+        game::spawn(:prefab("Goomba"), :x(45), :y(1), :z(0)),
+        game::spawn(:prefab("Goomba"), :x(60), :y(1), :z(0)),
+        game::spawn(:prefab("Goomba"), :x(80), :y(1), :z(0)),
+
+        game::spawn(:prefab("Koopa"), :x(35), :y(1), :z(0)),
+        game::spawn(:prefab("Koopa"), :x(70), :y(1), :z(0)),
+
+        game::entity(:name("Pipe1"), :x(50), :y(1), :sx(2), :sy(2), :sz(1),
+            game::mesh(:shape(box), :size(1), :color("#228b22")),
+            game::collider(:shape(box), :size(1))
+        ),
+        game::entity(:name("Pipe2"), :x(90), :y(1.5), :sx(2), :sy(3), :sz(1),
+            game::mesh(:shape(box), :size(1), :color("#228b22")),
+            game::collider(:shape(box), :size(1))
+        ),
+
+        game::entity(:name("FlagPoleEntity"), :x(160), :y(5), :sx(0.3), :sy(10), :sz(0.3),
+            game::mesh(:shape(box), :size(1), :color("#ffffff")),
+            game::collider(:shape(box), :size(1)),
+            game::level_end(:on_complete("level_complete"))
+        ),
+
+        game::spawn(:prefab("Mario"), :x(2), :y(1), :z(0), :as_pawn),
+
+        game::mode(:id("platformer"), :possess("Mario")),
+        game::controller(:scheme(arrows_jump)),
+        game::camera(:mode(side_scroll), :distance_m(15), :follow(pawn)),
+        game::environment(:sky_color("#5c94fc"), :fog_color("#5c94fc"), :fog_density(0.001)),
+        game::post_process(:stage(sharpen), :enabled(true)),
+        game::hud(:show_health(true)),
+        game::overlay(:toggle("F1")),
+        game::signal(:name(level_complete), :on("Mode.on_level_complete"))
+    )
+}

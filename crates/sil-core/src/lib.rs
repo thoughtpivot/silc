@@ -31,7 +31,7 @@ pub use constraint::TraitArg;
 pub use contract::{Contract, Field, Subset, SubsetPredicate};
 pub use expr::{BinOp, Expr, InterpPart, SpannedExpr, UnaryOp};
 pub use game::{
-    catalog_game_node_names, format_game_catalog_line, format_game_catalog_md, game_closed_value_doc,
+    catalog_game_node_names, format_game_catalog_line, format_game_catalog_md, format_game_catalog_platformer_md, game_closed_value_doc,
     game_closed_value_owners, game_prop_doc, lookup_game_node, validate_game, validate_game_node,
     Game, GameCapabilities, GameChildPolicy, GameNode, GameNodeSpec, GamePropKind, GamePropSpec,
     GameSurface, DEFAULT_GAME_FPS, DEFAULT_GAME_PORT, GAME_NODE_CATALOG,

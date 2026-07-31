@@ -111,6 +111,8 @@ const SCENE_CHILDREN: &[&str] = &[
     "objective",
     "signal",
     "group",
+    // Platformer nodes
+    "tilemap",
 ];
 
 const ENTITY_CHILDREN: &[&str] = &[
@@ -138,6 +140,13 @@ const ENTITY_CHILDREN: &[&str] = &[
     "signal",
     "group",
     "spawn",
+    // Platformer nodes
+    "sprite",
+    "collectible",
+    "interactable",
+    "patrol",
+    "warp",
+    "level_end",
 ];
 
 const PREFAB_CHILDREN: &[&str] = ENTITY_CHILDREN;
@@ -221,6 +230,8 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
         props: &[
             gp("name", GamePropKind::String, true, "Data asset identity used by `:ref` on movement, weapons, and AI components."),
             gp("speed", GamePropKind::Number, false, "Optional movement speed (m/s) when this asset is a locomotion profile."),
+            gp("jump_height", GamePropKind::Number, false, "Optional jump height in meters for platformer movement profiles."),
+            gp("gravity", GamePropKind::Number, false, "Optional gravity strength (m/s²) for platformer movement profiles."),
             gp("cooldown", GamePropKind::Number, false, "Optional ability cooldown seconds when used as an ability profile."),
             gp("cost", GamePropKind::Number, false, "Optional attribute cost when used as an ability profile."),
             gp("damage", GamePropKind::Number, false, "Optional base damage per hit when used as a weapon or projectile profile."),
@@ -293,9 +304,9 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
     },
     GameNodeSpec {
         name: "movement",
-        description: "Locomotion component for walk, first-person, sprint, and jump styles driven by the possessed controller.",
+        description: "Locomotion component for walk, first-person, sprint, jump, and platformer styles driven by the possessed controller.",
         props: &[
-            gp_closed("style", GamePropKind::Ident, false, "Closed locomotion style token.", &["walk", "first_person", "sprint", "jump"]),
+            gp_closed("style", GamePropKind::Ident, false, "Closed locomotion style token.", &["walk", "first_person", "sprint", "jump", "platformer"]),
             gp("speed", GamePropKind::Number, false, "Move speed in meters per second when no `:ref` data asset is bound."),
             gp("jump_speed", GamePropKind::Number, false, "Initial upward velocity in m/s applied when the jump input is pressed."),
             gp("sprint_mul", GamePropKind::Number, false, "Speed multiplier applied while sprint is held (for example `1.5`)."),
@@ -330,17 +341,17 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
     },
     GameNodeSpec {
         name: "controller",
-        description: "Input owner that drives the possessed pawn (WASD + mouse). Does not move meshes directly.",
+        description: "Input owner that drives the possessed pawn (WASD + mouse or arrows + jump). Does not move meshes directly.",
         props: &[
-            gp_closed("scheme", GamePropKind::Ident, false, "Closed input scheme token.", &["wasd_mouse"]),
+            gp_closed("scheme", GamePropKind::Ident, false, "Closed input scheme token.", &["wasd_mouse", "arrows_jump"]),
         ],
         children: GameChildPolicy::None,
     },
     GameNodeSpec {
         name: "camera",
-        description: "Follow or first-person camera bound to the possessed pawn.",
+        description: "Follow, first-person, or side-scroll camera bound to the possessed pawn.",
         props: &[
-            gp_closed("mode", GamePropKind::Ident, false, "Camera rig mode token.", &["third_person", "first_person"]),
+            gp_closed("mode", GamePropKind::Ident, false, "Camera rig mode token.", &["third_person", "first_person", "side_scroll"]),
             gp("distance_m", GamePropKind::Number, false, "Follow distance from the pawn pivot in meters (third-person only)."),
             gp("shoulder_offset_m", GamePropKind::Number, false, "Lateral shoulder offset in meters for over-the-shoulder framing."),
             gp("follow", GamePropKind::Ident, false, "Follow target token; use `pawn` to track the possessed body."),
@@ -629,6 +640,85 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
         ],
         children: GameChildPolicy::None,
     },
+    // ========== Platformer nodes ==========
+    GameNodeSpec {
+        name: "sprite",
+        description: "Billboard sprite component rendered from a texture atlas. Faces the camera or has fixed orientation.",
+        props: &[
+            gp("atlas", GamePropKind::String, true, "Sprite atlas asset name containing frame definitions."),
+            gp("frame", GamePropKind::String, false, "Initial frame name or index within the atlas."),
+            gp("width", GamePropKind::Number, false, "World width in meters for the sprite quad."),
+            gp("height", GamePropKind::Number, false, "World height in meters for the sprite quad."),
+            gp("animation", GamePropKind::String, false, "Animation clip name to play (idle, walk, jump, etc.)."),
+            gp("flip_x", GamePropKind::Bool, false, "Horizontal flip flag for facing direction."),
+            gp("billboard", GamePropKind::Bool, false, "When true, sprite always faces the camera."),
+        ],
+        children: GameChildPolicy::None,
+    },
+    GameNodeSpec {
+        name: "tilemap",
+        description: "Tile-based level geometry loaded from a tilemap asset. Generates collision AABBs for solid tiles.",
+        props: &[
+            gp("asset", GamePropKind::String, true, "Tilemap data asset name (JSON format compatible with Tiled)."),
+            gp("tileset", GamePropKind::String, true, "Tileset image asset name for tile textures."),
+            gp("tile_size", GamePropKind::Number, false, "World size of each tile in meters (default 1)."),
+            gp("collision_layer", GamePropKind::String, false, "Layer name that generates collision AABBs."),
+        ],
+        children: GameChildPolicy::None,
+    },
+    GameNodeSpec {
+        name: "collectible",
+        description: "Pickup item that fires a signal when the pawn overlaps its collider. Despawns after collection.",
+        props: &[
+            gp_closed("kind", GamePropKind::Ident, true, "Closed collectible category.", &["coin", "gem", "health", "powerup", "key", "custom"]),
+            gp("value", GamePropKind::Number, false, "Numeric value granted (points, health, etc.)."),
+            gp("on_collect", GamePropKind::Expr, false, "Signal or handler expression fired when collected."),
+            gp("respawn", GamePropKind::Number, false, "Seconds until respawn; omit for no respawn."),
+        ],
+        children: GameChildPolicy::None,
+    },
+    GameNodeSpec {
+        name: "interactable",
+        description: "Block or object that responds to hits from below or attacks. Can spawn contents and change state.",
+        props: &[
+            gp_closed("kind", GamePropKind::Ident, true, "Closed interactable type.", &["breakable", "bumpable", "switchable", "container"]),
+            gp("contents", GamePropKind::String, false, "Prefab name to spawn when activated."),
+            gp("health", GamePropKind::Number, false, "Hits required to break (for breakable kind)."),
+            gp("on_interact", GamePropKind::Expr, false, "Signal or handler expression fired on interaction."),
+        ],
+        children: GameChildPolicy::None,
+    },
+    GameNodeSpec {
+        name: "patrol",
+        description: "Simple 2D patrol behavior for platformer enemies. Walks until hitting a wall or edge, then reverses.",
+        props: &[
+            gp_closed("behavior", GamePropKind::Ident, true, "Closed patrol pattern.", &["walk_reverse", "walk_fall", "stationary", "follow", "flee"]),
+            gp("speed", GamePropKind::Number, false, "Movement speed in meters per second."),
+            gp("bounds", GamePropKind::Number, false, "Optional patrol bounds radius from spawn point."),
+            gp("on_stomp", GamePropKind::Expr, false, "Signal fired when stomped from above by the pawn."),
+            gp("on_touch", GamePropKind::Expr, false, "Signal fired when touched from the side by the pawn."),
+        ],
+        children: GameChildPolicy::None,
+    },
+    GameNodeSpec {
+        name: "warp",
+        description: "Teleport trigger that moves the pawn to a target location when entered from the specified direction.",
+        props: &[
+            gp("target", GamePropKind::String, true, "Destination entity name or coordinates."),
+            gp_closed("direction", GamePropKind::Ident, false, "Entry direction required to activate.", &["down", "up", "left", "right"]),
+            gp("on_warp", GamePropKind::Expr, false, "Signal fired before teleporting."),
+        ],
+        children: GameChildPolicy::None,
+    },
+    GameNodeSpec {
+        name: "level_end",
+        description: "Level completion trigger that fires a signal when the pawn reaches it.",
+        props: &[
+            gp("on_complete", GamePropKind::Expr, false, "Signal fired when the level is completed."),
+            gp("next_level", GamePropKind::String, false, "Optional next level asset to load."),
+        ],
+        children: GameChildPolicy::None,
+    },
 ];
 
 pub fn lookup_game_node(name: &str) -> Option<&'static GameNodeSpec> {
@@ -662,8 +752,11 @@ pub fn game_closed_value_doc(value: &str) -> Option<&'static str> {
         "first_person" => "First-person locomotion or camera rig bound to the pawn eye socket.",
         "sprint" => "Sprint locomotion style applying a speed multiplier while held.",
         "jump" => "Jump-capable locomotion style with vertical impulse on input.",
+        "platformer" => "Side-scrolling platformer locomotion with horizontal movement and jump (locks Z axis).",
         "wasd_mouse" => "Keyboard WASD move plus mouse look input scheme.",
+        "arrows_jump" => "Arrow keys for horizontal movement plus Space for jump (platformer scheme).",
         "third_person" => "Spring-arm third-person camera following the pawn.",
+        "side_scroll" => "Orthographic side-scroll camera looking at the XY plane from +Z.",
         "gltf" => "GLTF 3D model asset loaded at runtime for mesh rendering.",
         "texture" => "2D texture asset for material map bindings.",
         "navmesh" => "Baked navigation mesh asset for AI pathfinding.",
@@ -708,6 +801,28 @@ pub fn game_closed_value_doc(value: &str) -> Option<&'static str> {
         "burst" => "Short particle burst cue for ability impacts.",
         "spark" => "Spark particle cue for ability hits.",
         "smoke" => "Smoke particle cue for ability trails.",
+        // Collectible kinds
+        "coin" => "Collectible coin that grants points or currency.",
+        "gem" => "Collectible gem or jewel for scoring.",
+        "powerup" => "Power-up collectible that grants abilities or buffs.",
+        "key" => "Key collectible that unlocks doors or areas.",
+        "custom" => "Custom collectible with game-specific behavior.",
+        // Interactable kinds
+        "breakable" => "Block that can be destroyed by attacks or head-bumps.",
+        "bumpable" => "Block that bounces when hit from below, spawning contents.",
+        "switchable" => "Toggle switch that changes state when interacted.",
+        "container" => "Container that holds items until opened.",
+        // Patrol behaviors
+        "walk_reverse" => "Walk until hitting a wall, then reverse direction.",
+        "walk_fall" => "Walk until reaching an edge, then reverse (won't fall off).",
+        "stationary" => "Stay in place but detect and react to the player.",
+        "follow" => "Move toward the player when in range.",
+        "flee" => "Move away from the player when in range.",
+        // Warp directions
+        "down" => "Enter warp by pressing down (pipe entry).",
+        "up" => "Enter warp by pressing up.",
+        "left" => "Enter warp by pressing left.",
+        "right" => "Enter warp by pressing right.",
         "taa" => "Temporal anti-aliasing stage that stabilizes shimmering edges across frames.",
         "ssao" => "Screen-space ambient occlusion stage that darkens creases and under-overhangs.",
         "ssr" => "Screen-space reflections stage; expensive — disable when targeting lower GPUs.",
@@ -789,8 +904,8 @@ pub fn format_game_catalog_md() -> String {
     out.push_str(
         "Closed enums: `:renderer(webgpu)`; mesh/collider `:shape(plane|box|capsule|sphere)`; \
          mesh `:asset` XOR `:shape`; light `:kind(directional|point|spot)`; \
-         movement `:style(walk|first_person|sprint|jump)`; controller `:scheme(wasd_mouse)`; \
-         camera `:mode(third_person|first_person)`; asset `:kind(gltf|texture|audio|navmesh)`; \
+         movement `:style(walk|first_person|sprint|jump|platformer)`; controller `:scheme(wasd_mouse|arrows_jump)`; \
+         camera `:mode(third_person|first_person|side_scroll)`; asset `:kind(gltf|texture|audio|navmesh)`; \
          zone `:kind(room|walkway|outdoor)`; weapon `:fire_mode(hitscan|pellet|projectile|beam)`; \
          projectile `:kind(tracer|shell|plasma|rail)`; damage `:type_ident(bullet|pellet|plasma|rail|melee)`; \
          pickup `:kind(weapon|ammo|health)`; npc `:archetype(suppressor|flanker|breacher)` `:faction(hostile|neutral)`; \
@@ -798,8 +913,54 @@ pub fn format_game_catalog_md() -> String {
          objective `:kind(clear_hostiles|reach)`; audio `:kind(oneshot|loop)`; door `:state(open|closed)`; \
          trigger `:kind(enter|exit)`; cover `:quality(low|med|high)`; \
          particle_emitter `:kind(burst|spark|smoke)`; \
-         post_process `:stage(taa|ssao|ssr|dof|bloom|tonemap|grain|sharpen)`.\n",
+         post_process `:stage(taa|ssao|ssr|dof|bloom|tonemap|grain|sharpen)`; \
+         collectible `:kind(coin|gem|health|powerup|key|custom)`; \
+         interactable `:kind(breakable|bumpable|switchable|container)`; \
+         patrol `:behavior(walk_reverse|walk_fall|stationary|follow|flee)`; \
+         warp `:direction(down|up|left|right)`.\n",
     );
+    out
+}
+
+/// Condensed game catalog for platformer tasks - omits FPS-specific nodes.
+/// Keeps: scene, entity, prefab, spawn, data, asset, material, mesh, light, collider,
+/// movement, attribute, mode, pawn, controller, camera, signal, group, environment,
+/// shadow, post_process, hud, overlay, trigger, plus new platformer nodes.
+pub fn format_game_catalog_platformer_md() -> String {
+    const PLATFORMER_NODES: &[&str] = &[
+        "scene", "entity", "prefab", "spawn", "data", "asset", "material",
+        "mesh", "light", "collider", "movement", "attribute", "mode", "pawn",
+        "controller", "camera", "signal", "group", "environment", "shadow",
+        "post_process", "hud", "overlay", "trigger",
+        // New platformer nodes (when added):
+        "sprite", "tilemap", "collectible", "interactable", "patrol", "warp", "level_end",
+    ];
+    let mut out = String::from(
+        "# game::* catalog (platformer subset)\n\n\
+         WebGPU programs declare one `game Name { game::scene(...) }` tree. \
+         Use only these nodes/props for platformer games.\n\n",
+    );
+    for node in GAME_NODE_CATALOG {
+        if !PLATFORMER_NODES.contains(&node.name) {
+            continue;
+        }
+        out.push_str(&format!("## game::{}\n{}\n", node.name, node.description));
+        if !node.props.is_empty() {
+            out.push_str("Props: ");
+            let props: Vec<String> = node.props.iter().map(|p| {
+                let req = if p.required { "" } else { "?" };
+                let closed = if p.closed_values.is_empty() {
+                    String::new()
+                } else {
+                    format!("({})", p.closed_values.join("|"))
+                };
+                format!(":{}{}{}", p.name, req, closed)
+            }).collect();
+            out.push_str(&props.join(", "));
+            out.push('\n');
+        }
+        out.push('\n');
+    }
     out
 }
 

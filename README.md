@@ -2,28 +2,22 @@
   <img src="assets/brand/thoughtpivot.svg" alt="ThoughtPivot" width="280" />
 </p>
 
-# Silc — Intent-Native Polyglot Application Compiler
+# Silc — Build Apps and Games with Intent
 
-**Silc** (pronounced *silk*) is ThoughtPivot’s intent language and local Rust
-compiler for building real software applications with far less accidental
-complexity — and far fewer model tokens — than asking an LLM to invent a full
-stack from scratch.
+**Silc** (pronounced *silk*) lets you declare what your application *is* — and
+the compiler handles the rest. Write a short `.silc` file describing your data,
+UI, and logic. Silc validates it, picks the right engines, and runs a
+production-ready polyglot runtime.
 
-You write a short `.silc` program that declares *what the application is*:
-typed contracts, UI components, resource capabilities, routes, and domain
-pipelines. The compiler validates that intent, routes each module to the right
-engine, provisions pinned runtimes, synthesizes dual-surface UI and
-persistence, and runs a supervised polyglot runtime.
+- **Apps:** Dual-surface web + terminal from one component tree
+- **Games:** WebGPU 3D scenes with Babylon.js — entity trees, prefabs, weapons, AI
+- **Pipelines:** Scrape, embed, and store without naming frameworks
 
 Silc is **open source** from **[ThoughtPivot](https://github.com/thoughtpivot)**.
 
 ```text
 .silc intent  →  Rust compiler  →  Bun · CPython · Go workers  →  mmap IPC + UDS
 ```
-
-The surface is **Raku-inspired**, not Raku-compatible. Source files are
-`.silc` only. Code examples below use GitHub’s `raku` fence solely so syntax
-highlighting renders well.
 
 ---
 
@@ -44,56 +38,62 @@ package manifests, IPC schemes, and deployment scaffolding. That inventiveness
 burns tokens, creates drift between runs, and blurs the line between *product
 intent* and *runtime substrate*.
 
-**Silc’s thesis:** authors and agents should declare intent; the compiler should
+**Silc's thesis:** authors and agents should declare intent; the compiler should
 own substrate. Deterministic routing, closed operation registries, and
 compiler-synthesized mechanics shrink the generation surface. Models spend
-tokens on domain meaning — forms, inventory, scrapers, assistants — while Silc
-handles the rest.
+tokens on domain meaning — forms, inventory, scrapers, assistants, games — while
+Silc handles the rest.
 
 ---
 
-## Business cases
+## What you can build
 
-Silc is for teams that want AI-assisted software creation **at application
-scale**, not just snippet scale:
+### Business Applications
 
-| Business need | What Silc provides |
-| --- | --- |
-| Dual-surface internal tools | One component tree → web (React/Tailwind) + terminal (OpenTUI) |
-| Operational CRUD apps | Contracts + resource capabilities → SQLite HTTP APIs |
-| Local AI assistants | Grounded `ui::chat` over live data via **silclm** |
-| Content / research ingestion | `scrape::*` crawls without naming Bun, Colly, or Playwright; `doc::extract` turns uploads into structured rows |
-| Embedding pipelines | Closed MiniLM path: scrape → tokenize → infer → SQLite |
-| Agent-authored software | Closed language + compiler oracle → fewer invented substrates |
+**Internal tools that work everywhere.** One component tree compiles to both a
+React/Tailwind web app and an OpenTUI terminal interface. Your ops team gets a
+browser dashboard; your on-call engineers get SSH access to the same screens.
 
-The economic pitch is simple: **fewer tokens per working application**, because
-framework choice, dual-surface parity, persistence, engine selection, and IPC
-are compiler decisions — not prompt decisions.
+**CRUD apps with zero boilerplate.** Declare a contract and a resource — Silc
+synthesizes SQLite tables, HTTP APIs, and form bindings. No Express routers, no
+ORM setup, no migration scripts.
 
----
+**Local AI assistants grounded on your data.** Drop `ui::chat` into any page
+with `:context($.items)` and a persona. The compiler provisions **silclm**
+(local GGUF) and wires it to your live resource queries.
 
-## Design principles
+**Scrapers and embedding pipelines.** `scrape::page`, `scrape::site`,
+`tensor::tokenize`, `tensor::infer` — name the operation, not the framework.
+Silc routes to Bun, Playwright, or ONNX MiniLM as needed.
 
-1. **Intent over substrate.** Authors never write `serve()`, invent React or
-   OpenTUI trees, declare sinks, or wire `ipc::*` / `store::*` pipelines.
-2. **Deterministic compilation.** Tier 1/2 routing cites engine strengths; every
-   decision has provenance.
-3. **Scalable monolith.** One cohesive `.silc` intent model compiles into a
-   supervised cluster of specialized workers (Bun, CPython, Go) that share
-   memory-mapped slots. You author one program; the runtime is polyglot and
-   co-located — not a sprawl of hand-maintained microservices.
-4. **AI-native, compiler-first.** Models emit `.silc`. The compiler is the
-   validation oracle. Assist explores corpus and checks drafts without stuffing
-   the entire authoring contract into the root prompt.
-5. **Pinned, owned runtimes.** Bun, CPython, and Go are checksum-verified into
-   `~/.silc/runtimes/`. Authors and agents do not choose engines.
+### WebGPU Games
+
+**First-person shooters with real physics.** Declare weapons, AI squads, and
+level geometry. The compiler synthesizes a Babylon.js WebGPU runtime with
+physics, navigation, and persistence — no Unity license, no Unreal download.
+
+**Inspired by the big three:**
+
+| Pattern | Inspiration | Silc surface |
+| --- | --- | --- |
+| Entity hierarchy | Godot node tree | Nested `game::entity` with parent/child transforms |
+| Signals and groups | Godot signals | `game::signal`, `game::group` |
+| Prefabs and data assets | Unity prefabs + ScriptableObjects | `game::prefab`, `game::spawn`, `game::data` + `:ref` |
+| Mode / Pawn / Controller | Unreal gameplay framework | `game::mode`, `game::pawn`, `game::controller` |
+| Abilities | Unreal GAS | `game::ability` with cooldowns, costs, and cue children |
+| Asset bake | Unity import pipeline | CPython → `public/baked/` (PBR textures, collision hulls) |
+
+The pitch is simple: **fewer tokens per working application**. Framework
+choice, dual-surface parity, persistence, and IPC are compiler decisions — not
+prompt decisions.
 
 ---
 
 ## How it looks in practice
 
 Examples below are Silc 0.4.0 source. GitHub fences use `raku` for highlighting
-only.
+only. The surface is **Raku-inspired**, not Raku-compatible. Source files are
+`.silc` only.
 
 ### 1. A dual-surface notes app
 
@@ -253,7 +253,42 @@ routes, and a local completion processor.
 **Silc synthesizes:** `/api/inventory_items` CRUD, dual-surface UI, silclm
 provisioning, and persistence for chat/processor results.
 
-### 3. Pipeline-only: scrape → embed → store
+### 3. WebGPU game: first-person shooter
+
+From [`examples/arenaGameApp`](examples/arenaGameApp/) — a cinematic FPS with
+weapons, hostile AI, and modular level geometry. The compiler synthesizes a
+Babylon.js WebGPU runtime with physics, navigation, and persistence.
+
+```raku
+@version("0.4.0")
+
+game Arena {
+    game::scene(:title("MEGASTRUCTURE"), :renderer(webgpu), :target_fps(90),
+        game::data(:name("WalkDefault"), :speed(5.5)),
+        game::data(:name("VanguardData"), :damage(16), :fire_rate(9), :magazine(30)),
+
+        game::prefab(:name("Player"),
+            game::mesh(:shape(capsule), :size(1.8)),
+            game::collider(:shape(capsule), :size(1.8)),
+            game::movement(:style(first_person), :ref("WalkDefault")),
+            game::attribute(:name("health"), :value(100), :max(100)),
+            game::pawn()
+        ),
+
+        game::spawn(:prefab("Player"), :x(0), :y(1), :z(0), :as_pawn),
+        game::weapon(:name("VanguardAR"), :slot(1), :fire_mode(hitscan), :ref("VanguardData")),
+        game::mode(:id("arena"), :possess("Player")),
+        game::controller(:scheme(wasd_mouse)),
+        game::camera(:mode(first_person), :follow(pawn))
+    )
+}
+```
+
+**You declared:** player prefab, weapon stats, spawn point, camera mode.
+**Silc synthesizes:** Babylon WebGPU scene, physics colliders, input handling,
+HUD, and Go/SQLite persistence for saves and analytics.
+
+### 4. Pipeline-only: scrape → embed → store
 
 From [`examples/pipelineApp`](examples/pipelineApp/) — no UI app required. One
 intent file becomes a Bun/CPython/Go ingestion graph.
@@ -296,7 +331,129 @@ silc run main.silc --input-json '{"url":"https://example.com/"}'
 
 ---
 
+## Design principles
+
+1. **Intent over substrate.** Authors never write `serve()`, invent React or
+   OpenTUI trees, declare sinks, or wire `ipc::*` / `store::*` pipelines.
+2. **Deterministic compilation.** Tier 1/2 routing cites engine strengths; every
+   decision has provenance.
+3. **Scalable monolith.** One cohesive `.silc` intent model compiles into a
+   supervised cluster of specialized workers (Bun, CPython, Go) that share
+   memory-mapped slots. You author one program; the runtime is polyglot and
+   co-located — not a sprawl of hand-maintained microservices.
+4. **AI-native, compiler-first.** Models emit `.silc`. The compiler is the
+   validation oracle. Assist explores corpus and checks drafts without stuffing
+   the entire authoring contract into the root prompt.
+5. **Pinned, owned runtimes.** Bun, CPython, and Go are checksum-verified into
+   `~/.silc/runtimes/`. Authors and agents do not choose engines.
+
+---
+
+## Quick start
+
+```bash
+cargo install --path crates/silc --force
+
+silc init myapp
+cd myapp
+silc build main.silc   # validate + codegen
+silc main.silc              # run web by default
+silc main.silc --terminal   # also attach OpenTUI (+ telnet)
+
+# web:      http://127.0.0.1:18088  (override SILC_HTTP_PORT)
+# terminal: silc main.silc --terminal  (or SILC_TERMINAL=1)
+# fallback: telnet 127.0.0.1 18023 when --terminal is set
+```
+
+`silc init` writes `main.silc`, `AGENTS.md`, `.gitignore`, and a runtime lock,
+then provisions pinned engines on first use.
+
+### Example projects
+
+| App | Purpose | Web | Terminal |
+| --- | --- | --- | --- |
+| [`examples/chatApp/`](examples/chatApp/) | Multi-session local chat via silclm | 18090 | 18091 |
+| [`examples/inventoryApp/`](examples/inventoryApp/) | CRUD + browse/admin + grounded assistant | 18096 | 18097 |
+| [`examples/scraperApp/`](examples/scraperApp/) | URL + depth crawl; results table + summaries | 18110 | 18111 |
+| [`examples/pipelineApp/`](examples/pipelineApp/) | Scrape → MiniLM/ONNX → SQLite | — | — |
+| [`examples/blogApp/`](examples/blogApp/) | Seeded blog; year/month filters; admin modal CRUD; grounded search | 18120 | 18121 |
+| [`examples/dataExtractorApp/`](examples/dataExtractorApp/) | File upload + `doc::extract` → documents ledger | 18130 | 18131 |
+| [`examples/arenaGameApp/`](examples/arenaGameApp/) | **WebGPU FPS:** weapons, AI squads, modular kit levels | 18140 | — |
+
+See [`examples/README.md`](examples/README.md).
+
+---
+
+## What ships today (0.4.0)
+
+Silc is **pre-1.0**. Release 0.4.0 makes the product rule explicit: authors
+declare intent; the compiler synthesizes runtime mechanics
+([ADR-009](docs/ADR-009-compiler-synthesized-runtime.md)).
+
+### Applications
+
+Every UI `app` synthesizes **both** surfaces automatically — compiler-owned
+`ui::web` (React/Tailwind) and `ui::terminal` (OpenTUI). Authors declare routes
+only; they never write `method serve()`, `ui::web`, or `ui::terminal` as program
+operations. The full UI primitive catalog (39 dual-surface builtins), closed
+prop enums, and agent rules live in
+[`crates/silc/templates/AGENTS.md`](crates/silc/templates/AGENTS.md).
+
+**Shipped for apps:**
+- Parse → validate → deterministic Tier 1/2 route → codegen → supervised run
+- Declaration-based `component` / `resource Name for Contract` / `app` routes
+- Dual-surface UI synthesized from `app` (web + terminal)
+- Generic resource CRUD over SQLite
+- `silc init` scaffold and experimental `silc assist`
+- Compiler-owned Bun / CPython / Go under `~/.silc/runtimes/`
+
+### Games
+
+WebGPU-only `game` subject with a compiler-owned kernel. You declare intent
+with `game::*` nodes; the compiler synthesizes a Babylon.js runtime — Babylon
+is the WebGPU adapter, not the authoring surface.
+
+**What you can declare:**
+- `game::scene` — root with title, renderer, target FPS
+- `game::entity` — transform node with mesh, collider, light children
+- `game::prefab` / `game::spawn` — reusable templates with override props
+- `game::weapon` — hitscan, pellet, projectile, or beam fire modes
+- `game::npc` / `game::perception` / `game::nav_agent` — hostile AI with nav mesh
+- `game::ability` — cooldowns, attribute costs, particle/light/impulse cues
+- `game::camera`, `game::controller`, `game::hud`, `game::post_process`
+
+**Polyglot spine:** Even games use the full stack. CPython bakes assets at
+compile time. Go persists saves, runs, and analytics to SQLite. Bun serves the
+WebGPU host and handles HTTP for settings and telemetry.
+
+See [ADR-012](docs/ADR-012-webgpu-game-subject.md) for the full design.
+
+### Executable operations
+
+Author-facing ops that run today:
+
+`service::http`, `text::score`, `llm::complete`,
+`scrape::page`, `scrape::site`, `scrape::select`, `scrape::render`,
+`scrape::extract`, `doc::extract`, `tensor::tokenize`, `tensor::infer`.
+
+### Boundaries
+
+- Broader pipeline namespaces (`http::*`, `html::*`, `numpy::*`, `pandas::*`, …)
+  are stub-only: they parse/route/emit but do not execute
+- Tensor path is CPU-only MiniLM → exactly 384 normalized `num32` values
+- IPC ABI v1 is schema-tagged JSON in mmap (not typed zero-copy views)
+- No self-contained `silc bundle` deployment artifact yet
+- Assist is experimental; fine-tuned assist weights are not shipped
+
+Authoring contract for agents:
+[`crates/silc/templates/AGENTS.md`](crates/silc/templates/AGENTS.md).
+
+---
+
 ## Runtime: why Bun, CPython, and Go
+
+You never pick a language — the compiler does. Each engine handles what it does
+best, and they communicate through shared memory.
 
 Silc does not ask models (or developers) to pick languages. The router assigns
 work from complementary strengths
@@ -305,7 +462,7 @@ work from complementary strengths
 | Engine | Role in Silc |
 | --- | --- |
 | **Bun** | Generated TypeScript: web UI, terminal UI, HTTP ingress, static scrape helpers |
-| **CPython** | Scoring, local LLM (llama.cpp / silclm), Playwright scrape, ONNX MiniLM |
+| **CPython** | Scoring, local LLM (llama.cpp / silclm), Playwright scrape, ONNX MiniLM, game asset baking |
 | **Go** | SQLite persistence, HTTP APIs, high-concurrency Colly crawls |
 
 Engines are pinned and checksum-verified (Bun 1.2.18, CPython 3.12.12,
@@ -317,15 +474,15 @@ Silc source (.silc)
         │
         ▼
    sil-lexer → sil-parser → sil-core subjects
-        │     (Contract · Component · Resource · App · Module · Pipeline)
+        │     (Contract · Component · Resource · App · Module · Pipeline · Game)
         ▼
    sil-router   Tier 1 (kind + traits) + Tier 2 (namespaces)
         ▼
-   sil-codegen  runnable workers + dual-surface UI lowering
+   sil-codegen  runnable workers + dual-surface UI lowering + game kernel
         ▼
    silc supervisor
         ├── Bun  (web + terminal + resource HTTP + static scrape)
-        ├── CPython (scoring / local LLM / Playwright / ONNX)
+        ├── CPython (scoring / local LLM / Playwright / ONNX / game bake)
         ├── Go (SQLite / HTTP API / Colly crawl)
         └── sil-ipc mmap slots + UDS
 ```
@@ -341,7 +498,7 @@ execution, shared contracts.
 
 ### IPC that stays out of your way
 
-Cross-engine data movement uses ThoughtPivot’s **Silc Shared Buffer ABI v1**
+Cross-engine data movement uses ThoughtPivot's **Silc Shared Buffer ABI v1**
 ([ADR-001](docs/ADR-001-runtime-and-ipc.md),
 [SILC-IPC-ABI-v1.md](docs/SILC-IPC-ABI-v1.md)):
 
@@ -369,20 +526,12 @@ scaffolding.
   files with silclm ([ADR-008](docs/ADR-008-recursive-silclm-assist.md)). It
   auto-retrieves relevant examples and `AGENTS.md` rules, asks for a complete
   program via the chat template (stop marker `# END`), then compile-and-repairs.
-  Creating a file adapts the `silc init` starter as a skeleton, so the usual run
-  lands on the first attempt in ~6–12s. Repairs escalate cheapest-first:
-  mechanical diagnostics (a repeated resource block, a resource named like a
-  component, seeds missing `:id`, a nested method, a missing `@version`) are
-  auto-fixed with no model call, structural ones get an explicit rule, and only
-  the rest fall back to error-targeted corpus search. Tasks that ask to persist
-  data get the `resource` + mutation pattern injected up front. An identical
-  repeated draft retries at a higher
-  temperature instead of recompiling the same file, and if every attempt fails
-  the closest draft is saved as `<file>.rejected` for inspection. The slower tool
-  loop is opt-in (`--explore`). While it runs, the
-  terminal shows a durable action trace plus a spinner — not raw model protocol.
-  Inference uses a warm silclm worker with Metal GPU offload by default on
-  Apple Silicon.
+  Creating a file adapts the `silc init` **starter** as a skeleton, so the usual
+  run lands on the first attempt in ~6–12s. Repairs escalate cheapest-first:
+  mechanical diagnostics are auto-fixed with no model call, structural ones get
+  an explicit rule, and only the rest fall back to error-targeted corpus search.
+  The slower tool loop is opt-in (`--explore`). Inference uses a warm silclm
+  worker with Metal GPU offload by default on Apple Silicon.
 
 ```bash
 silc assist "dual-surface notes app with submit" notes.silc
@@ -397,41 +546,6 @@ remain separate products on the same local model family.
 the compiler owns is a decision the model no longer has to negotiate in
 context. Compiler diagnostics then act as a hard oracle — accepted programs
 parse, validate, and route before they run.
-
----
-
-## Quick start
-
-```bash
-cargo install --path crates/silc --force
-
-silc init myapp
-cd myapp
-silc build main.silc   # validate + codegen
-silc main.silc              # run web by default
-silc main.silc --terminal   # also attach OpenTUI (+ telnet)
-
-# web:      http://127.0.0.1:18088  (override SILC_HTTP_PORT)
-# terminal: silc main.silc --terminal  (or SILC_TERMINAL=1)
-# fallback: telnet 127.0.0.1 18023 when --terminal is set
-```
-
-`silc init` writes `main.silc`, `AGENTS.md`, `.gitignore`, and a runtime lock,
-then provisions pinned engines on first use.
-
-### Example projects
-
-| App | Purpose |
-| --- | --- |
-| [`examples/chatApp/`](examples/chatApp/) | Multi-session local chat via silclm |
-| [`examples/inventoryApp/`](examples/inventoryApp/) | CRUD + browse/admin + grounded assistant |
-| [`examples/scraperApp/`](examples/scraperApp/) | URL + depth crawl; results table + summaries |
-| [`examples/pipelineApp/`](examples/pipelineApp/) | Scrape → MiniLM/ONNX → SQLite |
-| [`examples/blogApp/`](examples/blogApp/) | Seeded blog; year/month filters; admin modal CRUD; grounded search |
-| [`examples/dataExtractorApp/`](examples/dataExtractorApp/) | File upload + `doc::extract` → documents ledger |
-| [`examples/arenaGameApp/`](examples/arenaGameApp/) | WebGPU game kernel demo (`game::scene` subject) |
-
-See [`examples/README.md`](examples/README.md).
 
 ---
 
@@ -467,50 +581,6 @@ reinstalling, set `silc.languageServerPath` to your
 
 See [`editors/vscode-silc/README.md`](editors/vscode-silc/README.md) for hover
 coverage, highlighting scopes, and development details.
-
----
-
-## What ships today (0.4.0)
-
-Silc is **pre-1.0**. Release 0.4.0 makes the product rule explicit: authors
-declare intent; the compiler synthesizes runtime mechanics
-([ADR-009](docs/ADR-009-compiler-synthesized-runtime.md)).
-
-Every UI `app` synthesizes **both** surfaces automatically — compiler-owned
-`ui::web` (React/Tailwind) and `ui::terminal` (OpenTUI). Authors declare routes
-only; they never write `method serve()`, `ui::web`, or `ui::terminal` as program
-operations. The full UI primitive catalog (39 dual-surface builtins), closed
-prop enums, and agent rules live in
-[`crates/silc/templates/AGENTS.md`](crates/silc/templates/AGENTS.md).
-
-### Executable operations
-
-Author-facing ops that run today:
-
-`service::http`, `text::score`, `llm::complete`,
-`scrape::page`, `scrape::site`, `scrape::select`, `scrape::render`,
-`scrape::extract`, `doc::extract`, `tensor::tokenize`, `tensor::infer`.
-
-**Shipped**
-
-- Parse → validate → deterministic Tier 1/2 route → codegen → supervised run
-- Declaration-based `component` / `resource Name for Contract` / `app` routes
-- Dual-surface UI synthesized from `app` (web + terminal)
-- Generic resource CRUD over SQLite
-- `silc init` scaffold and experimental `silc assist`
-- Compiler-owned Bun / CPython / Go under `~/.silc/runtimes/`
-
-**Boundaries**
-
-- Broader pipeline namespaces (`http::*`, `html::*`, `numpy::*`, `pandas::*`, …)
-  are stub-only: they parse/route/emit but do not execute
-- Tensor path is CPU-only MiniLM → exactly 384 normalized `num32` values
-- IPC ABI v1 is schema-tagged JSON in mmap (not typed zero-copy views)
-- No self-contained `silc bundle` deployment artifact yet
-- Assist is experimental; fine-tuned assist weights are not shipped
-
-Authoring contract for agents:
-[`crates/silc/templates/AGENTS.md`](crates/silc/templates/AGENTS.md).
 
 ---
 
@@ -563,6 +633,7 @@ Pre-1.0 SemVer 0.x: breaking language/compiler changes bump the minor.
 | [docs/ADR-009-compiler-synthesized-runtime.md](docs/ADR-009-compiler-synthesized-runtime.md) | Synthesized UI / persistence |
 | [docs/ADR-010-tensor-minilm-pipeline.md](docs/ADR-010-tensor-minilm-pipeline.md) | MiniLM embedding pipeline |
 | [docs/ADR-011-document-extract.md](docs/ADR-011-document-extract.md) | `doc::*` upload + extract |
+| [docs/ADR-012-webgpu-game-subject.md](docs/ADR-012-webgpu-game-subject.md) | WebGPU game kernel |
 | [docs/SILC-IPC-ABI-v1.md](docs/SILC-IPC-ABI-v1.md) | Shared buffer ABI |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
 

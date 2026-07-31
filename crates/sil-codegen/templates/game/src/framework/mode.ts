@@ -128,50 +128,111 @@ export function createFrameworkSystems(
         }>("movement", pawnId);
         const speed = movement?.speed ?? 5;
         const input = resources.input;
-        const lookScale = firstPerson ? 0.0022 : 0.0025;
-        // Mouse right → positive yaw → look toward +X when facing +Z (standard FPS).
-        possession.yaw += input.mouseDx * lookScale;
-        if (firstPerson) {
-          possession.pitch = Math.max(
-            -1.25,
-            Math.min(1.25, possession.pitch + input.mouseDy * lookScale),
-          );
+        const controllerScheme = resources.manifest.controller?.scheme ?? "wasd_mouse";
+        const isPlatformer = movement?.style === "platformer" || controllerScheme === "arrows_jump";
+
+        if (isPlatformer) {
+          // Platformer: horizontal movement only, no mouse look, Z locked to 0
+          const vel =
+            world.getComponent<{ vx: number; vy: number; vz: number }>("velocity", pawnId) ?? {
+              vx: 0,
+              vy: 0,
+              vz: 0,
+            };
+
+          // Arrow keys or A/D for horizontal movement
+          let horizontal = 0;
+          if (input.keys.has("ArrowLeft") || input.keys.has("KeyA")) horizontal -= 1;
+          if (input.keys.has("ArrowRight") || input.keys.has("KeyD")) horizontal += 1;
+
+          vel.vx = horizontal * speed;
+          vel.vz = 0; // Lock Z axis for side-scroller
+
+          const grounded = world.getComponent<{ value: boolean }>("grounded", pawnId)?.value;
+          if (input.consumeKey("Space") && grounded) {
+            vel.vy = movement?.jumpSpeed ?? 10;
+          }
+
+          world.addComponent("velocity", pawnId, vel);
+          // Keep Z at 0 for platformer
+          const t = world.transform(pawnId);
+          if (t && Math.abs(t.z) > 0.01) {
+            world.setTransform(pawnId, { z: 0 });
+          }
+
+          // Update sprite animation based on movement state
+          if (world.hasComponent("sprite", pawnId)) {
+            const sprite = world.getComponent<{
+              animation?: string;
+              flipX?: boolean;
+            }>("sprite", pawnId);
+            if (sprite) {
+              // Determine animation based on velocity and grounded state
+              let anim = "idle";
+              if (!grounded && vel.vy > 0.5) {
+                anim = "jump";
+              } else if (!grounded && vel.vy < -0.5) {
+                anim = "fall";
+              } else if (Math.abs(vel.vx) > 0.1) {
+                anim = "walk";
+              }
+
+              // Flip sprite based on movement direction (only when moving)
+              if (horizontal !== 0) {
+                sprite.flipX = horizontal < 0;
+              }
+
+              sprite.animation = anim;
+              world.addComponent("sprite", pawnId, sprite);
+            }
+          }
         } else {
-          possession.pitch = Math.max(
-            0.35,
-            Math.min(1.4, possession.pitch + input.mouseDy * 0.002),
-          );
+          // FPS/third-person: full 3D movement with mouse look
+          const lookScale = firstPerson ? 0.0022 : 0.0025;
+          // Mouse right → positive yaw → look toward +X when facing +Z (standard FPS).
+          possession.yaw += input.mouseDx * lookScale;
+          if (firstPerson) {
+            possession.pitch = Math.max(
+              -1.25,
+              Math.min(1.25, possession.pitch + input.mouseDy * lookScale),
+            );
+          } else {
+            possession.pitch = Math.max(
+              0.35,
+              Math.min(1.4, possession.pitch + input.mouseDy * 0.002),
+            );
+          }
+
+          const sprinting = input.keys.has("ShiftLeft") || input.keys.has("ShiftRight");
+          const mul = sprinting ? (movement?.sprintMul ?? 1.55) : 1;
+          const forward = input.forward;
+          const strafe = input.strafe;
+          const sin = Math.sin(possession.yaw);
+          const cos = Math.cos(possession.yaw);
+          const vel =
+            world.getComponent<{ vx: number; vy: number; vz: number }>("velocity", pawnId) ?? {
+              vx: 0,
+              vy: 0,
+              vz: 0,
+            };
+
+          if (forward === 0 && strafe === 0) {
+            vel.vx = 0;
+            vel.vz = 0;
+          } else {
+            const moveSpeed = speed * mul;
+            vel.vx = (strafe * cos + forward * sin) * moveSpeed;
+            vel.vz = (-strafe * sin + forward * cos) * moveSpeed;
+          }
+
+          const grounded = world.getComponent<{ value: boolean }>("grounded", pawnId)?.value;
+          if (firstPerson && input.consumeKey("Space") && grounded) {
+            vel.vy = movement?.jumpSpeed ?? 7.5;
+          }
+
+          world.addComponent("velocity", pawnId, vel);
+          world.setTransform(pawnId, { yaw: possession.yaw });
         }
-
-        const sprinting = input.keys.has("ShiftLeft") || input.keys.has("ShiftRight");
-        const mul = sprinting ? (movement?.sprintMul ?? 1.55) : 1;
-        const forward = input.forward;
-        const strafe = input.strafe;
-        const sin = Math.sin(possession.yaw);
-        const cos = Math.cos(possession.yaw);
-        const vel =
-          world.getComponent<{ vx: number; vy: number; vz: number }>("velocity", pawnId) ?? {
-            vx: 0,
-            vy: 0,
-            vz: 0,
-          };
-
-        if (forward === 0 && strafe === 0) {
-          vel.vx = 0;
-          vel.vz = 0;
-        } else {
-          const moveSpeed = speed * mul;
-          vel.vx = (strafe * cos + forward * sin) * moveSpeed;
-          vel.vz = (-strafe * sin + forward * cos) * moveSpeed;
-        }
-
-        const grounded = world.getComponent<{ value: boolean }>("grounded", pawnId)?.value;
-        if (firstPerson && input.consumeKey("Space") && grounded) {
-          vel.vy = movement?.jumpSpeed ?? 7.5;
-        }
-
-        world.addComponent("velocity", pawnId, vel);
-        world.setTransform(pawnId, { yaw: possession.yaw });
       },
     },
   ];

@@ -18,7 +18,7 @@ use crate::tools::{
 };
 
 /// Soft char budget for the injected context bundle (examples + rules + target).
-const CONTEXT_CHAR_BUDGET: usize = 12_000;
+const CONTEXT_CHAR_BUDGET: usize = 24_000;
 const EXAMPLE_SLICE: usize = 3_500;
 const GAME_EXAMPLE_SLICE: usize = 8_000;
 const RULES_DIGEST: usize = 2_500;
@@ -86,7 +86,14 @@ pub fn select_context(task: &str, corpus: &Corpus, seed: Option<&str>) -> Author
         .unwrap_or("");
     let rules = condense_rules(rules_src, RULES_DIGEST);
 
-    let game_catalog = game_shaped.then(sil_core::format_game_catalog_md);
+    let platformer_shaped = is_platformer_shaped(task, seed);
+    let game_catalog = if platformer_shaped {
+        Some(sil_core::format_game_catalog_platformer_md())
+    } else if game_shaped {
+        Some(sil_core::format_game_catalog_md())
+    } else {
+        None
+    };
     let mut remaining = CONTEXT_CHAR_BUDGET.saturating_sub(rules.chars().count());
     if let Some(catalog) = &game_catalog {
         remaining = remaining.saturating_sub(catalog.chars().count().min(4_000));
@@ -183,6 +190,25 @@ fn is_game_shaped(task: &str, seed: Option<&str>) -> bool {
                 || lower.contains("babylon")
                 || lower.contains("real-time")
                 || lower.contains("realtime")))
+}
+
+/// True when the task/seed is platformer-shaped (side-scroller, 2D, Mario-like).
+fn is_platformer_shaped(task: &str, seed: Option<&str>) -> bool {
+    let lower = task.to_ascii_lowercase();
+    seed.is_some_and(|s| {
+        s.contains(":style(platformer)")
+            || s.contains(":mode(side_scroll)")
+            || s.contains(":scheme(arrows_jump)")
+    }) || lower.contains("platformer")
+        || lower.contains("side-scroll")
+        || lower.contains("side scroll")
+        || lower.contains("2d game")
+        || lower.contains("2d platformer")
+        || lower.contains("mario")
+        || lower.contains("metroidvania")
+        || lower.contains("sonic")
+        || lower.contains("celeste")
+        || lower.contains("jump and run")
 }
 
 /// Search the entire corpus for snippets that explain a compiler diagnostic.
