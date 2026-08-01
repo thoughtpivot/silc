@@ -134,6 +134,87 @@ export type AudioDef = {
   volume: number;
 };
 
+export type SpriteDef = {
+  atlas: string;
+  frame?: string | null;
+  width?: number | null;
+  height?: number | null;
+  animation?: string | null;
+  flipX?: boolean | null;
+  billboard?: boolean | null;
+};
+
+export type CollectibleDef = {
+  kind: string;
+  value?: number | null;
+  onCollect?: string | null;
+  respawn?: number | null;
+};
+
+export type InteractableDef = {
+  kind: string;
+  contents?: string | null;
+  health?: number | null;
+  onInteract?: string | null;
+};
+
+export type PatrolDef = {
+  behavior: string;
+  speed?: number | null;
+  bounds?: number | null;
+  onStomp?: string | null;
+  onTouch?: string | null;
+};
+
+export type WarpDef = {
+  target: string;
+  direction?: string | null;
+  onWarp?: string | null;
+};
+
+export type LevelEndDef = {
+  onComplete?: string | null;
+  nextLevel?: string | null;
+};
+
+export type StateMachineDef = {
+  initial: string;
+  onStompState?: string | null;
+  onHitState?: string | null;
+  onTouchState?: string | null;
+  deathDelay?: number | null;
+  onStateChange?: string | null;
+};
+
+export type ParticleEmitterDef = {
+  id: string;
+  preset?: string | null;
+  count?: number | null;
+  speed?: number | null;
+  spread?: number | null;
+  lifetime?: number | null;
+  gravity?: number | null;
+  color?: string | null;
+  onTrigger?: string | null;
+};
+
+export type ParallaxLayerDef = {
+  texture: string;
+  depth: number;
+  y?: number | null;
+  scale?: number | null;
+  repeatX?: boolean | null;
+  tint?: string | null;
+};
+
+export type FloatingTextDef = {
+  onTrigger: string;
+  prefix?: string | null;
+  color?: string | null;
+  duration?: number | null;
+  riseSpeed?: number | null;
+};
+
 export type EntityDef = {
   id: string;
   name: string;
@@ -147,6 +228,7 @@ export type EntityDef = {
   collider?: {
     shape: string;
     size: number;
+    hull?: { aabb?: { x: number; y: number; z: number } } | null;
   } | null;
   movement?: MovementDef | null;
   attributes?: AttributeDef[];
@@ -165,6 +247,15 @@ export type EntityDef = {
   cover?: CoverDef | null;
   audio?: AudioDef | null;
   pawn?: boolean;
+  // Platformer components
+  sprite?: SpriteDef | null;
+  collectible?: CollectibleDef | null;
+  interactable?: InteractableDef | null;
+  patrol?: PatrolDef | null;
+  warp?: WarpDef | null;
+  levelEnd?: LevelEndDef | null;
+  stateMachine?: StateMachineDef | null;
+  particleEmitter?: ParticleEmitterDef | null;
 };
 
 export type SpawnDef = {
@@ -262,6 +353,15 @@ export type GameManifest = {
   materials: Record<string, MaterialDef>;
   weapons: Record<string, WeaponDef>;
   zones: ZoneDef[];
+  tilemaps?: Array<{
+    asset: string;
+    tileset: string;
+    tileSize?: number | null;
+    collisionLayer?: string | null;
+  }>;
+  parallaxLayers?: ParallaxLayerDef[];
+  particleEmitters?: ParticleEmitterDef[];
+  floatingTexts?: FloatingTextDef[];
   encounters: EncounterDef[];
   objectives: ObjectiveDef[];
   prefabs: Record<string, EntityDef>;
@@ -275,7 +375,7 @@ export type GameManifest = {
   } | null;
   controller: { scheme: string };
   camera: {
-    mode: "third_person" | "first_person" | string;
+    mode: "third_person" | "first_person" | "side_scroll" | string;
     distanceM: number;
     shoulderOffsetM: number;
     follow: string;

@@ -7,6 +7,7 @@ import type { Resources } from "../kernel/resources.ts";
 import type { SignalBus } from "../kernel/signals.ts";
 import type { GameSystem } from "../kernel/systems.ts";
 import type { EntityId, World } from "../kernel/world.ts";
+import { getEntityState, isDespawned } from "./stateMachine.ts";
 
 export type PatrolComp = {
   behavior: "walk_reverse" | "walk_fall" | "stationary" | "follow" | "flee";
@@ -24,6 +25,9 @@ type PatrolState = {
 };
 
 const patrolStates = new Map<EntityId, PatrolState>();
+
+/** States that disable movement. */
+const DISABLED_STATES = new Set(["dead", "destroyed", "disabled", "stunned", "shell"]);
 
 export function createPatrolSystem(
   world: World,
@@ -53,10 +57,49 @@ export function createPatrolSystem(
         ? world.getComponent<{ vx: number; vy: number; vz: number }>("velocity", pawnId)
         : null;
 
+      // Update invincibility timer and visual feedback
+      if (pawnId) {
+        const invincible = world.getComponent<{ remaining: number }>("invincible", pawnId);
+        if (invincible && invincible.remaining > 0) {
+          invincible.remaining -= ctx.fixedDt;
+          world.addComponent("invincible", pawnId, invincible);
+          
+          // Blink the sprite during invincibility
+          const sprite = world.getComponent<{ visible?: boolean }>("sprite", pawnId);
+          if (sprite) {
+            // Blink every 0.1 seconds
+            const blink = Math.floor(invincible.remaining * 10) % 2 === 0;
+            (sprite as { visible?: boolean }).visible = blink;
+            world.addComponent("sprite", pawnId, sprite);
+          }
+        } else if (invincible) {
+          // Invincibility ended - ensure sprite is visible
+          const sprite = world.getComponent<{ visible?: boolean }>("sprite", pawnId);
+          if (sprite) {
+            (sprite as { visible?: boolean }).visible = true;
+            world.addComponent("sprite", pawnId, sprite);
+          }
+        }
+      }
+
       for (const [id, raw] of world.query("patrol")) {
         const patrol = raw as PatrolComp;
         const state = patrolStates.get(id);
-        if (!state || state.dead) continue;
+        if (!state) continue;
+
+        // Check state machine for disabled states
+        const entityState = getEntityState(id);
+        const isDisabled = state.dead || isDespawned(id) || (entityState && DISABLED_STATES.has(entityState));
+
+        if (isDisabled) {
+          // Stop movement when disabled
+          const vel = world.getComponent<{ vx: number; vy: number; vz: number }>("velocity", id);
+          if (vel) {
+            vel.vx = 0;
+            world.addComponent("velocity", id, vel);
+          }
+          continue;
+        }
 
         state.stompCooldown = Math.max(0, state.stompCooldown - ctx.fixedDt);
 
@@ -84,7 +127,7 @@ export function createPatrolSystem(
             pawnVel.vy < -1;
 
           if (stomped) {
-            handleStomp(world, handles, signals, id, patrol, state, pawnId!, pawnVel);
+            handleStomp(world, handles, signals, id, patrol, state, pawnId!, pawnVel, pos);
             continue;
           }
 
@@ -95,8 +138,14 @@ export function createPatrolSystem(
             !stomped;
 
           if (sideTouch) {
-            handleTouch(world, signals, id, patrol, pawnId!);
-            state.stompCooldown = 0.5; // Prevent rapid damage
+            // Check if player has invincibility frames
+            const invincible = world.getComponent<{ remaining: number }>("invincible", pawnId!);
+            if (!invincible || invincible.remaining <= 0) {
+              handleTouch(world, signals, id, patrol, pawnId!, pos);
+              // Grant invincibility frames after taking damage
+              world.addComponent("invincible", pawnId!, { remaining: 1.5 });
+            }
+            state.stompCooldown = 0.3;
           }
         }
 
@@ -118,8 +167,6 @@ export function createPatrolSystem(
               if (pos.x > state.spawnX + patrol.bounds) state.direction = -1;
               if (pos.x < state.spawnX - patrol.bounds) state.direction = 1;
             }
-
-            // TODO: Check for walls and edges to reverse direction
             break;
 
           case "follow":
@@ -174,23 +221,28 @@ function handleStomp(
   state: PatrolState,
   pawnId: EntityId,
   pawnVel: { vx: number; vy: number; vz: number },
+  enemyPos: { x: number; y: number; z: number },
 ): void {
-  state.dead = true;
+  // Check if entity has a state machine - if so, let it handle the death
+  const hasStateMachine = world.hasComponent("stateMachine", enemyId);
 
-  // Hide enemy
-  const node = handles.nodes.get(enemyId);
-  if (node) node.setEnabled(false);
+  if (!hasStateMachine) {
+    // Legacy behavior: immediately hide
+    state.dead = true;
+    const node = handles.nodes.get(enemyId);
+    if (node) node.setEnabled(false);
+  }
 
   // Bounce pawn up
   pawnVel.vy = 8;
   world.addComponent("velocity", pawnId, pawnVel);
 
-  // Fire signal
+  // Fire signal with position for particles/effects
   if (patrol.onStomp) {
-    signals.emit(patrol.onStomp, { enemyId, pawnId });
+    signals.emit(patrol.onStomp, { enemyId, pawnId, x: enemyPos.x, y: enemyPos.y, z: enemyPos.z });
   }
 
-  signals.emit("enemy_stomped", { enemyId, pawnId });
+  signals.emit("enemy_stomped", { enemyId, pawnId, x: enemyPos.x, y: enemyPos.y, z: enemyPos.z });
 }
 
 function handleTouch(
@@ -199,13 +251,27 @@ function handleTouch(
   enemyId: EntityId,
   patrol: PatrolComp,
   pawnId: EntityId,
+  enemyPos: { x: number; y: number; z: number },
 ): void {
   // Fire signal (game handles damage via signal)
   if (patrol.onTouch) {
-    signals.emit(patrol.onTouch, { enemyId, pawnId });
+    signals.emit(patrol.onTouch, { enemyId, pawnId, x: enemyPos.x, y: enemyPos.y, z: enemyPos.z });
   }
 
-  signals.emit("enemy_touch", { enemyId, pawnId });
+  signals.emit("enemy_touch", { enemyId, pawnId, x: enemyPos.x, y: enemyPos.y, z: enemyPos.z });
+
+  // Knockback: push player away from enemy
+  const pawnPos = world.worldPosition(pawnId);
+  const pawnVel = world.getComponent<{ vx: number; vy: number; vz: number }>("velocity", pawnId);
+  if (pawnVel && pawnPos) {
+    const knockbackStrength = 8;
+    const knockbackUp = 5;
+    const dx = pawnPos.x - enemyPos.x;
+    const direction = dx >= 0 ? 1 : -1;
+    pawnVel.vx = direction * knockbackStrength;
+    pawnVel.vy = knockbackUp;
+    world.addComponent("velocity", pawnId, pawnVel);
+  }
 
   // Default: damage player
   const attrs = world.getComponent<Array<{ name: string; value: number; max: number | null }>>(
@@ -215,7 +281,7 @@ function handleTouch(
   if (attrs) {
     const health = attrs.find((a) => a.name === "health");
     if (health) {
-      health.value = Math.max(0, health.value - 10);
+      health.value = Math.max(0, health.value - 1);
       world.addComponent("attributes", pawnId, attrs);
     }
   }

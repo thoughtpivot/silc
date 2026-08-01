@@ -76,8 +76,14 @@ export function createHudSystem(
       if (barks.length) lines.push(barks[0]);
 
       if (combat.health <= 0) {
-        lines.push("YOU ARE DOWN — refresh to restart");
+        lines.push("GAME OVER");
+        lines.push("Press R to restart");
         if (cross) cross.style.borderColor = "rgba(255,80,80,0.9)";
+        
+        // Handle restart
+        if (resources.input.consumeKey("KeyR")) {
+          window.location.reload();
+        }
       }
       panel.innerHTML = lines.map((l) => `<div>${escapeHtml(l)}</div>`).join("");
     },

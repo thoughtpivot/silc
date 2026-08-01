@@ -139,6 +139,7 @@ pub fn emit(
             g,
             schema_id,
             compiler_version,
+            source_path,
             &mut generated,
         )?;
     } else {
@@ -520,10 +521,11 @@ fn emit_runnable(
     graph: &ExecutableGraph,
     schema_id: u32,
     compiler_version: &str,
+    source_path: &Path,
     generated: &mut Vec<PathBuf>,
 ) -> Result<(), String> {
     if graph.has_game() {
-        emit_game(root, program, graph, schema_id, compiler_version, generated)?;
+        emit_game(root, program, graph, schema_id, compiler_version, source_path, generated)?;
         return Ok(());
     }
     if graph.has_ui() {
@@ -544,6 +546,7 @@ fn emit_game(
     graph: &ExecutableGraph,
     schema_id: u32,
     compiler_version: &str,
+    source_path: &Path,
     generated: &mut Vec<PathBuf>,
 ) -> Result<(), String> {
     let game = graph
@@ -588,6 +591,16 @@ fn emit_game(
     fs::write(&manifest_path, &manifest_body)
         .map_err(|error| format!("write {}: {error}", manifest_path.display()))?;
     generated.push(manifest_path);
+
+    // Copy user assets from public/assets to runtime
+    let source_dir = source_path.parent().unwrap_or(Path::new("."));
+    let user_assets = source_dir.join("public/assets");
+    if user_assets.is_dir() {
+        let dest_assets = ts_dir.join("public/assets");
+        fs::create_dir_all(&dest_assets)
+            .map_err(|error| format!("create {}: {error}", dest_assets.display()))?;
+        copy_dir_recursive(&user_assets, &dest_assets, generated)?;
+    }
 
     let bake_plan_path = root.join("python/bake_plan.json");
     let mut bake_body = serde_json::to_string_pretty(&bake_plan)
@@ -701,6 +714,34 @@ fn copy_game_templates(
         Ok(())
     }
     walk(from, to, generated)
+}
+
+/// Copy a directory recursively (for user assets).
+fn copy_dir_recursive(
+    from: &Path,
+    to: &Path,
+    generated: &mut Vec<PathBuf>,
+) -> Result<(), String> {
+    let entries = fs::read_dir(from)
+        .map_err(|error| format!("read {}: {error}", from.display()))?;
+    for entry in entries {
+        let entry = entry.map_err(|error| format!("read dir entry: {error}"))?;
+        let src = entry.path();
+        let dst = to.join(entry.file_name());
+        let ft = entry
+            .file_type()
+            .map_err(|error| format!("stat {}: {error}", src.display()))?;
+        if ft.is_dir() {
+            fs::create_dir_all(&dst)
+                .map_err(|error| format!("create {}: {error}", dst.display()))?;
+            copy_dir_recursive(&src, &dst, generated)?;
+        } else if ft.is_file() {
+            fs::copy(&src, &dst)
+                .map_err(|error| format!("copy {} → {}: {error}", src.display(), dst.display()))?;
+            generated.push(dst);
+        }
+    }
+    Ok(())
 }
 
 fn emit_pipeline(

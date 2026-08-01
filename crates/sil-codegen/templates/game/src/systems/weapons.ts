@@ -76,6 +76,29 @@ export function createWeaponSystem(
       }
     },
     fixedUpdate(ctx) {
+      // Sync health from attributes (for platformer damage, etc.)
+      const pawn = possession.pawnId;
+      if (pawn != null) {
+        const hp = world.getComponent<{ name: string; value: number; max: number | null }[]>(
+          "attributes",
+          pawn,
+        );
+        const health = hp?.find((a) => a.name === "health");
+        if (health) {
+          const prevHealth = combat.health;
+          combat.health = health.value;
+          combat.maxHealth = health.max ?? health.value;
+          
+          // Emit player_death signal when health reaches 0
+          if (prevHealth > 0 && combat.health <= 0) {
+            signals.emit("player_death", { pawnId: pawn });
+          }
+        }
+      }
+      
+      // Stop processing if player is dead
+      if (combat.health <= 0) return;
+
       const w = combat.weapons[combat.active];
       if (!w) return;
       w.cooldown = Math.max(0, w.cooldown - ctx.fixedDt);

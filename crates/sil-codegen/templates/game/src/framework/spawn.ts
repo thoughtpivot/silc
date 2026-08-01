@@ -240,12 +240,39 @@ export function spawnEntityDef(
   }
   if (def.patrol) {
     world.addComponent("patrol", id, { ...def.patrol });
+    // Patrol entities need velocity for physics/movement
+    if (!world.getComponent("velocity", id)) {
+      world.addComponent("velocity", id, { vx: 0, vy: 0, vz: 0 });
+    }
   }
   if (def.warp) {
     world.addComponent("warp", id, { ...def.warp });
   }
   if (def.levelEnd) {
     world.addComponent("levelEnd", id, { ...def.levelEnd });
+  }
+  if (def.stateMachine) {
+    world.addComponent("stateMachine", id, {
+      initial: def.stateMachine.initial ?? "active",
+      onStompState: def.stateMachine.onStompState ?? null,
+      onHitState: def.stateMachine.onHitState ?? null,
+      onTouchState: def.stateMachine.onTouchState ?? null,
+      deathDelay: def.stateMachine.deathDelay ?? null,
+      onStateChange: def.stateMachine.onStateChange ?? null,
+    });
+  }
+  if (def.particleEmitter) {
+    world.addComponent("particleEmitter", id, {
+      id: def.particleEmitter.id,
+      preset: def.particleEmitter.preset ?? null,
+      count: def.particleEmitter.count ?? null,
+      speed: def.particleEmitter.speed ?? null,
+      spread: def.particleEmitter.spread ?? null,
+      lifetime: def.particleEmitter.lifetime ?? null,
+      gravity: def.particleEmitter.gravity ?? null,
+      color: def.particleEmitter.color ?? null,
+      onTrigger: def.particleEmitter.onTrigger ?? null,
+    });
   }
   if (def.signals?.length) {
     world.addComponent(

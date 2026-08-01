@@ -16,13 +16,17 @@ import { createAiSystem } from "./systems/ai.ts";
 import { createCameraSystem } from "./systems/camera.ts";
 import { createCognitionSystem } from "./systems/cognition.ts";
 import { createCollectibleSystem } from "./systems/collectible.ts";
+import { createFloatingTextSystem } from "./systems/floatingText.ts";
 import { createHudSystem } from "./systems/hud.ts";
 import { createInteractableSystem } from "./systems/interactable.ts";
 import { createOverlaySystem } from "./systems/overlay.ts";
+import { createParallaxSystem } from "./systems/parallax.ts";
+import { createParticleSystem } from "./systems/particles.ts";
 import { createPatrolSystem } from "./systems/patrol.ts";
 import { createPhysicsSystem } from "./systems/physics.ts";
 import { createPostSystem } from "./systems/post.ts";
 import { createSpriteSystem } from "./systems/sprite.ts";
+import { createStateMachineSystem } from "./systems/stateMachine.ts";
 import { createTilemapSystem } from "./systems/tilemap.ts";
 import { createTransformSyncSystem } from "./systems/transformSync.ts";
 import { createWarpSystem } from "./systems/warp.ts";
@@ -108,13 +112,17 @@ async function bootGame(canvas: HTMLCanvasElement): Promise<() => void> {
     schedule.add(s);
   }
   // Platformer systems (order matters: tilemap first for collision data)
+  schedule.add(createParallaxSystem(world, handles, resources, possession));
   schedule.add(createTilemapSystem(world, handles, resources));
   schedule.add(createSpriteSystem(world, handles, resources));
   schedule.add(createPhysicsSystem(world));
+  schedule.add(createStateMachineSystem(world, handles, resources, signals));
   schedule.add(createPatrolSystem(world, handles, resources, signals, possession));
   schedule.add(createCollectibleSystem(world, handles, resources, signals, possession));
   schedule.add(createInteractableSystem(world, groups, handles, resources, signals, possession));
   schedule.add(createWarpSystem(world, handles, resources, signals, possession));
+  schedule.add(createParticleSystem(world, handles, resources, signals));
+  schedule.add(createFloatingTextSystem(world, handles, resources, signals));
   // FPS systems
   schedule.add(createAiSystem(world, handles, resources, possession, combat));
   schedule.add(createWeaponSystem(world, signals, handles, resources, possession, combat));

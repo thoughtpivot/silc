@@ -96,6 +96,7 @@ const SCENE_CHILDREN: &[&str] = &[
     "spawn",
     "data",
     "asset",
+    "generate",
     "material",
     "mode",
     "controller",
@@ -113,6 +114,9 @@ const SCENE_CHILDREN: &[&str] = &[
     "group",
     // Platformer nodes
     "tilemap",
+    "parallax",
+    "particle_effect",
+    "floating_text",
 ];
 
 const ENTITY_CHILDREN: &[&str] = &[
@@ -147,6 +151,8 @@ const ENTITY_CHILDREN: &[&str] = &[
     "patrol",
     "warp",
     "level_end",
+    "state_machine",
+    "particle_effect",
 ];
 
 const PREFAB_CHILDREN: &[&str] = ENTITY_CHILDREN;
@@ -719,6 +725,77 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
         ],
         children: GameChildPolicy::None,
     },
+    // ========== Generic platformer enhancement nodes ==========
+    GameNodeSpec {
+        name: "state_machine",
+        description: "Finite state machine for entity behavior. States change sprite animation, collider state, and movement.",
+        props: &[
+            gp("initial", GamePropKind::String, true, "Initial state name (e.g., 'active', 'idle')."),
+            gp("on_stomp_state", GamePropKind::String, false, "State to enter when stomped from above."),
+            gp("on_hit_state", GamePropKind::String, false, "State to enter when hit by projectile or attack."),
+            gp("on_touch_state", GamePropKind::String, false, "State to enter when touched from the side."),
+            gp("death_delay", GamePropKind::Number, false, "Seconds to wait in death/disabled state before despawning."),
+            gp("on_state_change", GamePropKind::Expr, false, "Signal fired when state changes."),
+        ],
+        children: GameChildPolicy::None,
+    },
+    GameNodeSpec {
+        name: "parallax",
+        description: "Parallax background layer that scrolls at a fraction of camera movement for depth effect.",
+        props: &[
+            gp("texture", GamePropKind::String, true, "Background texture asset path."),
+            gp("depth", GamePropKind::Number, true, "Parallax factor: 0=fixed sky, 0.5=half speed, 1=moves with camera."),
+            gp("y", GamePropKind::Number, false, "Vertical offset in world units."),
+            gp("scale", GamePropKind::Number, false, "Texture scale multiplier."),
+            gp("repeat_x", GamePropKind::Bool, false, "Tile horizontally for infinite scrolling."),
+            gp("tint", GamePropKind::String, false, "Color tint (CSS hex) applied to the layer."),
+        ],
+        children: GameChildPolicy::None,
+    },
+    GameNodeSpec {
+        name: "particle_effect",
+        description: "Particle system for visual effects triggered by signals or on spawn.",
+        props: &[
+            gp("id", GamePropKind::String, true, "Emitter identifier for signal-based triggering."),
+            gp_closed("preset", GamePropKind::Ident, false, "Built-in particle preset.", &["burst", "sparkle", "debris", "dust", "trail"]),
+            gp("count", GamePropKind::Number, false, "Particles per emission (default 8)."),
+            gp("speed", GamePropKind::Number, false, "Initial particle velocity (default 5)."),
+            gp("spread", GamePropKind::Number, false, "Spread angle in degrees (default 360)."),
+            gp("lifetime", GamePropKind::Number, false, "Particle lifetime in seconds (default 1)."),
+            gp("gravity", GamePropKind::Number, false, "Gravity applied to particles (default 10)."),
+            gp("color", GamePropKind::String, false, "Particle color (CSS hex)."),
+            gp("on_trigger", GamePropKind::String, false, "Signal name that triggers emission."),
+        ],
+        children: GameChildPolicy::None,
+    },
+    GameNodeSpec {
+        name: "floating_text",
+        description: "Floating text popup that rises and fades out. Triggered by signals with value data.",
+        props: &[
+            gp("on_trigger", GamePropKind::String, true, "Signal name that spawns the text (expects {value} in payload)."),
+            gp("prefix", GamePropKind::String, false, "Text prefix (e.g., '+' for scores, '-' for damage)."),
+            gp("color", GamePropKind::String, false, "Text color (CSS hex)."),
+            gp("duration", GamePropKind::Number, false, "Display duration in seconds (default 1)."),
+            gp("rise_speed", GamePropKind::Number, false, "Upward movement speed (default 2)."),
+        ],
+        children: GameChildPolicy::None,
+    },
+    // ========== Procedural asset generation (ADR-013) ==========
+    GameNodeSpec {
+        name: "generate",
+        description: "Procedurally generated asset created at build time. Output is cached in baked/ and referenced by name. Use :export to also write to public/assets/ for external tool editing (Aseprite, etc.).",
+        props: &[
+            gp_closed("type", GamePropKind::Ident, true, "Asset type to generate.", &["sprite", "texture", "material"]),
+            gp("name", GamePropKind::String, true, "Generated asset identity referenced by sprite :atlas, mesh :material, etc."),
+            gp_closed("preset", GamePropKind::Ident, false, "Built-in generator archetype defining the base shape and animation structure.", &["character", "enemy", "item", "tile", "effect"]),
+            gp_closed("style", GamePropKind::Ident, false, "Visual style for the generated asset.", &["pixel_8", "pixel_16", "pixel_32", "flat", "outline"]),
+            gp("frame_size", GamePropKind::Number, false, "Frame dimensions in pixels for sprite atlases (default derived from style)."),
+            gp("palette", GamePropKind::Expr, false, "Color palette map for procedural generation (e.g., primary: \"#E52521\", secondary: \"#0000AA\")."),
+            gp("animations", GamePropKind::Expr, false, "Animation names to generate (e.g., idle, walk, jump, fall, hurt, dead)."),
+            gp("export", GamePropKind::Bool, false, "When true, also export generated assets to public/assets/ for external tool editing."),
+        ],
+        children: GameChildPolicy::None,
+    },
 ];
 
 pub fn lookup_game_node(name: &str) -> Option<&'static GameNodeSpec> {
@@ -823,6 +900,11 @@ pub fn game_closed_value_doc(value: &str) -> Option<&'static str> {
         "up" => "Enter warp by pressing up.",
         "left" => "Enter warp by pressing left.",
         "right" => "Enter warp by pressing right.",
+        // Particle emitter presets
+        "debris" => "Particle preset for solid debris chunks with gravity.",
+        "sparkle" => "Particle preset for glittering sparkle effects.",
+        "dust" => "Particle preset for soft dust puffs.",
+        "trail" => "Particle preset for continuous trailing effects.",
         "taa" => "Temporal anti-aliasing stage that stabilizes shimmering edges across frames.",
         "ssao" => "Screen-space ambient occlusion stage that darkens creases and under-overhangs.",
         "ssr" => "Screen-space reflections stage; expensive — disable when targeting lower GPUs.",
@@ -834,6 +916,21 @@ pub fn game_closed_value_doc(value: &str) -> Option<&'static str> {
         "ability_cast" | "landed" => "Common signal identity used by entities and mode wiring.",
         "audio" => "Audio clip asset for spatial or UI playback.",
         "ammo" => "Pickup grants ammo rounds referenced by `:ref`.",
+        // Procedural asset generation types (ADR-013)
+        "sprite" => "2D sprite atlas with animation frames for characters, enemies, items, and effects.",
+        "material" => "Procedurally generated PBR material with albedo, normal, roughness, and metallic maps.",
+        // Sprite presets (archetypes)
+        "character" => "Bipedal or player-controlled entity sprite with customizable animations.",
+        "enemy" => "Hostile or NPC entity sprite with customizable animations.",
+        "item" => "Collectible or pickup sprite, typically with idle and collected states.",
+        "tile" => "Environmental tile or block sprite with idle, active, and broken states.",
+        "effect" => "Particle or VFX sprite for visual effects.",
+        // Visual styles
+        "pixel_8" => "8x8 to 16x16 retro pixel art in NES-era style.",
+        "pixel_16" => "16x16 to 32x32 pixel art in SNES-era style.",
+        "pixel_32" => "32x32 to 64x64 detailed pixel art.",
+        "flat" => "Solid color shapes with minimal detail.",
+        "outline" => "Outlined shapes with color fill.",
         _ => return None,
     })
 }

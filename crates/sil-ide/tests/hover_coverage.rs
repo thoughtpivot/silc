@@ -74,7 +74,7 @@ fn every_ui_component_has_description() {
 
 #[test]
 fn every_game_node_and_prop_has_docs() {
-    assert_eq!(GAME_NODE_CATALOG.len(), 51);
+    assert_eq!(GAME_NODE_CATALOG.len(), 56);
     for spec in GAME_NODE_CATALOG {
         assert!(spec.description.len() > 40, "game::{} thin", spec.name);
         let _ = format_game_catalog_line(spec);

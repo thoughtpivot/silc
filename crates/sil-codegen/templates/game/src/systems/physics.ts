@@ -25,11 +25,14 @@ type Solid = {
 };
 
 /** Half-extents of a collider that carries no explicit part list. */
-function defaultPart(c: ColliderComp): ColliderPart {
+function defaultPart(c: ColliderComp, isDynamic: boolean): ColliderPart {
   const hx = (c.hull?.aabb?.x ?? c.size) * 0.5;
   const hy = (c.hull?.aabb?.y ?? c.size) * 0.5;
   const hz = (c.hull?.aabb?.z ?? c.size) * 0.5;
-  return { cx: 0, cy: hy, cz: 0, hx, hy, hz };
+  // For dynamic entities (player/npc/patrol), origin is at feet, so collider center is at hy
+  // For static entities (ground/platforms), origin is at center, so collider center is at 0
+  const cy = isDynamic ? hy : 0;
+  return { cx: 0, cy, cz: 0, hx, hy, hz };
 }
 
 export function createPhysicsSystem(world: World): GameSystem {
@@ -54,10 +57,10 @@ export function createPhysicsSystem(world: World): GameSystem {
           });
           continue;
         }
-        // Dynamic capsules (player/npc) are resolved later — skip as solids.
+        // Dynamic capsules (player/npc/patrol) are resolved later — skip as solids.
         if (
           (c.shape === "capsule" || c.shape === "box") &&
-          (world.hasComponent("movement", id) || world.hasComponent("pawn", id) || world.hasComponent("npc", id))
+          (world.hasComponent("movement", id) || world.hasComponent("pawn", id) || world.hasComponent("npc", id) || world.hasComponent("patrol", id))
         ) {
           continue;
         }
@@ -65,7 +68,8 @@ export function createPhysicsSystem(world: World): GameSystem {
         const yaw = world.transform(id)?.yaw ?? 0;
         const cos = Math.cos(yaw);
         const sin = Math.sin(yaw);
-        for (const part of c.parts?.length ? c.parts : [defaultPart(c)]) {
+        // Static entities use cy: 0 (origin at center)
+        for (const part of c.parts?.length ? c.parts : [defaultPart(c, false)]) {
           const cx = part.cx * cos + part.cz * sin;
           const cz = -part.cx * sin + part.cz * cos;
           const hx = Math.abs(part.hx * cos) + Math.abs(part.hz * sin);
@@ -88,7 +92,8 @@ export function createPhysicsSystem(world: World): GameSystem {
         if (
           !world.hasComponent("movement", id) &&
           !world.hasComponent("pawn", id) &&
-          !world.hasComponent("npc", id)
+          !world.hasComponent("npc", id) &&
+          !world.hasComponent("patrol", id)
         ) {
           continue;
         }
@@ -116,13 +121,18 @@ export function createPhysicsSystem(world: World): GameSystem {
             if (onPad && y < s.maxY) groundY = Math.max(groundY, s.maxY);
             continue;
           }
-          const supports =
+          // For box solids, check if entity is above and within horizontal bounds
+          const horizontallyInside =
             x > s.minX - radius &&
             x < s.maxX + radius &&
             z > s.minZ - radius &&
-            z < s.maxZ + radius &&
-            y <= s.maxY + 0.08 &&
-            y >= s.maxY - 0.35 &&
+            z < s.maxZ + radius;
+          
+          // Support check: entity is on top of this solid
+          const supports =
+            horizontallyInside &&
+            y <= s.maxY + 0.1 &&  // Allow slightly above
+            y >= s.maxY - 0.5 &&  // Allow up to 0.5 below (more forgiving)
             vel.vy <= 0;
           if (supports) groundY = Math.max(groundY, s.maxY);
         }

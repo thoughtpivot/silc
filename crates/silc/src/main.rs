@@ -342,7 +342,7 @@ fn compile_common(
             .as_ref()
             .ok_or_else(|| "runnable program missing executable graph".to_string())?;
         if graph.has_game() {
-            supervisor::build_game_python_bake(&lock, &output.root)?;
+            supervisor::build_game_python_bake(&lock, &output.root, Some(&workdir))?;
             supervisor::build_game_web(&lock, &output.root)?;
             supervisor::build_go_worker(&lock, &output.root)?;
         }

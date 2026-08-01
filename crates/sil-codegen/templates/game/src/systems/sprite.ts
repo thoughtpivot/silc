@@ -77,9 +77,18 @@ export function createSpriteSystem(
         const state = spriteStates.get(id);
         if (!state) continue;
 
+        // Handle visibility (for invincibility blinking, etc.)
+        const isVisible = (sprite as { visible?: boolean }).visible !== false;
+        state.mesh.setEnabled(isVisible);
+        if (!isVisible) continue;
+
         // Update position from transform
         const pos = world.worldPosition(id);
-        state.mesh.position.set(pos.x, pos.y + (sprite.height ?? 1) * 0.5, pos.z);
+        const spriteHeight = sprite.height ?? 1;
+        // Position sprite so its bottom is at the entity's Y position
+        const spriteY = pos.y + spriteHeight * 0.5;
+        // Offset Z toward camera to render in front of ground/platforms
+        state.mesh.position.set(pos.x, spriteY, pos.z + 1.5);
 
         // Billboard: face camera (for side-scroll, we want to face +Z)
         const cameraMode = resources.manifest.camera?.mode;
@@ -128,15 +137,39 @@ async function loadAtlasData(atlasName: string): Promise<AtlasData> {
     return atlasCache.get(atlasName)!;
   }
 
-  try {
-    const resp = await fetch(`/assets/${atlasName}.json`);
-    if (resp.ok) {
-      const data = await resp.json();
-      atlasCache.set(atlasName, data);
-      return data;
+  // Try baked/sprites/ first (generated assets), then public/assets/ (manual/exported)
+  const paths = [
+    `/baked/sprites/${atlasName}.json`,
+    `/assets/${atlasName}.json`,
+  ];
+
+  for (const path of paths) {
+    try {
+      const resp = await fetch(path);
+      if (resp.ok) {
+        const raw = await resp.json();
+        // Normalize animation format (bake worker uses 'duration', runtime expects 'frameDuration')
+        const data: AtlasData = {
+          frameWidth: raw.frameWidth ?? 32,
+          frameHeight: raw.frameHeight ?? 32,
+          columns: raw.columns ?? 4,
+          rows: raw.rows ?? 4,
+          animations: {},
+        };
+        for (const [name, anim] of Object.entries(raw.animations ?? {})) {
+          const a = anim as { frames?: number[]; duration?: number; frameDuration?: number; loop?: boolean };
+          data.animations[name] = {
+            frames: a.frames ?? [0],
+            frameDuration: a.frameDuration ?? a.duration ?? 0.15,
+            loop: a.loop ?? true,
+          };
+        }
+        atlasCache.set(atlasName, data);
+        return data;
+      }
+    } catch {
+      // Try next path
     }
-  } catch {
-    // Fall through to default
   }
 
   atlasCache.set(atlasName, DEFAULT_ATLAS);
@@ -169,8 +202,8 @@ async function createSpriteMesh(
   material.disableLighting = true;
   material.emissiveColor.set(1, 1, 1);
 
-  // Load atlas texture
-  const atlasPath = `/assets/${sprite.atlas}.png`;
+  // Load atlas texture - try baked/sprites/ first, then public/assets/
+  const atlasPath = await resolveAtlasTexturePath(sprite.atlas);
   const texture = new Texture(atlasPath, handles.scene, false, true, Texture.NEAREST_SAMPLINGMODE);
   texture.hasAlpha = true;
   texture.wrapU = Texture.CLAMP_ADDRESSMODE;
@@ -180,10 +213,14 @@ async function createSpriteMesh(
   material.transparencyMode = 2; // ALPHA_TEST
 
   mesh.material = material;
+  
+  // Ensure sprites render on top of other geometry
+  mesh.renderingGroupId = 1;
 
-  // Position at entity location
+  // Position at entity location (offset Z toward camera for proper rendering)
+  // Ground extends from z=-1 to z=+1, so sprites need to be at z > 1
   const pos = world.worldPosition(id);
-  mesh.position.set(pos.x, pos.y + height * 0.5, pos.z);
+  mesh.position.set(pos.x, pos.y + height * 0.5, pos.z + 1.5);
 
   // Store state
   const state: SpriteState = {
@@ -205,6 +242,37 @@ async function createSpriteMesh(
 
   // Register with handles for cleanup
   handles.nodes.set(id, mesh);
+}
+
+const texturePathCache = new Map<string, string>();
+
+async function resolveAtlasTexturePath(atlasName: string): Promise<string> {
+  if (texturePathCache.has(atlasName)) {
+    return texturePathCache.get(atlasName)!;
+  }
+
+  // Try baked/sprites/ first (generated assets), then public/assets/ (manual/exported)
+  const paths = [
+    `/baked/sprites/${atlasName}.png`,
+    `/assets/${atlasName}.png`,
+  ];
+
+  for (const path of paths) {
+    try {
+      const resp = await fetch(path, { method: "HEAD" });
+      if (resp.ok) {
+        texturePathCache.set(atlasName, path);
+        return path;
+      }
+    } catch {
+      // Try next path
+    }
+  }
+
+  // Default to assets path
+  const fallback = `/assets/${atlasName}.png`;
+  texturePathCache.set(atlasName, fallback);
+  return fallback;
 }
 
 function updateSpriteUVs(state: SpriteState, frameIndex: number): void {

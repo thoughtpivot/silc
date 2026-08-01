@@ -1,0 +1,11 @@
+{
+  "frameWidth": 32,
+  "frameHeight": 32,
+  "columns": 4,
+  "rows": 2,
+  "animations": {
+    "coin": { "frames": [0, 1, 2, 3, 4, 5, 6, 7], "frameDuration": 0.08, "loop": true },
+    "idle": { "frames": [0], "frameDuration": 1.0, "loop": true },
+    "spin": { "frames": [0, 1, 2, 3], "frameDuration": 0.1, "loop": true }
+  }
+}

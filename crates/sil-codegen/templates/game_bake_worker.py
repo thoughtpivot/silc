@@ -3,8 +3,8 @@
 """Compile-time bake for game:: prefabs/data/colliders/assets (ADR-012).
 
 Reads bake_plan.json, validates :ref integrity, generates procedural PBR
-textures and modular kit metadata, writes game_bake.json under the output
-directory. Uses the Silc-provisioned CPython.
+textures, modular kit metadata, and sprite atlases (ADR-013), writes
+game_bake.json under the output directory. Uses the Silc-provisioned CPython.
 """
 
 from __future__ import annotations
@@ -349,6 +349,513 @@ def build_materials(plan_materials: dict) -> dict:
     return merged
 
 
+# ============================================================================
+# Procedural Sprite Generation (ADR-013)
+# ============================================================================
+
+# Default frame sizes per style
+STYLE_FRAME_SIZES = {
+    "pixel_8": 16,
+    "pixel_16": 32,
+    "pixel_32": 64,
+    "flat": 32,
+    "outline": 32,
+}
+
+# Default animations per preset archetype
+PRESET_ANIMATIONS = {
+    "character": ["idle", "walk", "jump", "fall"],
+    "enemy": ["idle", "walk", "hurt", "dead"],
+    "item": ["idle", "collected"],
+    "tile": ["idle", "active", "empty", "broken"],
+    "effect": ["idle", "active", "fade"],
+}
+
+# Default palettes per preset
+PRESET_PALETTES = {
+    "character": {"primary": "#4488FF", "secondary": "#2244AA", "accent": "#FFCC00", "skin": "#FFCCAA"},
+    "enemy": {"primary": "#AA4444", "secondary": "#662222", "accent": "#FFFF00"},
+    "item": {"primary": "#FFCC00", "secondary": "#AA8800", "accent": "#FFFFFF"},
+    "tile": {"primary": "#886644", "secondary": "#664422", "accent": "#AAAAAA"},
+    "effect": {"primary": "#FFFFFF", "secondary": "#AAAAFF", "accent": "#FFFF00"},
+}
+
+
+def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+    """Convert hex color string to RGB tuple."""
+    hex_color = hex_color.lstrip("#")
+    if len(hex_color) == 3:
+        hex_color = "".join(c * 2 for c in hex_color)
+    return (
+        int(hex_color[0:2], 16),
+        int(hex_color[2:4], 16),
+        int(hex_color[4:6], 16),
+    )
+
+
+def _draw_character_frame(
+    pixels: list[list[tuple[int, int, int, int]]],
+    frame_size: int,
+    palette: dict[str, str],
+    anim: str,
+    frame_idx: int,
+) -> None:
+    """Draw a character sprite frame (bipedal humanoid)."""
+    primary = _hex_to_rgb(palette.get("primary", "#4488FF"))
+    secondary = _hex_to_rgb(palette.get("secondary", "#2244AA"))
+    accent = _hex_to_rgb(palette.get("accent", "#FFCC00"))
+    skin = _hex_to_rgb(palette.get("skin", "#FFCCAA"))
+
+    # Scale factor based on frame size
+    s = frame_size // 16
+    cx = frame_size // 2
+
+    # Animation offsets
+    bob = 0
+    leg_offset = 0
+    arm_offset = 0
+    if anim == "walk":
+        bob = (frame_idx % 2) * s
+        leg_offset = ((frame_idx % 4) - 2) * s
+        arm_offset = -leg_offset
+    elif anim == "jump":
+        bob = -2 * s
+        arm_offset = -2 * s
+    elif anim == "fall":
+        bob = s
+        arm_offset = 2 * s
+
+    # Head (skin color)
+    for y in range(2 * s, 5 * s):
+        for x in range(cx - 2 * s, cx + 2 * s):
+            if 0 <= x < frame_size and 0 <= y < frame_size:
+                pixels[y + bob][x] = (*skin, 255)
+
+    # Body (primary color)
+    for y in range(5 * s, 10 * s):
+        for x in range(cx - 2 * s, cx + 2 * s):
+            if 0 <= x < frame_size and 0 <= y + bob < frame_size:
+                pixels[y + bob][x] = (*primary, 255)
+
+    # Arms (secondary color)
+    for y in range(5 * s, 8 * s):
+        for x in range(cx - 3 * s, cx - 2 * s):
+            if 0 <= x < frame_size and 0 <= y + bob + arm_offset < frame_size:
+                pixels[y + bob + arm_offset][x] = (*secondary, 255)
+        for x in range(cx + 2 * s, cx + 3 * s):
+            if 0 <= x < frame_size and 0 <= y + bob - arm_offset < frame_size:
+                pixels[y + bob - arm_offset][x] = (*secondary, 255)
+
+    # Legs (secondary color)
+    for y in range(10 * s, 14 * s):
+        for x in range(cx - 2 * s, cx):
+            if 0 <= x < frame_size and 0 <= y + leg_offset < frame_size:
+                pixels[y + leg_offset][x] = (*secondary, 255)
+        for x in range(cx, cx + 2 * s):
+            if 0 <= x < frame_size and 0 <= y - leg_offset < frame_size:
+                pixels[y - leg_offset][x] = (*secondary, 255)
+
+
+def _draw_enemy_frame(
+    pixels: list[list[tuple[int, int, int, int]]],
+    frame_size: int,
+    palette: dict[str, str],
+    anim: str,
+    frame_idx: int,
+) -> None:
+    """Draw an enemy sprite frame (generic hostile)."""
+    primary = _hex_to_rgb(palette.get("primary", "#AA4444"))
+    secondary = _hex_to_rgb(palette.get("secondary", "#662222"))
+    accent = _hex_to_rgb(palette.get("accent", "#FFFF00"))
+
+    s = frame_size // 16
+    cx = frame_size // 2
+    cy = frame_size // 2
+
+    squash = 0
+    if anim == "walk":
+        squash = (frame_idx % 2) * s
+    elif anim == "hurt":
+        squash = 2 * s
+    elif anim == "dead":
+        squash = 4 * s
+
+    # Body (oval shape)
+    for y in range(cy - 4 * s + squash, cy + 4 * s):
+        for x in range(cx - 5 * s, cx + 5 * s):
+            dx = (x - cx) / (5 * s)
+            dy = (y - cy + squash // 2) / (4 * s - squash // 2) if (4 * s - squash // 2) > 0 else 0
+            if dx * dx + dy * dy <= 1:
+                if 0 <= x < frame_size and 0 <= y < frame_size:
+                    pixels[y][x] = (*primary, 255)
+
+    # Eyes (accent color)
+    if anim != "dead":
+        for ey in range(cy - 2 * s, cy):
+            for ex in [cx - 2 * s, cx + s]:
+                if 0 <= ex < frame_size and 0 <= ey < frame_size:
+                    pixels[ey][ex] = (*accent, 255)
+                    if ex + s < frame_size:
+                        pixels[ey][ex + s] = (*accent, 255)
+
+    # Feet (secondary)
+    for y in range(cy + 3 * s, cy + 5 * s):
+        for x in [cx - 3 * s, cx + 2 * s]:
+            if 0 <= x < frame_size and 0 <= y < frame_size:
+                pixels[y][x] = (*secondary, 255)
+                if x + s < frame_size:
+                    pixels[y][x + s] = (*secondary, 255)
+
+
+def _draw_item_frame(
+    pixels: list[list[tuple[int, int, int, int]]],
+    frame_size: int,
+    palette: dict[str, str],
+    anim: str,
+    frame_idx: int,
+) -> None:
+    """Draw an item sprite frame (collectible)."""
+    primary = _hex_to_rgb(palette.get("primary", "#FFCC00"))
+    secondary = _hex_to_rgb(palette.get("secondary", "#AA8800"))
+    accent = _hex_to_rgb(palette.get("accent", "#FFFFFF"))
+
+    s = frame_size // 16
+    cx = frame_size // 2
+    cy = frame_size // 2
+
+    # Bobbing animation
+    bob = 0
+    if anim == "idle":
+        bob = ((frame_idx % 4) - 2) * s // 2
+    elif anim == "collected":
+        # Shrinking effect
+        s = max(1, s - frame_idx)
+
+    # Circle/coin shape
+    radius = 5 * s
+    for y in range(frame_size):
+        for x in range(frame_size):
+            dx = x - cx
+            dy = (y - bob) - cy
+            dist = (dx * dx + dy * dy) ** 0.5
+            if dist <= radius:
+                if dist <= radius - s:
+                    pixels[y][x] = (*primary, 255)
+                else:
+                    pixels[y][x] = (*secondary, 255)
+
+    # Shine highlight
+    for y in range(cy - 3 * s + bob, cy - s + bob):
+        for x in range(cx - s, cx + s):
+            if 0 <= x < frame_size and 0 <= y < frame_size:
+                pixels[y][x] = (*accent, 255)
+
+
+def _draw_tile_frame(
+    pixels: list[list[tuple[int, int, int, int]]],
+    frame_size: int,
+    palette: dict[str, str],
+    anim: str,
+    frame_idx: int,
+) -> None:
+    """Draw a tile sprite frame (block/platform)."""
+    primary = _hex_to_rgb(palette.get("primary", "#886644"))
+    secondary = _hex_to_rgb(palette.get("secondary", "#664422"))
+    accent = _hex_to_rgb(palette.get("accent", "#AAAAAA"))
+
+    s = frame_size // 16
+
+    # Fill with primary
+    for y in range(frame_size):
+        for x in range(frame_size):
+            pixels[y][x] = (*primary, 255)
+
+    # Border (secondary)
+    for y in range(frame_size):
+        for x in range(s):
+            pixels[y][x] = (*secondary, 255)
+            pixels[y][frame_size - 1 - x] = (*secondary, 255)
+    for x in range(frame_size):
+        for y in range(s):
+            pixels[y][x] = (*secondary, 255)
+            pixels[frame_size - 1 - y][x] = (*secondary, 255)
+
+    # State-specific decorations
+    if anim == "active" or anim == "idle":
+        # Question mark or indicator
+        cx, cy = frame_size // 2, frame_size // 2
+        for y in range(cy - 3 * s, cy + s):
+            for x in range(cx - s, cx + s):
+                if 0 <= x < frame_size and 0 <= y < frame_size:
+                    pixels[y][x] = (*accent, 255)
+        for y in range(cy + 2 * s, cy + 3 * s):
+            for x in range(cx - s // 2, cx + s // 2 + 1):
+                if 0 <= x < frame_size and 0 <= y < frame_size:
+                    pixels[y][x] = (*accent, 255)
+    elif anim == "empty":
+        # Darker, no decoration
+        for y in range(s, frame_size - s):
+            for x in range(s, frame_size - s):
+                pixels[y][x] = (*secondary, 255)
+    elif anim == "broken":
+        # Cracks/debris pattern
+        for i in range(frame_size // 4):
+            x = random.randint(s, frame_size - s - 1)
+            y = random.randint(s, frame_size - s - 1)
+            pixels[y][x] = (0, 0, 0, 0)
+
+
+def _draw_effect_frame(
+    pixels: list[list[tuple[int, int, int, int]]],
+    frame_size: int,
+    palette: dict[str, str],
+    anim: str,
+    frame_idx: int,
+) -> None:
+    """Draw an effect sprite frame (particle/VFX)."""
+    primary = _hex_to_rgb(palette.get("primary", "#FFFFFF"))
+    secondary = _hex_to_rgb(palette.get("secondary", "#AAAAFF"))
+    accent = _hex_to_rgb(palette.get("accent", "#FFFF00"))
+
+    cx = frame_size // 2
+    cy = frame_size // 2
+
+    # Fade based on animation
+    alpha = 255
+    if anim == "fade":
+        alpha = max(0, 255 - frame_idx * 50)
+
+    # Radial gradient
+    max_radius = frame_size // 2
+    for y in range(frame_size):
+        for x in range(frame_size):
+            dx = x - cx
+            dy = y - cy
+            dist = (dx * dx + dy * dy) ** 0.5
+            if dist <= max_radius:
+                t = dist / max_radius
+                r = int(primary[0] * (1 - t) + secondary[0] * t)
+                g = int(primary[1] * (1 - t) + secondary[1] * t)
+                b = int(primary[2] * (1 - t) + secondary[2] * t)
+                a = int(alpha * (1 - t * 0.7))
+                pixels[y][x] = (r, g, b, a)
+
+
+PRESET_DRAWERS = {
+    "character": _draw_character_frame,
+    "enemy": _draw_enemy_frame,
+    "item": _draw_item_frame,
+    "tile": _draw_tile_frame,
+    "effect": _draw_effect_frame,
+}
+
+
+def generate_sprite_atlas(
+    asset_def: dict,
+    sprites_dir: Path,
+    public_assets_dir: Path | None,
+) -> dict:
+    """Generate a sprite atlas PNG and JSON metadata.
+
+    Args:
+        asset_def: The generated asset definition from bake_plan
+        sprites_dir: Output directory for baked sprites (baked/sprites/)
+        public_assets_dir: Optional output for public/assets/ export
+
+    Returns:
+        Metadata dict with paths and animation info
+    """
+    name = asset_def.get("name", "sprite")
+    preset = asset_def.get("preset", "character")
+    style = asset_def.get("style", "pixel_16")
+    frame_size = int(asset_def.get("frameSize") or STYLE_FRAME_SIZES.get(style, 32))
+    animations = asset_def.get("animations") or PRESET_ANIMATIONS.get(preset, ["idle"])
+    palette = asset_def.get("palette") or PRESET_PALETTES.get(preset, {})
+    export = asset_def.get("export", False)
+
+    # Ensure palette values are strings
+    if isinstance(palette, dict):
+        palette = {k: str(v) for k, v in palette.items()}
+
+    # Calculate atlas dimensions
+    frames_per_anim = 4  # Default frames per animation
+    total_frames = len(animations) * frames_per_anim
+    cols = min(8, total_frames)
+    rows = (total_frames + cols - 1) // cols
+
+    atlas_width = cols * frame_size
+    atlas_height = rows * frame_size
+
+    # Create pixel buffer
+    atlas_pixels: list[list[tuple[int, int, int, int]]] = [
+        [(0, 0, 0, 0) for _ in range(atlas_width)] for _ in range(atlas_height)
+    ]
+
+    # Get the drawer function for this preset
+    drawer = PRESET_DRAWERS.get(preset, _draw_character_frame)
+
+    # Generate frames for each animation
+    animation_meta: dict[str, dict] = {}
+    frame_index = 0
+
+    for anim in animations:
+        anim_name = str(anim)
+        start_frame = frame_index
+        for f in range(frames_per_anim):
+            col = frame_index % cols
+            row = frame_index // cols
+            x_offset = col * frame_size
+            y_offset = row * frame_size
+
+            # Create frame pixel buffer
+            frame_pixels: list[list[tuple[int, int, int, int]]] = [
+                [(0, 0, 0, 0) for _ in range(frame_size)] for _ in range(frame_size)
+            ]
+
+            # Draw the frame
+            drawer(frame_pixels, frame_size, palette, anim_name, f)
+
+            # Copy to atlas
+            for y in range(frame_size):
+                for x in range(frame_size):
+                    atlas_pixels[y_offset + y][x_offset + x] = frame_pixels[y][x]
+
+            frame_index += 1
+
+        animation_meta[anim_name] = {
+            "frames": list(range(start_frame, frame_index)),
+            "duration": 0.15,
+            "loop": anim_name not in ("dead", "collected", "broken"),
+        }
+
+    # Write PNG
+    sprites_dir.mkdir(parents=True, exist_ok=True)
+    png_path = sprites_dir / f"{name}.png"
+    _write_sprite_png(png_path, atlas_width, atlas_height, atlas_pixels)
+
+    # Write JSON metadata
+    json_meta = {
+        "frameWidth": frame_size,
+        "frameHeight": frame_size,
+        "columns": cols,
+        "rows": rows,
+        "animations": animation_meta,
+    }
+    json_path = sprites_dir / f"{name}.json"
+    json_path.write_text(json.dumps(json_meta, indent=2) + "\n", encoding="utf-8")
+
+    # Export to public/assets if requested
+    if export and public_assets_dir:
+        public_assets_dir.mkdir(parents=True, exist_ok=True)
+        public_png = public_assets_dir / f"{name}.png"
+        public_json = public_assets_dir / f"{name}.json"
+
+        # Copy files
+        import shutil
+        shutil.copy2(png_path, public_png)
+        shutil.copy2(json_path, public_json)
+
+    return {
+        "name": name,
+        "path": f"sprites/{name}.png",
+        "meta": f"sprites/{name}.json",
+        "frameWidth": frame_size,
+        "frameHeight": frame_size,
+        "animations": list(animation_meta.keys()),
+        "exported": export,
+    }
+
+
+def _write_sprite_png(
+    path: Path,
+    width: int,
+    height: int,
+    pixels: list[list[tuple[int, int, int, int]]],
+) -> None:
+    """Write a sprite atlas PNG file."""
+    if _HAS_PILLOW:
+        img = Image.new("RGBA", (width, height))
+        flat_pixels = [pixel for row in pixels for pixel in row]
+        img.putdata(flat_pixels)
+        img.save(path, format="PNG")
+    else:
+        # Pure Python PNG writer
+        raw = bytearray()
+        for row in pixels:
+            raw.append(0)  # filter type None
+            for r, g, b, a in row:
+                raw.extend((r, g, b, a))
+
+        def chunk(tag: bytes, data: bytes) -> bytes:
+            crc = zlib.crc32(tag + data) & 0xFFFFFFFF
+            return struct.pack(">I", len(data)) + tag + data + struct.pack(">I", crc)
+
+        ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+        compressed = zlib.compress(bytes(raw), 9)
+        png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", compressed) + chunk(b"IEND", b"")
+        path.write_bytes(png)
+
+
+def generate_sprites(
+    generated_assets: list[dict],
+    out_dir: Path,
+    source_dir: Path | None = None,
+) -> dict[str, dict]:
+    """Generate all sprite atlases from game::generate definitions.
+
+    Args:
+        generated_assets: List of asset definitions from bake_plan
+        out_dir: Base output directory (baked/)
+        source_dir: Source directory for public/assets export
+
+    Returns:
+        Dict mapping asset names to their metadata
+    """
+    sprites_dir = out_dir / "sprites"
+    public_assets_dir = source_dir / "public" / "assets" if source_dir else None
+
+    generated: dict[str, dict] = {}
+
+    for asset_def in generated_assets:
+        asset_type = asset_def.get("type", "sprite")
+        if asset_type != "sprite":
+            continue  # Only handle sprites for now
+
+        name = asset_def.get("name")
+        if not name:
+            continue
+
+        # Check if manually edited version exists in public/assets
+        if public_assets_dir:
+            manual_png = public_assets_dir / f"{name}.png"
+            manual_json = public_assets_dir / f"{name}.json"
+            if manual_png.exists() and manual_json.exists():
+                # Use manual version, copy to baked/sprites/
+                sprites_dir.mkdir(parents=True, exist_ok=True)
+                import shutil
+                shutil.copy2(manual_png, sprites_dir / f"{name}.png")
+                shutil.copy2(manual_json, sprites_dir / f"{name}.json")
+
+                # Read metadata
+                meta = json.loads(manual_json.read_text(encoding="utf-8"))
+                generated[name] = {
+                    "name": name,
+                    "path": f"sprites/{name}.png",
+                    "meta": f"sprites/{name}.json",
+                    "frameWidth": meta.get("frameWidth", 32),
+                    "frameHeight": meta.get("frameHeight", 32),
+                    "animations": list((meta.get("animations") or {}).keys()),
+                    "manual": True,
+                }
+                continue
+
+        # Generate procedurally
+        meta = generate_sprite_atlas(asset_def, sprites_dir, public_assets_dir)
+        generated[name] = meta
+
+    return generated
+
+
 def _walk_nodes(nodes: list, visitor: Callable[[dict], None]) -> None:
     for node in nodes:
         if not isinstance(node, dict):
@@ -516,7 +1023,7 @@ def _resolve_weapon_entry(weapon: dict, weapons: dict) -> dict:
     return entry
 
 
-def bake(plan: dict, out_dir: Path) -> dict:
+def bake(plan: dict, out_dir: Path, source_dir: Path | None = None) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
     errors = resolve_refs(plan)
     if errors:
@@ -537,10 +1044,14 @@ def bake(plan: dict, out_dir: Path) -> dict:
     environment = plan.get("environment")
     nav_hints = plan.get("navHints") or {}
     mind_refs = plan.get("mindRefs") or []
+    generated_assets = plan.get("generatedAssets") or []
 
     textures = generate_textures(out_dir / "textures")
     kit = build_kit()
     materials = build_materials(plan_materials if isinstance(plan_materials, dict) else {})
+
+    # Generate procedural sprites (ADR-013)
+    generated_sprites = generate_sprites(generated_assets, out_dir, source_dir)
 
     # Compiler-owned kit pieces are addressable as mesh :asset without CDN paths.
     resolved_assets: dict = dict(assets) if isinstance(assets, dict) else {}
@@ -616,6 +1127,7 @@ def bake(plan: dict, out_dir: Path) -> dict:
         "data": resolved_data,
         "assets": resolved_assets,
         "textures": textures,
+        "sprites": generated_sprites,
         "kit": kit,
         "materials": materials,
         "zones": zones if isinstance(zones, list) else [],
@@ -634,7 +1146,13 @@ def bake(plan: dict, out_dir: Path) -> dict:
     }
     (out_dir / "game_bake.json").write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
     (out_dir / "bake.json").write_text(
-        json.dumps({"ok": True, "engine": meta["engine"], "textures": len(textures), "kitPieces": len(KIT_PIECES)}, indent=2) + "\n",
+        json.dumps({
+            "ok": True,
+            "engine": meta["engine"],
+            "textures": len(textures),
+            "sprites": len(generated_sprites),
+            "kitPieces": len(KIT_PIECES),
+        }, indent=2) + "\n",
         encoding="utf-8",
     )
     return meta
@@ -643,17 +1161,21 @@ def bake(plan: dict, out_dir: Path) -> dict:
 def main() -> int:
     plan_path = Path(os.environ.get("SILC_GAME_BAKE_PLAN", "bake_plan.json"))
     out_dir = Path(os.environ.get("SILC_GAME_BAKE_OUT", "baked"))
+    source_dir_env = os.environ.get("SILC_GAME_SOURCE_DIR")
+    source_dir = Path(source_dir_env) if source_dir_env else None
+
     if not plan_path.is_file():
         print(f"silc game bake: missing plan {plan_path}", file=sys.stderr)
         return 1
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
-    meta = bake(plan, out_dir)
+    meta = bake(plan, out_dir, source_dir)
     n_tex = len(meta.get("textures") or {})
+    n_sprites = len(meta.get("sprites") or {})
     n_kit = len((meta.get("kit") or {}).get("pieces") or {})
     n_prefabs = len(meta.get("prefabs") or {})
     print(
         f"silc game bake: wrote {out_dir}/game_bake.json "
-        f"({n_prefabs} prefabs, {n_tex} textures, {n_kit} kit pieces)"
+        f"({n_prefabs} prefabs, {n_tex} textures, {n_sprites} sprites, {n_kit} kit pieces)"
     )
     return 0
 

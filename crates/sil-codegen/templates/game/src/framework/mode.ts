@@ -114,6 +114,24 @@ export function createFrameworkSystems(
       fixedUpdate() {
         const pawnId = possession.pawnId;
         if (pawnId == null) return;
+        
+        // Check if player is dead - stop all movement
+        const attrs = world.getComponent<{ name: string; value: number; max: number | null }[]>(
+          "attributes",
+          pawnId,
+        );
+        const health = attrs?.find((a) => a.name === "health");
+        if (health && health.value <= 0) {
+          // Player is dead - stop movement
+          const vel = world.getComponent<{ vx: number; vy: number; vz: number }>("velocity", pawnId);
+          if (vel) {
+            vel.vx = 0;
+            vel.vz = 0;
+            world.addComponent("velocity", pawnId, vel);
+          }
+          return;
+        }
+        
         if (world.worldPosition(pawnId).y < voidY) {
           world.setTransform(pawnId, { x: spawnPoint.x, y: spawnPoint.y, z: spawnPoint.z });
           world.addComponent("velocity", pawnId, { vx: 0, vy: 0, vz: 0 });

@@ -1,0 +1,13 @@
+{
+  "frameWidth": 32,
+  "frameHeight": 32,
+  "columns": 4,
+  "rows": 2,
+  "animations": {
+    "walk": { "frames": [0, 1, 2, 1], "frameDuration": 0.15, "loop": true },
+    "active": { "frames": [0, 1, 2, 1], "frameDuration": 0.15, "loop": true },
+    "idle": { "frames": [0], "frameDuration": 1.0, "loop": true },
+    "dead": { "frames": [3], "frameDuration": 1.0, "loop": false },
+    "squished": { "frames": [3], "frameDuration": 1.0, "loop": false }
+  }
+}

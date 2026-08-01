@@ -4,25 +4,16 @@
   "columns": 4,
   "rows": 4,
   "animations": {
-    "idle": {
-      "frames": [0],
-      "frameDuration": 1.0,
-      "loop": true
-    },
-    "walk": {
-      "frames": [1, 2, 3, 2],
-      "frameDuration": 0.12,
-      "loop": true
-    },
-    "jump": {
-      "frames": [4],
-      "frameDuration": 1.0,
-      "loop": false
-    },
-    "fall": {
-      "frames": [5],
-      "frameDuration": 1.0,
-      "loop": false
-    }
+    "idle": { "frames": [0], "frameDuration": 1.0, "loop": true },
+    "walk": { "frames": [1, 2, 3, 2], "frameDuration": 0.1, "loop": true },
+    "run": { "frames": [1, 2, 3, 2], "frameDuration": 0.06, "loop": true },
+    "jump": { "frames": [4], "frameDuration": 1.0, "loop": false },
+    "fall": { "frames": [5], "frameDuration": 1.0, "loop": false },
+    "crouch": { "frames": [6], "frameDuration": 1.0, "loop": false },
+    "climb": { "frames": [7], "frameDuration": 1.0, "loop": false },
+    "big_idle": { "frames": [8], "frameDuration": 1.0, "loop": true },
+    "big_walk": { "frames": [9, 10, 11, 10], "frameDuration": 0.1, "loop": true },
+    "dead": { "frames": [12], "frameDuration": 1.0, "loop": false },
+    "victory": { "frames": [13], "frameDuration": 1.0, "loop": false }
   }
 }

@@ -8,6 +8,22 @@ game MarioBros {
         :target_fps(60),
         game::data(:name("MarioStats"), :speed(6), :jump_height(4.5), :gravity(20)),
 
+        game::generate(:type(sprite), :name("mario"), :preset(character), :style(pixel_16),
+            :export(true)
+        ),
+        game::generate(:type(sprite), :name("goomba"), :preset(enemy), :style(pixel_16),
+            :export(true)
+        ),
+        game::generate(:type(sprite), :name("koopa"), :preset(enemy), :style(pixel_16),
+            :export(true)
+        ),
+        game::generate(:type(sprite), :name("items"), :preset(item), :style(pixel_16),
+            :export(true)
+        ),
+        game::generate(:type(sprite), :name("blocks"), :preset(tile), :style(pixel_16),
+            :export(true)
+        ),
+
         game::prefab(:name("Mario"),
             game::mesh(:shape(box), :size(1), :color("#e52521")),
             game::sprite(:atlas("mario"), :width(1), :height(1.5), :animation("idle")),
@@ -21,20 +37,25 @@ game MarioBros {
 
         game::prefab(:name("Goomba"),
             game::mesh(:shape(box), :size(0.8), :color("#8b4513")),
+            game::sprite(:atlas("goomba"), :width(1), :height(1), :animation("walk")),
             game::collider(:shape(box), :size(0.8)),
             game::patrol(:behavior(walk_reverse), :speed(2), :bounds(5)),
+            game::state_machine(:initial("active"), :on_stomp_state("dead"), :death_delay(0.5)),
             game::group(:name("enemy"))
         ),
 
         game::prefab(:name("Koopa"),
             game::mesh(:shape(box), :size(1), :color("#228b22")),
+            game::sprite(:atlas("koopa"), :width(1), :height(1.2), :animation("walk")),
             game::collider(:shape(box), :size(1)),
             game::patrol(:behavior(walk_reverse), :speed(1.5), :bounds(4)),
+            game::state_machine(:initial("active"), :on_stomp_state("shell")),
             game::group(:name("enemy"))
         ),
 
         game::prefab(:name("Coin"),
             game::mesh(:shape(sphere), :size(0.5), :color("#ffd700")),
+            game::sprite(:atlas("items"), :width(0.8), :height(0.8), :animation("coin")),
             game::collider(:shape(box), :size(0.5)),
             game::collectible(:kind(coin), :value(1))
         ),
@@ -47,12 +68,14 @@ game MarioBros {
 
         game::prefab(:name("QuestionBlock"),
             game::mesh(:shape(box), :size(1), :color("#ffcc00")),
+            game::sprite(:atlas("blocks"), :width(1), :height(1), :animation("question")),
             game::collider(:shape(box), :size(1)),
             game::interactable(:kind(bumpable), :contents("Coin"))
         ),
 
         game::prefab(:name("BrickBlock"),
             game::mesh(:shape(box), :size(1), :color("#8b4513")),
+            game::sprite(:atlas("blocks"), :width(1), :height(1), :animation("brick")),
             game::collider(:shape(box), :size(1)),
             game::interactable(:kind(breakable), :health(1))
         ),
@@ -161,6 +184,11 @@ game MarioBros {
         game::controller(:scheme(arrows_jump)),
         game::camera(:mode(side_scroll), :distance_m(15), :follow(pawn)),
         game::environment(:sky_color("#5c94fc"), :fog_color("#5c94fc"), :fog_density(0.001)),
+        game::parallax(:texture("clouds.png"), :depth(0.1), :y(12), :repeat_x(true), :scale(2)),
+        game::parallax(:texture("hills.png"), :depth(0.3), :y(3), :repeat_x(true), :scale(1.5)),
+        game::particle_effect(:id("debris"), :preset(debris), :color("#8b4513"), :on_trigger("block_break")),
+        game::particle_effect(:id("sparkle"), :preset(sparkle), :color("#ffd700"), :on_trigger("collected")),
+        game::floating_text(:on_trigger("score_gained"), :prefix("+"), :color("#ffff00")),
         game::post_process(:stage(sharpen), :enabled(true)),
         game::hud(:show_health(true)),
         game::overlay(:toggle("F1")),

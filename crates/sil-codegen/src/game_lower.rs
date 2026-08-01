@@ -28,6 +28,10 @@ pub fn lower_game(game: &Game) -> Result<Value, String> {
     let mut weapons = Map::new();
     let mut zones = Vec::new();
     let mut tilemaps = Vec::new();
+    let mut parallax_layers = Vec::new();
+    let mut particle_emitters = Vec::new();
+    let mut floating_texts = Vec::new();
+    let mut generated_assets = Vec::new();
     let mut encounters = Vec::new();
     let mut objectives = Vec::new();
     let mut scene_children = Vec::new();
@@ -135,6 +139,50 @@ pub fn lower_game(game: &Game) -> Result<Value, String> {
                     "collisionLayer": string_prop(child, "collision_layer"),
                 }));
             }
+            "parallax" => {
+                parallax_layers.push(json!({
+                    "texture": string_prop(child, "texture").unwrap_or_default(),
+                    "depth": number_prop(child, "depth").unwrap_or(0.5),
+                    "y": number_prop(child, "y"),
+                    "scale": number_prop(child, "scale"),
+                    "repeatX": bool_prop(child, "repeat_x"),
+                    "tint": string_prop(child, "tint"),
+                }));
+            }
+            "particle_effect" => {
+                particle_emitters.push(json!({
+                    "id": string_prop(child, "id").unwrap_or_default(),
+                    "preset": ident_prop(child, "preset"),
+                    "count": number_prop(child, "count"),
+                    "speed": number_prop(child, "speed"),
+                    "spread": number_prop(child, "spread"),
+                    "lifetime": number_prop(child, "lifetime"),
+                    "gravity": number_prop(child, "gravity"),
+                    "color": string_prop(child, "color"),
+                    "onTrigger": string_prop(child, "on_trigger"),
+                }));
+            }
+            "floating_text" => {
+                floating_texts.push(json!({
+                    "onTrigger": string_prop(child, "on_trigger").unwrap_or_default(),
+                    "prefix": string_prop(child, "prefix"),
+                    "color": string_prop(child, "color"),
+                    "duration": number_prop(child, "duration"),
+                    "riseSpeed": number_prop(child, "rise_speed"),
+                }));
+            }
+            "generate" => {
+                generated_assets.push(json!({
+                    "type": ident_prop(child, "type").unwrap_or_else(|| "sprite".to_string()),
+                    "name": string_prop(child, "name").unwrap_or_default(),
+                    "preset": ident_prop(child, "preset"),
+                    "style": ident_prop(child, "style"),
+                    "frameSize": number_prop(child, "frame_size"),
+                    "palette": expr_prop_to_json(child, "palette"),
+                    "animations": expr_prop_to_list(child, "animations"),
+                    "export": bool_prop(child, "export").unwrap_or(false),
+                }));
+            }
             other => {
                 return Err(format!(
                     "game::scene cannot contain top-level `game::{other}`"
@@ -174,6 +222,10 @@ pub fn lower_game(game: &Game) -> Result<Value, String> {
         "weapons": weapons,
         "zones": zones,
         "tilemaps": tilemaps,
+        "parallaxLayers": parallax_layers,
+        "particleEmitters": particle_emitters,
+        "floatingTexts": floating_texts,
+        "generatedAssets": generated_assets,
         "encounters": encounters,
         "objectives": objectives,
         "prefabs": prefabs,
@@ -203,6 +255,7 @@ pub fn bake_plan_from_manifest(manifest: &Value) -> Value {
     let environment = manifest.get("environment").cloned().unwrap_or(Value::Null);
     let signals = manifest.get("signals").cloned().unwrap_or_else(|| json!([]));
     let mode = manifest.get("mode").cloned().unwrap_or(Value::Null);
+    let generated_assets = manifest.get("generatedAssets").cloned().unwrap_or_else(|| json!([]));
     let scene = manifest
         .get("scene")
         .cloned()
@@ -243,6 +296,7 @@ pub fn bake_plan_from_manifest(manifest: &Value) -> Value {
         "signals": signals,
         "mode": mode,
         "attributes": collect_attributes(&prefabs),
+        "generatedAssets": generated_assets,
     })
 }
 
@@ -678,6 +732,8 @@ fn lower_entity_like(node: &GameNode, forced_name: Option<&str>) -> Result<Value
     let mut patrol = Value::Null;
     let mut warp = Value::Null;
     let mut level_end = Value::Null;
+    let mut state_machine = Value::Null;
+    let mut particle_emitter = Value::Null;
     let mut is_pawn = false;
 
     for child in &node.children {
@@ -911,6 +967,31 @@ fn lower_entity_like(node: &GameNode, forced_name: Option<&str>) -> Result<Value
                     "nextLevel": string_prop(child, "next_level"),
                 });
             }
+            "state_machine" => {
+                components.push("stateMachine");
+                state_machine = json!({
+                    "initial": string_prop(child, "initial").unwrap_or_else(|| "active".into()),
+                    "onStompState": string_prop(child, "on_stomp_state"),
+                    "onHitState": string_prop(child, "on_hit_state"),
+                    "onTouchState": string_prop(child, "on_touch_state"),
+                    "deathDelay": number_prop(child, "death_delay"),
+                    "onStateChange": string_prop(child, "on_state_change"),
+                });
+            }
+            "particle_effect" => {
+                components.push("particleEmitter");
+                particle_emitter = json!({
+                    "id": string_prop(child, "id").unwrap_or_default(),
+                    "preset": ident_prop(child, "preset"),
+                    "count": number_prop(child, "count"),
+                    "speed": number_prop(child, "speed"),
+                    "spread": number_prop(child, "spread"),
+                    "lifetime": number_prop(child, "lifetime"),
+                    "gravity": number_prop(child, "gravity"),
+                    "color": string_prop(child, "color"),
+                    "onTrigger": string_prop(child, "on_trigger"),
+                });
+            }
             other => {
                 return Err(format!(
                     "game::{} cannot contain game::{other}",
@@ -955,6 +1036,8 @@ fn lower_entity_like(node: &GameNode, forced_name: Option<&str>) -> Result<Value
         "patrol": patrol,
         "warp": warp,
         "levelEnd": level_end,
+        "stateMachine": state_machine,
+        "particleEmitter": particle_emitter,
     }))
 }
 
@@ -1059,6 +1142,59 @@ fn bool_prop(node: &GameNode, name: &str) -> Option<bool> {
         None => None,
         _ => node.prop(name).map(|_| true),
     }
+}
+
+/// Convert an expression prop to a JSON object (for palette maps like `primary: "#E52521"`).
+fn expr_prop_to_json(node: &GameNode, name: &str) -> Option<Value> {
+    node.prop(name).and_then(|e| expr_to_json_value(e))
+}
+
+/// Convert an expression to a JSON value.
+fn expr_to_json_value(expr: &Expr) -> Option<Value> {
+    match expr {
+        Expr::String(s) => Some(json!(s)),
+        Expr::Number(n) => n.parse::<f64>().ok().map(|v| json!(v)),
+        Expr::Bool(b) => Some(json!(b)),
+        Expr::Ident(s) => Some(json!(s)),
+        Expr::New { ty: _, fields } => {
+            let mut map = Map::new();
+            for (k, v) in fields {
+                if let Some(val) = expr_to_json_value(v) {
+                    map.insert(k.clone(), val);
+                }
+            }
+            Some(Value::Object(map))
+        }
+        Expr::List(items) => {
+            let arr: Vec<Value> = items.iter().filter_map(expr_to_json_value).collect();
+            Some(json!(arr))
+        }
+        _ => None,
+    }
+}
+
+/// Convert an expression prop to a list of strings (for animations like `idle, walk, jump`).
+fn expr_prop_to_list(node: &GameNode, name: &str) -> Option<Vec<String>> {
+    node.prop(name).and_then(|e| match e {
+        Expr::List(items) => {
+            let strs: Vec<String> = items
+                .iter()
+                .filter_map(|item| match item {
+                    Expr::Ident(s) => Some(s.clone()),
+                    Expr::String(s) => Some(s.clone()),
+                    _ => None,
+                })
+                .collect();
+            if strs.is_empty() {
+                None
+            } else {
+                Some(strs)
+            }
+        }
+        Expr::Ident(s) => Some(vec![s.clone()]),
+        Expr::String(s) => Some(vec![s.clone()]),
+        _ => None,
+    })
 }
 
 #[cfg(test)]

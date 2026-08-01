@@ -437,7 +437,11 @@ fn spawn_game_cognition_worker(
 }
 
 /// Compile-time CPython bake of prefab/data/collider registry into `typescript/public/baked/`.
-pub fn build_game_python_bake(lock: &RuntimeLock, runtime_root: &Path) -> Result<(), String> {
+pub fn build_game_python_bake(
+    lock: &RuntimeLock,
+    runtime_root: &Path,
+    source_dir: Option<&Path>,
+) -> Result<(), String> {
     let py_dir = runtime_root.join("python");
     let py = py_dir.join("game_bake_worker.py");
     let plan = py_dir.join("bake_plan.json");
@@ -461,11 +465,20 @@ pub fn build_game_python_bake(lock: &RuntimeLock, runtime_root: &Path) -> Result
         .map_err(|e| format!("canonicalize baked out: {e}"))?;
 
     // Script arg must be cwd-relative (same class of bug as Bun worker path).
-    let status = Command::new(&lock.python_bin)
-        .arg("game_bake_worker.py")
+    let mut cmd = Command::new(&lock.python_bin);
+    cmd.arg("game_bake_worker.py")
         .current_dir(&py_dir_abs)
         .env("SILC_GAME_BAKE_PLAN", &plan_abs)
-        .env("SILC_GAME_BAKE_OUT", &out_abs)
+        .env("SILC_GAME_BAKE_OUT", &out_abs);
+
+    // Pass source directory for public/assets export (ADR-013)
+    if let Some(src) = source_dir {
+        if let Ok(src_abs) = src.canonicalize() {
+            cmd.env("SILC_GAME_SOURCE_DIR", &src_abs);
+        }
+    }
+
+    let status = cmd
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit())
         .status()
