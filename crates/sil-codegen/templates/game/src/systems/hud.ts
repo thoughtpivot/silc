@@ -64,7 +64,8 @@ export function createHudSystem(
           `${w.name} [${w.fireMode}]  ${w.ammo}/${w.magazine}  (${w.reserve})${reload}`,
         );
       }
-      lines.push(`Score ${combat.score}`);
+      const scoreLabel = hud.scoreLabel ?? "Score";
+      lines.push(`${scoreLabel} ${possession.score}`);
       if (combat.lastHit) lines.push(`Last hit: ${combat.lastHit}`);
 
       // NPC barks

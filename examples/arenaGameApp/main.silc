@@ -58,7 +58,10 @@ game Arena {
         game::post_process(:stage(sharpen), :enabled(true)),
         game::overlay(:toggle("F1")),
         game::hud(:show_crosshair(true), :show_ammo(true), :show_health(true)),
-        game::environment(:fog_density(0.012), :fog_color("#8aa0b8"), :sky_color("#6a84a8"), :exposure(1.1)),
+        game::environment(:fog_density(0.005), :fog_color("#1a1a2e"), :sky_color("#0a0a1a"), :exposure(1.1),
+            game::clouds(:count(75), :altitude(80), :spread(200), :speed(0.5), :scale(1.5), :opacity(0.85)),
+            game::stars(:count(750), :altitude(200), :opacity(0.7), :twinkle(true))
+        ),
         game::shadow(:enabled(true)),
         game::data(:name("VanguardData"), :damage(16), :fire_rate(9), :magazine(30), :reload(1.7), :spread(0.018)),
         game::data(:name("BreachData"), :damage(12), :fire_rate(1.2), :magazine(6), :reload(2.4), :spread(0.08), :pellet_count(10)),

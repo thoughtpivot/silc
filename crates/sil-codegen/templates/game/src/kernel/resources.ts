@@ -147,14 +147,23 @@ export class RunClient {
   private runId: string | null = null;
 
   async start(modeId: string): Promise<{ runId: string; seed: number }> {
-    const res = await fetch("/api/runs/start", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ modeId }),
-    });
-    const body = (await res.json()) as { runId: string; seed: number };
-    this.runId = body.runId;
-    return body;
+    try {
+      const res = await fetch("/api/runs/start", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ modeId }),
+      });
+      if (!res.ok) {
+        // Backend not available, generate local fallback
+        return { runId: `local-${Date.now()}`, seed: Math.floor(Math.random() * 0xffffffff) };
+      }
+      const body = (await res.json()) as { runId: string; seed: number };
+      this.runId = body.runId;
+      return body;
+    } catch {
+      // Backend not available, generate local fallback
+      return { runId: `local-${Date.now()}`, seed: Math.floor(Math.random() * 0xffffffff) };
+    }
   }
 
   async end(outcome: "win" | "lose" | "quit"): Promise<void> {

@@ -119,6 +119,8 @@ const SCENE_CHILDREN: &[&str] = &[
     "floating_text",
 ];
 
+const ENVIRONMENT_CHILDREN: &[&str] = &["clouds", "stars"];
+
 const ENTITY_CHILDREN: &[&str] = &[
     "entity",
     "mesh",
@@ -520,6 +522,7 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("show_crosshair", GamePropKind::Bool, false, "When true, draw a centered aim reticle for FPS weapons."),
             gp("show_ammo", GamePropKind::Bool, false, "When true, display current magazine and reserve ammo counts."),
             gp("show_health", GamePropKind::Bool, false, "When true, display the possessed pawn health bar."),
+            gp("score_label", GamePropKind::String, false, "Label for the score display (default: 'Score'). Use 'Coins', 'Points', 'Gold', etc."),
         ],
         children: GameChildPolicy::None,
     },
@@ -609,7 +612,7 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("sky_color", GamePropKind::String, false, "CSS-like hex color for the clear-sky gradient."),
             gp("exposure", GamePropKind::Number, false, "Global exposure multiplier before tonemap (1 = neutral)."),
         ],
-        children: GameChildPolicy::None,
+        children: GameChildPolicy::AnyOf(ENVIRONMENT_CHILDREN),
     },
     GameNodeSpec {
         name: "shadow",
@@ -617,6 +620,33 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
         props: &[
             gp("enabled", GamePropKind::Bool, false, "When false, all shadow casting is disabled for performance."),
             gp("cascade_count", GamePropKind::Number, false, "Number of cascaded shadow splits for directional sun (1–4)."),
+        ],
+        children: GameChildPolicy::None,
+    },
+    GameNodeSpec {
+        name: "clouds",
+        description: "Procedural volumetric cloud layer with independent drift animation. Must be a child of game::environment.",
+        props: &[
+            gp("count", GamePropKind::Number, false, "Number of cloud elements to spawn (default: 12)."),
+            gp("altitude", GamePropKind::Number, false, "Height above origin in world units (default: 60)."),
+            gp("spread", GamePropKind::Number, false, "Horizontal spread radius from scene center (default: 150)."),
+            gp("speed", GamePropKind::Number, false, "Drift speed multiplier (default: 1.0)."),
+            gp("scale", GamePropKind::Number, false, "Size multiplier for cloud elements (default: 1.0)."),
+            gp("color", GamePropKind::String, false, "Cloud tint color CSS hex (default: white)."),
+            gp("opacity", GamePropKind::Number, false, "Cloud transparency 0-1 (default: 0.8)."),
+        ],
+        children: GameChildPolicy::None,
+    },
+    GameNodeSpec {
+        name: "stars",
+        description: "Star field layer with small emissive points scattered on a sphere. Must be a child of game::environment.",
+        props: &[
+            gp("count", GamePropKind::Number, false, "Number of stars (default: 100)."),
+            gp("altitude", GamePropKind::Number, false, "Sphere radius for star placement (default: 200)."),
+            gp("size", GamePropKind::Number, false, "Star point size in world units (default: 0.3)."),
+            gp("color", GamePropKind::String, false, "Star tint color CSS hex (default: white)."),
+            gp("opacity", GamePropKind::Number, false, "Star brightness 0-1 (default: 0.7)."),
+            gp("twinkle", GamePropKind::Bool, false, "Animate subtle brightness flickering."),
         ],
         children: GameChildPolicy::None,
     },

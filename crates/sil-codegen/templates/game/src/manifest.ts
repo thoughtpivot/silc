@@ -330,6 +330,26 @@ export type HudDef = {
   showCrosshair: boolean;
   showAmmo: boolean;
   showHealth: boolean;
+  scoreLabel?: string | null;
+};
+
+export type CloudsDef = {
+  count?: number | null;
+  altitude?: number | null;
+  spread?: number | null;
+  speed?: number | null;
+  scale?: number | null;
+  color?: string | null;
+  opacity?: number | null;
+};
+
+export type StarsDef = {
+  count?: number | null;
+  altitude?: number | null;
+  size?: number | null;
+  color?: string | null;
+  opacity?: number | null;
+  twinkle?: boolean | null;
 };
 
 export type EnvironmentDef = {
@@ -337,6 +357,8 @@ export type EnvironmentDef = {
   fogColor?: string | null;
   skyColor?: string | null;
   exposure?: number | null;
+  clouds?: CloudsDef[];
+  stars?: StarsDef[];
 };
 
 export type ShadowDef = {

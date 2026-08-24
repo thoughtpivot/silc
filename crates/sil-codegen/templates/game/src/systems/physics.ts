@@ -58,9 +58,10 @@ export function createPhysicsSystem(world: World): GameSystem {
           continue;
         }
         // Dynamic capsules (player/npc/patrol) are resolved later — skip as solids.
+        // Collectibles are trigger-only (non-solid) — skip as solids.
         if (
           (c.shape === "capsule" || c.shape === "box") &&
-          (world.hasComponent("movement", id) || world.hasComponent("pawn", id) || world.hasComponent("npc", id) || world.hasComponent("patrol", id))
+          (world.hasComponent("movement", id) || world.hasComponent("pawn", id) || world.hasComponent("npc", id) || world.hasComponent("patrol", id) || world.hasComponent("collectible", id))
         ) {
           continue;
         }

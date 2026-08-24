@@ -25,6 +25,7 @@ import { createParticleSystem } from "./systems/particles.ts";
 import { createPatrolSystem } from "./systems/patrol.ts";
 import { createPhysicsSystem } from "./systems/physics.ts";
 import { createPostSystem } from "./systems/post.ts";
+import { createSkySystem } from "./systems/sky.ts";
 import { createSpriteSystem } from "./systems/sprite.ts";
 import { createStateMachineSystem } from "./systems/stateMachine.ts";
 import { createTilemapSystem } from "./systems/tilemap.ts";
@@ -112,6 +113,7 @@ async function bootGame(canvas: HTMLCanvasElement): Promise<() => void> {
     schedule.add(s);
   }
   // Platformer systems (order matters: tilemap first for collision data)
+  schedule.add(createSkySystem(world, handles, resources));
   schedule.add(createParallaxSystem(world, handles, resources, possession));
   schedule.add(createTilemapSystem(world, handles, resources));
   schedule.add(createSpriteSystem(world, handles, resources));

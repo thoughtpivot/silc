@@ -54,7 +54,6 @@ game MarioBros {
         ),
 
         game::prefab(:name("Coin"),
-            game::mesh(:shape(sphere), :size(0.5), :color("#ffd700")),
             game::sprite(:atlas("items"), :width(0.8), :height(0.8), :animation("coin")),
             game::collider(:shape(box), :size(0.5)),
             game::collectible(:kind(coin), :value(1))
@@ -190,7 +189,7 @@ game MarioBros {
         game::particle_effect(:id("sparkle"), :preset(sparkle), :color("#ffd700"), :on_trigger("collected")),
         game::floating_text(:on_trigger("score_gained"), :prefix("+"), :color("#ffff00")),
         game::post_process(:stage(sharpen), :enabled(true)),
-        game::hud(:show_health(true)),
+        game::hud(:show_health(true), :score_label("Coins")),
         game::overlay(:toggle("F1")),
         game::signal(:name(level_complete), :on("Mode.on_level_complete"))
     )

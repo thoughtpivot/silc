@@ -518,15 +518,44 @@ fn lower_hud(node: &GameNode) -> Value {
         "showCrosshair": bool_prop(node, "show_crosshair").unwrap_or(false),
         "showAmmo": bool_prop(node, "show_ammo").unwrap_or(false),
         "showHealth": bool_prop(node, "show_health").unwrap_or(false),
+        "scoreLabel": string_prop(node, "score_label"),
     })
 }
 
 fn lower_environment(node: &GameNode) -> Value {
+    let mut clouds = Vec::new();
+    let mut stars = Vec::new();
+
+    for child in &node.children {
+        match child.name.as_str() {
+            "clouds" => clouds.push(json!({
+                "count": number_prop(child, "count"),
+                "altitude": number_prop(child, "altitude"),
+                "spread": number_prop(child, "spread"),
+                "speed": number_prop(child, "speed"),
+                "scale": number_prop(child, "scale"),
+                "color": string_prop(child, "color"),
+                "opacity": number_prop(child, "opacity"),
+            })),
+            "stars" => stars.push(json!({
+                "count": number_prop(child, "count"),
+                "altitude": number_prop(child, "altitude"),
+                "size": number_prop(child, "size"),
+                "color": string_prop(child, "color"),
+                "opacity": number_prop(child, "opacity"),
+                "twinkle": bool_prop(child, "twinkle"),
+            })),
+            _ => {}
+        }
+    }
+
     json!({
         "fogDensity": number_prop(node, "fog_density"),
         "fogColor": string_prop(node, "fog_color"),
         "skyColor": string_prop(node, "sky_color"),
         "exposure": number_prop(node, "exposure"),
+        "clouds": clouds,
+        "stars": stars,
     })
 }
 
