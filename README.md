@@ -2,16 +2,24 @@
   <img src="assets/brand/thoughtpivot.svg" alt="ThoughtPivot" width="280" />
 </p>
 
-# Silc — Build Apps and Games with Intent
+# Silc — Build VDC Software with Intent
 
-**Silc** (pronounced *silk*) lets you declare what your application *is* — and
-the compiler handles the rest. Write a short `.silc` file describing your data,
-UI, and logic. Silc validates it, picks the right engines, and runs a
-production-ready polyglot runtime.
+**Silc** (pronounced *silk*) is a generic intent language and compiler for
+real-time 3D, operational applications, and data pipelines. Its lead direction
+is **Virtual Design and Construction (VDC)**: software that connects interactive
+project environments with the dashboards, data, and automation around them.
 
-- **Apps:** Dual-surface web + terminal from one component tree
-- **Games:** WebGPU 3D scenes with Babylon.js — entity trees, prefabs, weapons, AI
-- **Pipelines:** Scrape, embed, and store without naming frameworks
+Write a concise `.silc` program describing the domain. Silc validates the
+intent, selects the right engines, and synthesizes the runtime.
+
+- **VDC foundations:** Browser-native model walkthroughs, site visualization,
+  and digital-twin building blocks
+- **Real-time 3D:** WebGPU scenes with entities, assets, physics, cameras, and AI
+- **Operational apps:** Dual-surface web + terminal tools from one component tree
+- **Data and AI:** Scrape, extract, embed, persist, and assist without framework glue
+
+VDC is the lead vertical, not a boundary. The same language can build games,
+simulations, internal tools, assistants, and standalone data pipelines.
 
 Silc is **open source** from **[ThoughtPivot](https://github.com/thoughtpivot)**.
 
@@ -21,56 +29,82 @@ Silc is **open source** from **[ThoughtPivot](https://github.com/thoughtpivot)**
 
 ---
 
-## The problem Silc solves
+## Why VDC
 
-Modern AI coding workflows still spend most of their budget on decisions that
-should be deterministic:
+VDC software rarely fits inside one framework. A useful construction workflow
+may combine an interactive project model, a field dashboard, persistent project
+records, document extraction, and automation. Teams commonly bridge dedicated
+3D engines, web stacks, scripts, services, and databases to deliver one
+experience.
 
-- Which framework should host the UI?
-- How should web and terminal surfaces stay in sync?
-- Where does SQLite wiring live, and who owns migrations?
-- Which language should score text, call a local LLM, crawl a site, or embed a
-  document?
-- How do those processes exchange payloads without reinventing glue every time?
+Silc is designed around that full shape:
+
+- `game::` declares browser-native real-time 3D scenes and simulations.
+- `ui::` declares operational interfaces synthesized for web and terminal.
+- Pipeline operations declare ingestion, extraction, local AI, and persistence.
+- One compiler owns the generated Bun, CPython, and Go runtime beneath them.
+
+Real-time `game` programs and dual-surface `app` programs are distinct roots
+today; Silc does not yet embed a `ui::` application inside a `game::` scene.
+They share the language, compiler, runtime ownership model, and generic
+primitives—not a single mixed source tree.
+
+Today, Silc ships the generic primitives behind these workflows. Interactive
+GLTF scenes, physics, cameras, dual-surface applications, CRUD resources,
+document extraction, scraping, and local AI pipelines are available now.
+Native BIM semantics, construction-platform connectors, multi-user
+coordination, live sensor ingestion, and complete production digital twins are
+directional use cases—not claims about current functionality.
+
+## The Silc thesis
+
+Modern AI coding workflows still spend too much of their budget on decisions
+that should be deterministic: framework selection, UI parity, persistence,
+worker boundaries, IPC, asset handling, and runtime setup.
 
 Agents and humans repeatedly invent React trees, Python services, Go stores,
-package manifests, IPC schemes, and deployment scaffolding. That inventiveness
-burns tokens, creates drift between runs, and blurs the line between *product
-intent* and *runtime substrate*.
+package manifests, engine scaffolding, and integration glue. That burns tokens,
+creates drift, and blurs the line between *domain intent* and *runtime
+substrate*.
 
-**Silc's thesis:** authors and agents should declare intent; the compiler should
-own substrate. Deterministic routing, closed operation registries, and
-compiler-synthesized mechanics shrink the generation surface. Models spend
-tokens on domain meaning — forms, inventory, scrapers, assistants, games — while
-Silc handles the rest.
+**Authors and agents should declare intent; the compiler should own substrate.**
+Deterministic routing, closed operation registries, and compiler-synthesized
+mechanics let models spend tokens on project meaning—spaces, equipment,
+workflows, records, simulations, and decisions—while Silc handles the rest.
 
 ---
 
 ## What you can build
 
-### Business Applications
+### VDC and construction
 
-**Internal tools that work everywhere.** One component tree compiles to both a
-React/Tailwind web app and an OpenTUI terminal interface. Your ops team gets a
-browser dashboard; your on-call engineers get SSH access to the same screens.
+- **Model walkthroughs and coordination environments:** Load GLTF project
+  assets into browser-native WebGPU scenes with cameras, lighting, collision,
+  navigation, and overlays.
+- **Digital-twin foundations:** Combine interactive spatial context with
+  application state, persistence, telemetry, and compiler-owned runtime
+  services.
+- **Site logistics and sequencing:** Compose reusable entities and prefabs for
+  equipment, access paths, temporary works, alternatives, and phases.
+- **Field and project operations:** Build dashboards, inspection tools, issue
+  lists, document ledgers, and local assistants on the same intent model.
+- **Safety and training simulations:** Use the real-time kernel for interactive
+  orientation, scenario rehearsal, and spatial communication.
 
-**CRUD apps with zero boilerplate.** Declare a contract and a resource — Silc
-synthesizes SQLite tables, HTTP APIs, and form bindings. No Express routers, no
-ORM setup, no migration scripts.
+These are target workflows built from generic primitives. Silc does not encode
+construction-specific behavior into the compiler; construction vocabulary and
+integrations belong in authored programs and reusable domain packages.
 
-**Local AI assistants grounded on your data.** Drop `ui::chat` into any page
-with `:context($.items)` and a persona. The compiler provisions **silclm**
-(local GGUF) and wires it to your live resource queries.
+### Real-time 3D, simulations, and games
 
-**Scrapers and embedding pipelines.** `scrape::page`, `scrape::site`,
-`tensor::tokenize`, `tensor::infer` — name the operation, not the framework.
-Silc routes to Bun, Playwright, or ONNX MiniLM as needed.
+Declare scenes, imported assets, prefabs, entities, physics, navigation,
+cameras, materials, effects, and gameplay systems. The compiler synthesizes a
+Babylon.js WebGPU runtime without making Babylon, Unity, or Unreal the authoring
+surface.
 
-### WebGPU Games
-
-**First-person shooters with real physics.** Declare weapons, AI squads, and
-level geometry. The compiler synthesizes a Babylon.js WebGPU runtime with
-physics, navigation, and persistence — no Unity license, no Unreal download.
+The namespace is currently named `game::` because the runtime uses proven game
+engine patterns. It is the generic real-time 3D subject for VDC experiences,
+digital-twin foundations, simulations, training tools, and entertainment games.
 
 **Inspired by the big three:**
 
@@ -83,9 +117,30 @@ physics, navigation, and persistence — no Unity license, no Unreal download.
 | Abilities | Unreal GAS | `game::ability` with cooldowns, costs, and cue children |
 | Asset bake | Unity import pipeline | CPython → `public/baked/` (PBR textures, collision hulls) |
 
-The pitch is simple: **fewer tokens per working application**. Framework
-choice, dual-surface parity, persistence, and IPC are compiler decisions — not
-prompt decisions.
+### Dual-surface applications
+
+**Operational tools that work everywhere.** One component tree compiles to both
+a React/Tailwind web app and an OpenTUI terminal interface. Teams get a browser
+dashboard and SSH access to the same workflows.
+
+**CRUD apps with zero boilerplate.** Declare a contract and a resource; Silc
+synthesizes SQLite tables, HTTP APIs, and form bindings. No Express routers,
+ORM setup, or migration scripts.
+
+**Local assistants grounded on project data.** Add `ui::chat` with live query
+context and a persona. The compiler provisions **silclm** and connects it to
+the application's resources.
+
+### Data and AI pipelines
+
+Use `scrape::page`, `scrape::site`, `doc::extract`, `tensor::tokenize`,
+`tensor::infer`, and `llm::complete` to express data movement and processing
+without naming the implementation framework. Silc routes work to its
+compiler-owned engines and synthesizes persistence where supported.
+
+The pitch is simple: **fewer tokens per working system**. Engine choice,
+dual-surface parity, persistence, asset handling, and IPC are compiler
+decisions—not prompt decisions.
 
 ---
 
@@ -95,7 +150,81 @@ Examples below are Silc 0.4.0 source. GitHub fences use `raku` for highlighting
 only. The surface is **Raku-inspired**, not Raku-compatible. Source files are
 `.silc` only.
 
-### 1. A dual-surface notes app
+### 1. A VDC project walkthrough
+
+This compact scene uses the same generic real-time 3D primitives as a game, but
+applies them to a browser-native project environment. Replace the GLTF path
+with an exported project model; domain-specific BIM semantics remain outside
+the compiler.
+
+```raku
+#!/usr/bin/env silc
+@version("0.4.0")
+
+game ProjectWalkthrough {
+    game::scene(
+        :title("Project Walkthrough"),
+        :renderer(webgpu),
+        game::asset(
+            :name("project_model"),
+            :path("public/assets/project.glb"),
+            :kind(gltf)
+        ),
+        game::entity(
+            :name("ProjectModel"),
+            game::mesh(:asset("project_model"))
+        ),
+        game::entity(
+            :name("Ground"),
+            :y(0),
+            game::mesh(:shape(plane), :size(80), :color("#aeb8ae")),
+            game::collider(:shape(plane), :size(80))
+        ),
+        game::entity(
+            :name("Sun"),
+            game::light(:kind(directional), :intensity(1.1))
+        ),
+        game::prefab(
+            :name("Viewer"),
+            game::mesh(:shape(capsule), :size(1.8)),
+            game::collider(:shape(capsule), :size(1.8)),
+            game::movement(:style(first_person), :speed(4.5)),
+            game::pawn()
+        ),
+        game::spawn(
+            :prefab("Viewer"),
+            :x(0),
+            :y(1),
+            :z(6),
+            :as_pawn
+        ),
+        game::mode(
+            :id("walkthrough"),
+            :possess("Viewer")
+        ),
+        game::controller(
+            :scheme(wasd_mouse)
+        ),
+        game::camera(
+            :mode(first_person),
+            :follow(pawn)
+        ),
+        game::environment(
+            :fog_density(0.002),
+            :fog_color("#d8dde2"),
+            :sky_color("#9fb6cc"),
+            :exposure(1.0)
+        )
+    )
+}
+```
+
+**You declared:** project asset, environment, viewer, collision, controls, and
+camera intent.
+**Silc synthesizes:** asset loading and baking, Babylon WebGPU scene setup,
+first-person movement, input, physics, and the browser host.
+
+### 2. A dual-surface notes app
 
 What `silc init` scaffolds — a form, an app route table, and an optional
 scorer. Dual-surface web/terminal serving and SQLite persistence are
@@ -152,7 +281,7 @@ processor NoteScorer {
 **Silc synthesizes:** React web + OpenTUI terminal, `POST /submit`, Go/SQLite
 sink, Bun ingress, and mmap staging between workers.
 
-### 2. Resource CRUD + grounded local chat
+### 3. Resource CRUD + grounded local chat
 
 From [`examples/inventoryApp`](examples/inventoryApp/) — capability-style
 resources become HTTP CRUD; chat is grounded on a live inventory snapshot.
@@ -253,11 +382,12 @@ routes, and a local completion processor.
 **Silc synthesizes:** `/api/inventory_items` CRUD, dual-surface UI, silclm
 provisioning, and persistence for chat/processor results.
 
-### 3. WebGPU game: first-person shooter
+### 4. Real-time 3D game: first-person shooter
 
 From [`examples/arenaGameApp`](examples/arenaGameApp/) — a cinematic FPS with
-weapons, hostile AI, and modular level geometry. The compiler synthesizes a
-Babylon.js WebGPU runtime with physics, navigation, and persistence.
+weapons, hostile AI, and modular level geometry. It exercises the same reusable
+scene, asset, physics, camera, and entity kernel available to VDC and simulation
+programs.
 
 ```raku
 @version("0.4.0")
@@ -288,7 +418,7 @@ game Arena {
 **Silc synthesizes:** Babylon WebGPU scene, physics colliders, input handling,
 HUD, and Go/SQLite persistence for saves and analytics.
 
-### 4. Pipeline-only: scrape → embed → store
+### 5. Pipeline-only: scrape → embed → store
 
 From [`examples/pipelineApp`](examples/pipelineApp/) — no UI app required. One
 intent file becomes a Bun/CPython/Go ingestion graph.
@@ -372,13 +502,14 @@ then provisions pinned engines on first use.
 
 | App | Purpose | Web | Terminal |
 | --- | --- | --- | --- |
+| [`examples/arenaGameApp/`](examples/arenaGameApp/) | Real-time WebGPU kernel: assets, environments, physics, AI, and modular scenes | 18140 | — |
+| [`examples/platformGameApp/`](examples/platformGameApp/) | 2D platformer built from reusable sprite, tilemap, interaction, and movement primitives | 18140 | — |
 | [`examples/chatApp/`](examples/chatApp/) | Multi-session local chat via silclm | 18090 | 18091 |
 | [`examples/inventoryApp/`](examples/inventoryApp/) | CRUD + browse/admin + grounded assistant | 18096 | 18097 |
 | [`examples/scraperApp/`](examples/scraperApp/) | URL + depth crawl; results table + summaries | 18110 | 18111 |
 | [`examples/pipelineApp/`](examples/pipelineApp/) | Scrape → MiniLM/ONNX → SQLite | — | — |
 | [`examples/blogApp/`](examples/blogApp/) | Seeded blog; year/month filters; admin modal CRUD; grounded search | 18120 | 18121 |
 | [`examples/dataExtractorApp/`](examples/dataExtractorApp/) | File upload + `doc::extract` → documents ledger | 18130 | 18131 |
-| [`examples/arenaGameApp/`](examples/arenaGameApp/) | **WebGPU FPS:** weapons, AI squads, modular kit levels | 18140 | — |
 
 See [`examples/README.md`](examples/README.md).
 
@@ -407,11 +538,12 @@ prop enums, and agent rules live in
 - `silc init` scaffold and experimental `silc assist`
 - Compiler-owned Bun / CPython / Go under `~/.silc/runtimes/`
 
-### Games
+### Real-time 3D
 
-WebGPU-only `game` subject with a compiler-owned kernel. You declare intent
-with `game::*` nodes; the compiler synthesizes a Babylon.js runtime — Babylon
-is the WebGPU adapter, not the authoring surface.
+The WebGPU-only `game` subject is Silc's current generic real-time 3D surface.
+You declare intent with `game::*` nodes; the compiler synthesizes a Babylon.js
+runtime. Babylon is the WebGPU adapter, not the authoring surface, and the
+namespace does not limit the kernel to entertainment games.
 
 **What you can declare:**
 - `game::scene` — root with title, renderer, target FPS
@@ -422,9 +554,9 @@ is the WebGPU adapter, not the authoring surface.
 - `game::ability` — cooldowns, attribute costs, particle/light/impulse cues
 - `game::camera`, `game::controller`, `game::hud`, `game::post_process`
 
-**Polyglot spine:** Even games use the full stack. CPython bakes assets at
-compile time. Go persists saves, runs, and analytics to SQLite. Bun serves the
-WebGPU host and handles HTTP for settings and telemetry.
+**Polyglot spine:** Real-time 3D programs use the full stack. CPython bakes
+assets at compile time. Go persists saves, runs, and analytics to SQLite. Bun
+serves the WebGPU host and handles HTTP for settings and telemetry.
 
 See [ADR-012](docs/ADR-012-webgpu-game-subject.md) for the full design.
 

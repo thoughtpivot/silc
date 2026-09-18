@@ -88,15 +88,18 @@ pub fn select_context(task: &str, corpus: &Corpus, seed: Option<&str>) -> Author
 
     let platformer_shaped = is_platformer_shaped(task, seed);
     let game_catalog = if platformer_shaped {
-        Some(sil_core::format_game_catalog_platformer_md())
+        Some(truncate_chars(
+            &sil_core::format_game_catalog_platformer_md(),
+            6_000,
+        ))
     } else if game_shaped {
-        Some(sil_core::format_game_catalog_md())
+        Some(truncate_chars(&sil_core::format_game_catalog_md(), 6_000))
     } else {
         None
     };
     let mut remaining = CONTEXT_CHAR_BUDGET.saturating_sub(rules.chars().count());
     if let Some(catalog) = &game_catalog {
-        remaining = remaining.saturating_sub(catalog.chars().count().min(4_000));
+        remaining = remaining.saturating_sub(catalog.chars().count());
     }
     if let Some(t) = seed {
         remaining = remaining.saturating_sub(t.chars().count().min(4_000));
@@ -3194,6 +3197,10 @@ mod tests {
         assert!(catalog.contains("game::weapon"));
         assert!(catalog.contains("game::zone"));
         assert!(catalog.contains("game::mind") || catalog.contains("game::npc"));
+        assert!(
+            catalog.chars().count() <= 6_002,
+            "game catalog must remain within the prompt budget"
+        );
         assert!(
             ctx.examples
                 .iter()
