@@ -80,6 +80,10 @@ pub fn render_web_app(
         "function __truthy(value) {\n  if (Array.isArray(value)) return value.length > 0;\n  if (value && typeof value === \"object\") return Object.keys(value).length > 0;\n  return Boolean(value);\n}\n",
     );
     out.push_str("\n");
+    // Resource queries stay current without a push channel: refetch when the
+    // tab regains focus or becomes visible, and poll lightly while visible.
+    out.push_str(LIVE_QUERY_HOOK);
+    out.push_str("\n");
 
     for component in program.all_components() {
         out.push_str(&render_web_component(component, program));
@@ -89,6 +93,30 @@ pub fn render_web_app(
     out.push_str(&render_router(app));
     out
 }
+
+/// Keeps `query` state current without a push channel. Polling is paused
+/// while the tab is hidden; a refetch fires as soon as it is visible again.
+const LIVE_QUERY_HOOK: &str = r#"const __LIVE_QUERY_MS = 4000;
+function __useLiveQuery(path, set) {
+  useEffect(() => {
+    let active = true;
+    const load = () => {
+      if (!active || document.visibilityState === "hidden") return;
+      fetch(path).then(r => r.json()).then((rows) => { if (active) set(rows); }).catch(console.error);
+    };
+    load();
+    const timer = setInterval(load, __LIVE_QUERY_MS);
+    window.addEventListener("focus", load);
+    document.addEventListener("visibilitychange", load);
+    return () => {
+      active = false;
+      clearInterval(timer);
+      window.removeEventListener("focus", load);
+      document.removeEventListener("visibilitychange", load);
+    };
+  }, [path]);
+}
+"#;
 
 fn render_router(app: &App) -> String {
     let mut cases = String::new();
@@ -201,9 +229,7 @@ fn render_web_component(component: &Component, program: &Program) -> String {
             .unwrap_or_else(|| query.resource.to_ascii_lowercase());
         state_decls.push_str(&format!(
             r#"  const [{name}, set{pascal}] = useState([]);
-  useEffect(() => {{
-    fetch("/api/{table}").then(r => r.json()).then(set{pascal}).catch(console.error);
-  }}, []);
+  __useLiveQuery("/api/{table}", set{pascal});
 "#,
             name = query.name,
             pascal = pascal(&query.name),

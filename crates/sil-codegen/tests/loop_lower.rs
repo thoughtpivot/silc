@@ -114,6 +114,16 @@ fn emit_writes_pinned_plan_kernel_and_manifest_section() {
     let graph = result.graph.expect("graph");
     assert!(graph.has_loops());
     assert!(graph.needs_llm(), "loop::ask provisions silclm");
+
+    // Runs, notices, and the author's board must refresh on their own: the
+    // inbox and every resource query poll while visible and refetch on focus.
+    let app_tsx = std::fs::read_to_string(out.join("typescript/src/App.tsx")).unwrap();
+    assert!(
+        app_tsx.contains("__useLiveQuery(\"/api/loop_runs\", setRuns)")
+            && app_tsx.contains("visibilitychange")
+            && app_tsx.contains("addEventListener(\"focus\""),
+        "loop surface queries must stay live"
+    );
     let _ = std::fs::remove_dir_all(&out);
 }
 
