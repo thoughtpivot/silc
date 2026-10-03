@@ -512,6 +512,7 @@ then provisions pinned engines on first use.
 | [`examples/dataExtractorApp/`](examples/dataExtractorApp/) | File upload + `doc::extract` → documents ledger | 18130 | 18131 |
 | [`examples/oneThingApp/`](examples/oneThingApp/) | Daily `loop`: Moz MCP reads → silclm brief → one sentence for today | 18088 | — |
 | [`examples/rfiChaseApp/`](examples/rfiChaseApp/) | Weekday `loop`: overdue RFIs → silclm draft → PM approval → keyed reminder | 18088 | — |
+| [`examples/whatToDoTodayApp/`](examples/whatToDoTodayApp/) | CLI-driven daily `loop`: Moz MCP reads → silclm brief → 3 to 5 item to-do list; synthesized `/loops` inbox only | 18088 | 18023 |
 
 See [`examples/README.md`](examples/README.md).
 

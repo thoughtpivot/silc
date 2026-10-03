@@ -24,7 +24,7 @@ byte-for-byte. App-specific notes go **after** the end marker only.
 
 Tracked examples today: `chatApp`, `inventoryApp`, `scraperApp`,
 `pipelineApp`, `blogApp`, `dataExtractorApp`, `arenaGameApp`, `platformGameApp`,
-`rfiChaseApp`, and `oneThingApp`.
+`rfiChaseApp`, `oneThingApp`, and `whatToDoTodayApp`.
 
 ## Current apps
 
@@ -40,6 +40,7 @@ Tracked examples today: `chatApp`, `inventoryApp`, `scraperApp`,
 | [`platformGameApp/`](platformGameApp/) | WebGPU platformer (side-scroll camera, arrows+jump controls) | 18140 | — |
 | [`rfiChaseApp/`](rfiChaseApp/) | Weekday `loop`: overdue RFIs → silclm draft → PM approval in `/loops` → keyed reminder | 18088 | — |
 | [`oneThingApp/`](oneThingApp/) | Daily `loop`: four Moz MCP reads → silclm brief → Dan's one sentence (needs `MOZ_MCP_TOKEN`) | 18088 | — |
+| [`whatToDoTodayApp/`](whatToDoTodayApp/) | CLI-driven daily `loop`: same Moz MCP reads → silclm brief → 3 to 5 item to-do list; no authored UI, synthesized `/loops` inbox only (needs `MOZ_MCP_TOKEN`) | 18088 | 18023 |
 
 ## Conventions
 

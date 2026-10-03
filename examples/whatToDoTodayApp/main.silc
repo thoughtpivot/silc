@@ -1,0 +1,130 @@
+#!/usr/bin/env silc
+# What Dan should do today, as a short prioritized list.
+# Every day at 05:00 UTC, read the last week of ThoughtPivot's Moz company
+# brain over MCP, brief it, and reduce it to three to five imperative items.
+# There is no authored UI: the compiler synthesizes the /loops inbox, so run
+# it with "silc main.silc --terminal" and press "Run WhatToDoToday now", or
+# POST to /api/loop_requests from the shell.
+# Needs MOZ_MCP_TOKEN in the environment (the Moz bearer token).
+@version("0.5.0")
+
+contract WindowArgs {
+    has Str $.path;
+    has Int $.tailRecords;
+}
+
+contract Brief {
+    has Str $.facts;
+    has Str $.goals;
+    has Str $.pressure;
+}
+
+contract TodoList {
+    has Str $.first;
+    has Str $.second;
+    has Str $.third;
+    has Str $.fourth;
+    has Str $.fifth;
+    has Str $.why;
+}
+
+contract DailyPlan {
+    has Str $.id;
+    has Str $.day;
+    has Str $.at;
+    has Str $.first;
+    has Str $.second;
+    has Str $.third;
+    has Str $.fourth;
+    has Str $.fifth;
+    has Str $.why;
+    has Str $.pressure;
+}
+
+resource DailyPlans for DailyPlan {
+    query list;
+    mutation create;
+}
+
+loop WhatToDoToday {
+    loop::flow(
+        loop::schedule(:cron("0 5 * * *"), :tz("UTC"), :catch_up("12h")),
+        loop::read(
+            :as(decisions),
+            :op("mcp::call"),
+            :server("https://moz-238959082585.us-central1.run.app/mcp"),
+            :auth_env("MOZ_MCP_TOKEN"),
+            :tool("kb_jsonl_read_window"),
+            :args(WindowArgs.new(:path("memory/decisions.jsonl"), :tailRecords(6))),
+            :select("records.parsed")
+        ),
+        loop::read(
+            :as(meetings),
+            :op("mcp::call"),
+            :server("https://moz-238959082585.us-central1.run.app/mcp"),
+            :auth_env("MOZ_MCP_TOKEN"),
+            :tool("kb_jsonl_read_window"),
+            :args(WindowArgs.new(:path("network/interactions.jsonl"), :tailRecords(6))),
+            :select("records.parsed")
+        ),
+        loop::read(
+            :as(projects),
+            :op("mcp::call"),
+            :server("https://moz-238959082585.us-central1.run.app/mcp"),
+            :auth_env("MOZ_MCP_TOKEN"),
+            :tool("kb_jsonl_read_window"),
+            :args(WindowArgs.new(:path("operations/projects.jsonl"), :tailRecords(4))),
+            :select("records.parsed")
+        ),
+        loop::read(
+            :as(pipeline),
+            :op("mcp::call"),
+            :server("https://moz-238959082585.us-central1.run.app/mcp"),
+            :auth_env("MOZ_MCP_TOKEN"),
+            :tool("kb_jsonl_read_window"),
+            :args(WindowArgs.new(:path("operations/opportunities.jsonl"), :tailRecords(4))),
+            :select("records.parsed")
+        ),
+        loop::ask(
+            :as(brief),
+            :into(Brief),
+            :from([$decisions.data, $meetings.data, $projects.data, $pipeline.data]),
+            :retry(2),
+            :prompt("You are gathering context for Dan Stephenson's daily to-do list at ThoughtPivot. Today is {$calendar.today} ({$calendar.weekday}). The reference data is four lists from the company brain: recent decisions, recent meetings, active projects, and open opportunities. Use only rows dated {$calendar.last7_start} through {$calendar.last7_end} for facts, and only goals that are still live through {$calendar.next7_end}. Drop anything older. facts: what happened in that window (decisions, meetings, open threads). goals: what Dan is driving through {$calendar.next7_end}. pressure: the one pressure that most determines today. Be compact."),
+            loop::otherwise(loop::fail(:reason("could not brief the last 7 days")))
+        ),
+        loop::ask(
+            :as(plan),
+            :into(TodoList),
+            :from($brief),
+            :retry(2),
+            :prompt("Using only the brief, decide what Dan must do today ({$calendar.today}) to serve the company goals. Fill first, second, third, fourth, fifth, and why. Each of the five items is one short imperative sentence naming a concrete action, in priority order. Every field must contain text: when fewer than five actions are warranted, set each unused item to exactly \"No further action today.\" why: one sentence that ties the list to the brief's pressure. If the brief is empty or outside the window, put one sentence saying the source window is unusable in first and \"No further action today.\" in the other items. Never invent facts."),
+            loop::otherwise(loop::fail(:reason("could not decide today's to-do list")))
+        ),
+        loop::gate(
+            :that($plan.first != "" && $plan.second != "" && $plan.third != "" && $plan.why != "" && $brief.pressure != ""),
+            :reason("Dan gets at least three grounded items or nothing"),
+            loop::otherwise(loop::fail(:reason("the model returned fewer than three items")))
+        ),
+        loop::write(
+            :to(DailyPlans.create),
+            :key("what-to-do:{$now}"),
+            :value(DailyPlan.new(
+                :day($calendar.today),
+                :at($now),
+                :first($plan.first),
+                :second($plan.second),
+                :third($plan.third),
+                :fourth($plan.fourth),
+                :fifth($plan.fifth),
+                :why($plan.why),
+                :pressure($brief.pressure)
+            ))
+        ),
+        loop::notify(
+            :to("Dan Stephenson"),
+            :text("Today: 1. {$plan.first} 2. {$plan.second} 3. {$plan.third} {$plan.fourth} {$plan.fifth} Why: {$plan.why}"),
+            :key("what-to-do:{$now}")
+        )
+    )
+}

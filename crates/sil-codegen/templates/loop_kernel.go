@@ -972,11 +972,52 @@ func trimOldest(list []any) []any {
 	return out
 }
 
-var jsonObject = regexp.MustCompile(`(?s)\{.*\}`)
+// firstJSONObject returns the first brace-balanced object in a model reply.
+// A greedy match would swallow a later "}" in trailing prose and then fail
+// to parse ("invalid character after top-level value").
+func firstJSONObject(s string) string {
+	start := strings.IndexByte(s, '{')
+	if start < 0 {
+		return ""
+	}
+	depth := 0
+	inStr := false
+	esc := false
+	for i := start; i < len(s); i++ {
+		c := s[i]
+		if inStr {
+			if esc {
+				esc = false
+				continue
+			}
+			if c == '\\' {
+				esc = true
+				continue
+			}
+			if c == '"' {
+				inStr = false
+			}
+			continue
+		}
+		switch c {
+		case '"':
+			inStr = true
+		case '{':
+			depth++
+		case '}':
+			depth--
+			if depth == 0 {
+				return s[start : i+1]
+			}
+		}
+	}
+	return ""
+}
 
 // checkContract parses a model reply and requires every contract field with the right type.
+// A blank string is not a Str: the model must put real text in every field.
 func checkContract(fields []FieldSpec, reply string) (map[string]any, error) {
-	match := jsonObject.FindString(reply)
+	match := firstJSONObject(reply)
 	if match == "" {
 		return nil, fmt.Errorf("reply has no JSON object")
 	}

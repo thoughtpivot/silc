@@ -777,6 +777,25 @@ func TestMcpCallSpeaksStreamableHttp(t *testing.T) {
 	}
 }
 
+func TestCheckContractTakesFirstObjectAndRejectsBlanks(t *testing.T) {
+	fields := []FieldSpec{{Name: "first", Type: "Str"}, {Name: "fourth", Type: "Str"}}
+	reply := "Sure.\n{\"first\":\"Send the SOW\",\"fourth\":\"File the W-8\"}\nJustification: the {pressure} is real."
+	got, err := checkContract(fields, reply)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["first"] != "Send the SOW" || got["fourth"] != "File the W-8" {
+		t.Fatalf("got %v", got)
+	}
+	blank := "{\"first\":\"Send the SOW\",\"fourth\":\"\"}"
+	if _, err := checkContract(fields, blank); err == nil || !strings.Contains(err.Error(), "fourth") {
+		t.Fatalf("blank Str should fail, got %v", err)
+	}
+	if _, err := checkContract(fields, "no object here"); err == nil {
+		t.Fatal("expected a missing-object error")
+	}
+}
+
 func TestTrimOldestKeepsNewestItemsOfLargestList(t *testing.T) {
 	list := []any{[]any{"a1", "a2", "a3"}, []any{"b1"}}
 	got := trimOldest(list)
