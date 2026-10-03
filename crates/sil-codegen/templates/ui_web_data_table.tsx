@@ -65,6 +65,13 @@ function rowMatches(row: Row, columns: string[], query: string): boolean {
   return fuzzyMatches(query, columns.map((column) => String(row?.[column] ?? "")).join(" "));
 }
 
+// Single tokens (dates, ids, loop and status names) must never break across
+// lines; the browser gives their column the width it needs and wraps prose
+// in the other columns instead.
+function keepWhole(text: string): boolean {
+  return text.length > 0 && text.length <= 40 && !/\s/.test(text);
+}
+
 function rowKey(row: Row, index: number): string {
   return String(row.id ?? index);
 }
@@ -206,7 +213,7 @@ export function DataTable({
             {columns.map((column) => {
               if (!sortable) {
                 return (
-                  <th key={column} className={cn(cellPadding, "font-medium text-muted-foreground")}>
+                  <th key={column} className={cn(cellPadding, "whitespace-nowrap font-medium text-muted-foreground")}>
                     {labelFor(column)}
                   </th>
                 );
@@ -219,7 +226,7 @@ export function DataTable({
                     onClick={() => toggleSort(column)}
                     aria-sort={active ? (sortDirection === "asc" ? "ascending" : "descending") : undefined}
                     className={cn(
-                      "flex w-full cursor-pointer items-center gap-1 text-left font-medium transition hover:text-foreground",
+                      "flex w-full cursor-pointer items-center gap-1 whitespace-nowrap text-left font-medium transition hover:text-foreground",
                       cellPadding,
                       active && "text-foreground"
                     )}
@@ -256,11 +263,14 @@ export function DataTable({
                     selected && "bg-primary/10"
                   )}
                 >
-                  {columns.map((column) => (
-                    <td key={column} className={cn(cellPadding, "align-top")}>
-                      {String((row as Row)[column] ?? "")}
-                    </td>
-                  ))}
+                  {columns.map((column) => {
+                    const text = String((row as Row)[column] ?? "");
+                    return (
+                      <td key={column} className={cn(cellPadding, "align-top", keepWhole(text) && "whitespace-nowrap")}>
+                        {text}
+                      </td>
+                    );
+                  })}
                 </tr>
               );
             })
