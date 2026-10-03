@@ -41,7 +41,7 @@ Tracked examples today: `chatApp`, `inventoryApp`, `scraperApp`,
 | [`rfiChaseApp/`](rfiChaseApp/) | Weekday `loop`: overdue RFIs → silclm draft → PM approval in `/loops` → keyed reminder | 18088 | — |
 | [`oneThingApp/`](oneThingApp/) | Daily `loop`: four Moz MCP reads → silclm brief → Dan's one sentence (needs `MOZ_MCP_TOKEN`) | 18088 | — |
 | [`oneThingCliApp/`](oneThingCliApp/) | Loop **command**: the same reads and brief, run once by `silc main.silc`; the sentence is printed to stdout and the process exits. No UI, no `/loops` (needs `MOZ_MCP_TOKEN`) | — | — |
-| [`whatToDoTodayApp/`](whatToDoTodayApp/) | CLI-driven daily `loop`: same Moz MCP reads → silclm brief → 3 to 5 item to-do list; no authored UI, synthesized `/loops` inbox only (needs `MOZ_MCP_TOKEN`) | 18088 | 18023 |
+| [`whatToDoTodayApp/`](whatToDoTodayApp/) | Scheduled daily `loop` with no authored UI: same Moz MCP reads → silclm brief → 3 to 5 item to-do list; the synthesized `/loops` inbox (web, OpenTUI, or `/api`) is the whole interface (needs `MOZ_MCP_TOKEN`) | 18088 | 18023 |
 
 ## Conventions
 

@@ -513,7 +513,7 @@ then provisions pinned engines on first use.
 | [`examples/oneThingApp/`](examples/oneThingApp/) | Daily `loop`: Moz MCP reads → silclm brief → one sentence for today | 18088 | — |
 | [`examples/oneThingCliApp/`](examples/oneThingCliApp/) | Loop command: the same brief run once by `silc main.silc`; sentence on stdout, then exit. No UI | — | — |
 | [`examples/rfiChaseApp/`](examples/rfiChaseApp/) | Weekday `loop`: overdue RFIs → silclm draft → PM approval → keyed reminder | 18088 | — |
-| [`examples/whatToDoTodayApp/`](examples/whatToDoTodayApp/) | CLI-driven daily `loop`: Moz MCP reads → silclm brief → 3 to 5 item to-do list; synthesized `/loops` inbox only | 18088 | 18023 |
+| [`examples/whatToDoTodayApp/`](examples/whatToDoTodayApp/) | Scheduled daily `loop`, no authored UI: Moz MCP reads → silclm brief → 3 to 5 item to-do list; the synthesized `/loops` inbox is the whole interface | 18088 | 18023 |
 
 See [`examples/README.md`](examples/README.md).
 

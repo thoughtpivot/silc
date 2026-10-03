@@ -1,6 +1,6 @@
 # whatToDoTodayApp
 
-What Dan should do today, as a Silc `loop` you drive from the terminal.
+What Dan should do today, as a scheduled Silc `loop` with no authored UI.
 
 Every day at 05:00 UTC, `WhatToDoToday` reads the last week of the
 ThoughtPivot Moz company brain over MCP, briefs it with **silclm**, and
@@ -13,13 +13,18 @@ resource, and one loop. Because there is no `app`, the compiler synthesizes
 `LoopsApp` and routes both `/` and `/loops` to the loop inbox, which renders
 on the web and on the terminal like any other Silc app.
 
+This is **not** a loop command. The loop has a `loop::schedule` trigger, so
+the program is a long-running service with the inbox as its interface. For
+a program that runs once from the shell, prints its result, and exits, see
+[`oneThingCliApp`](../oneThingCliApp/).
+
 ## Authored files
 
 - `main.silc` — the loop and the `DailyPlans` resource
 - `AGENTS.md` — agent guidance
 - `.gitignore` — ignores compiler-owned `.runtime/` and `.silc/`
 
-## Run from the terminal
+## Run with the terminal inbox
 
 ```bash
 export MOZ_MCP_TOKEN='<Moz bearer token>'
