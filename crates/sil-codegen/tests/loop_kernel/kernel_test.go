@@ -595,7 +595,7 @@ func (r *recordingAsker) Ask(req AskRequest) (string, error) {
 	return r.fakeAsker.Ask(req)
 }
 
-func TestOneThingReadsMozOverMcpAndWritesOncePerDay(t *testing.T) {
+func TestOneThingReadsMozOverMcpAndWritesEachRun(t *testing.T) {
 	h, m := newOneThing(t, "2026-10-02T15:00:00Z")
 	rec := &recordingAsker{fakeAsker: fakeAsker{replies: []string{goodBrief, goodAction}}}
 	h.k.asker = rec
@@ -626,7 +626,8 @@ func TestOneThingReadsMozOverMcpAndWritesOncePerDay(t *testing.T) {
 		t.Fatalf(":select keeps only parsed records: %s", rec.contexts[0])
 	}
 	action := h.one("daily_actions")
-	if action["day"] != "2026-10-02" || action["sentence"] != "Send both EverydayMeal SOWs through Sign.com today." {
+	if action["day"] != "2026-10-02" || action["at"] != "2026-10-02T15:00:00Z" ||
+		action["sentence"] != "Send both EverydayMeal SOWs through Sign.com today." {
 		t.Fatalf("daily action: %v", action)
 	}
 	notice := h.one("loop_notices")
@@ -634,7 +635,7 @@ func TestOneThingReadsMozOverMcpAndWritesOncePerDay(t *testing.T) {
 		t.Fatalf("notice: %v", notice)
 	}
 
-	// Running again the same day starts a new run but writes nothing new.
+	// A later run the same day records its own action alongside the first.
 	rec.replies = []string{goodBrief, `{"sentence":"Something else entirely."}`}
 	rec.calls = 0
 	h.setClock("2026-10-02T16:00:00Z")
@@ -642,11 +643,19 @@ func TestOneThingReadsMozOverMcpAndWritesOncePerDay(t *testing.T) {
 	if n := len(h.runsOf("OneThingToday")); n != 2 {
 		t.Fatalf("want two runs, got %d", n)
 	}
-	if n := len(h.rows("daily_actions")); n != 1 {
-		t.Fatalf("the day key keeps one action per day, got %d", n)
+	actions := h.rows("daily_actions")
+	if len(actions) != 2 {
+		t.Fatalf("each run keeps its own action, got %d", len(actions))
 	}
-	if h.one("daily_actions")["sentence"] != action["sentence"] {
-		t.Fatal("the first action of the day stands")
+	seen := map[string]string{}
+	for _, a := range actions {
+		seen[a["at"].(string)] = a["sentence"].(string)
+	}
+	if seen["2026-10-02T16:00:00Z"] != "Something else entirely." || seen["2026-10-02T15:00:00Z"] != action["sentence"] {
+		t.Fatalf("actions by run time: %v", seen)
+	}
+	if n := len(h.rows("loop_notices")); n != 2 {
+		t.Fatalf("each run posts its own notice, got %d", n)
 	}
 }
 

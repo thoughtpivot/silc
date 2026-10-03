@@ -126,4 +126,4 @@ GET) and `mcp::call` (one named tool per step).
   External delivery would arrive as new catalog nodes, not as plugins.
 - Proof programs: `examples/rfiChaseApp` (finds, approvals, keyed writes) and
   `examples/oneThingApp`, a port of a production daily-briefing workflow
-  (four Moz MCP reads, two silclm asks, a gate, one keyed write per day).
+  (four Moz MCP reads, two silclm asks, a gate, one keyed write per run).

@@ -565,5 +565,5 @@ Compiler-owned (do not invent alternatives):
 - Four `loop::read(:op("mcp::call"))` steps call `kb_jsonl_read_window` on the Moz MCP server (decisions, interactions, projects, opportunities); `:select("records.parsed")` drops the raw JSONL copy.
 - The bearer token comes from `MOZ_MCP_TOKEN` in the environment (`:auth_env`). Never put tokens in `main.silc`.
 - Two **silclm** asks: a `Brief` (facts, goals, pressure for the `$calendar` window), then `OneThing` (one imperative sentence).
-- A gate requires a non-empty sentence and pressure before the `DailyActions` write and the notice; both are keyed per day, so a second run the same day writes nothing new.
+- A gate requires a non-empty sentence and pressure before the `DailyActions` write and the notice; both are keyed by the run's recorded `$now`, so every run (scheduled or Run now) adds its own row, and a resumed run never writes twice.
 - The kernel trims the oldest records first when the combined context is too large for one ask.

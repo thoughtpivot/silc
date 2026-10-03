@@ -24,6 +24,7 @@ contract OneThing {
 contract DailyAction {
     has Str $.id;
     has Str $.day;
+    has Str $.at;
     has Str $.sentence;
     has Str $.pressure;
 }
@@ -95,13 +96,13 @@ loop OneThingToday {
         ),
         loop::write(
             :to(DailyActions.create),
-            :key("one-thing:{$calendar.today}"),
-            :value(DailyAction.new(:day($calendar.today), :sentence($action.sentence), :pressure($brief.pressure)))
+            :key("one-thing:{$now}"),
+            :value(DailyAction.new(:day($calendar.today), :at($now), :sentence($action.sentence), :pressure($brief.pressure)))
         ),
         loop::notify(
             :to("Dan Stephenson"),
             :text("{$action.sentence}"),
-            :key("one-thing:{$calendar.today}")
+            :key("one-thing:{$now}")
         )
     )
 }
@@ -122,7 +123,7 @@ component DailyBoard {
                     :description("Every day at 05:00 UTC, OneThingToday reads the last week of the Moz company brain and writes one sentence. Run it now from Loops."),
                     ui::table(
                         :rows($.actions),
-                        :columns(["day", "sentence", "pressure"]),
+                        :columns(["at", "sentence", "pressure"]),
                         :empty_text("Nothing yet. Open Loops and run OneThingToday now."),
                         :sortable
                     )

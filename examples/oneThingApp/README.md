@@ -40,7 +40,8 @@ OneThingToday  schedule "0 5 * * *" UTC, catch up 12h
    next week, and the one pressure) using the `$calendar` window.
 3. Asks silclm for `OneThing`: exactly one imperative sentence.
 4. Gates on a non-empty sentence and pressure, then writes one `DailyAction`
-   and one notice, both keyed by the day. A second run the same day writes nothing new.
+   and one notice, both keyed by the run's recorded time. Every run adds its own
+   row to the board, newest first.
 
 Every MCP result and model answer is recorded in the loop event log, so a
 resumed run replays instead of calling Moz or the model again. Without
