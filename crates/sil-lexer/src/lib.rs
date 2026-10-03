@@ -1,4 +1,4 @@
-//! Silc lexer for the independent intent surface (ADR-002 / 0.4.0).
+//! Silc lexer for the independent intent surface (ADR-002 / 0.5.0).
 
 use logos::Logos;
 

@@ -1,8 +1,8 @@
-//! Recursive-descent parser for Silc 0.4.0 grammar.
+//! Recursive-descent parser for Silc 0.5.0 grammar.
 
 use sil_core::{
     App, CompField, Component, Contract, EmitDecl, EventBinding, Expr, Field, Game, GameNode,
-    Handler, Method, Module, ModuleKind, Param, Pipeline, PipelineStep, Program, QueryBinding,
+    Handler, Loop, LoopNode, Method, Module, ModuleKind, Param, Pipeline, PipelineStep, Program, QueryBinding,
     Resource, ResourceKind, ResourceMethod, ResourceSeed, Route, SlotDecl, Span, Subset,
     SubsetPredicate, TraitArg, TypeExpr, UiNode, UiTemplate,
 };
@@ -101,7 +101,7 @@ impl Parser {
                 )?,
                 Some(Token::Sink) => {
                     return Err(self.error_here(
-                        "author `sink` declarations are not supported in Silc 0.4.0; remove the sink — persistence is synthesized from the processor",
+                        "author `sink` declarations are not supported in Silc 0.5.0; remove the sink — persistence is synthesized from the processor",
                     ))
                 }
                 Some(Token::Task) => self.parse_subject_into(
@@ -110,9 +110,13 @@ impl Parser {
                     "task",
                 )?,
                 Some(Token::Class) => return Err(self.legacy_class_error()),
+                Some(Token::Ident(word)) if word == "loop" => {
+                    let lp = self.parse_loop_decl()?;
+                    program.loops.push(lp);
+                }
                 _ => {
                     return Err(self.error_here(
-                        "unsupported construct; expected `subset`, `contract`, `component`, `resource`, `app`, `game`, `service`, `processor`, or `task`",
+                        "unsupported construct; expected `subset`, `contract`, `component`, `resource`, `app`, `game`, `loop`, `service`, `processor`, or `task`",
                     ))
                 }
             }
@@ -181,7 +185,7 @@ impl Parser {
             .unwrap_or("contract");
         let replacement = format!("{kind} {name} {{ ... }}");
         self.error_here(&format!(
-            "legacy `class` declarator is not supported in Silc 0.4.0; use `{replacement}`"
+            "legacy `class` declarator is not supported in Silc 0.5.0; use `{replacement}`"
         ))
     }
 
@@ -819,7 +823,7 @@ impl Parser {
                 }
                 Some(Token::Has) => {
                     return Err(self.error_here(
-                        "resource metadata fields are not supported in Silc 0.4.0; use `resource Name for Contract` and capability declarations (`query list;`)",
+                        "resource metadata fields are not supported in Silc 0.5.0; use `resource Name for Contract` and capability declarations (`query list;`)",
                     ));
                 }
                 _ => return Err(self.error_here("expected `query`, `mutation`, `seed`, or `}`")),
@@ -895,7 +899,7 @@ impl Parser {
         if matches!(self.peek(), Some(Token::LParen)) || matches!(self.peek(), Some(Token::LBrace))
         {
             return Err(self.error_here(
-                "resource method bodies are not supported in Silc 0.4.0; declare capabilities only (e.g. `query list;` / `mutation create;`)",
+                "resource method bodies are not supported in Silc 0.5.0; declare capabilities only (e.g. `query list;` / `mutation create;`)",
             ));
         }
         Err(self.error_here("expected `;` after resource capability name"))
@@ -925,7 +929,7 @@ impl Parser {
                 }
                 Some(Token::Method) => {
                     return Err(self.error_here(
-                        "app `method serve()` is not supported in Silc 0.4.0; declare routes only — dual-surface web/terminal serving is synthesized by the compiler",
+                        "app `method serve()` is not supported in Silc 0.5.0; declare routes only — dual-surface web/terminal serving is synthesized by the compiler",
                     ));
                 }
                 _ => return Err(self.error_here("expected `route` or `}`")),
@@ -1007,6 +1011,76 @@ impl Parser {
         })
     }
 
+    fn parse_loop_decl(&mut self) -> Result<Loop, ParseError> {
+        let start = self.current_span();
+        self.advance();
+        let name = self.expect_ident("loop name")?;
+        self.expect_simple(Token::LBrace, "`{` after loop declaration")?;
+        let root = self.parse_loop_node()?;
+        self.expect_simple(Token::RBrace, "`}` after loop")?;
+        Ok(Loop {
+            name,
+            root,
+            span: self.finish_span(start),
+        })
+    }
+
+    fn at_loop_node(&self) -> bool {
+        matches!(self.peek(), Some(Token::Ident(n)) if n == "loop")
+            && matches!(self.tokens.get(self.pos + 1).map(|t| &t.token), Some(Token::DoubleColon))
+    }
+
+    fn parse_loop_node(&mut self) -> Result<LoopNode, ParseError> {
+        let start = self.current_span();
+        if !self.at_loop_node() {
+            return Err(self.error_here("expected a `loop::node(...)`"));
+        }
+        self.advance();
+        self.expect_simple(Token::DoubleColon, "`::` after loop")?;
+        let (name, name_span) = self.expect_ident_like_spanned("loop node name")?;
+        self.expect_simple(Token::LParen, "`(` after loop node")?;
+        let mut props = Vec::new();
+        let mut prop_spans = Vec::new();
+        let mut children = Vec::new();
+        while !matches!(self.peek(), Some(Token::RParen)) {
+            if matches!(self.peek(), Some(Token::Comma)) {
+                self.advance();
+                continue;
+            }
+            if matches!(self.peek(), Some(Token::Colon)) {
+                self.advance();
+                let (key, key_span) = self.expect_ident_like_spanned("loop prop name")?;
+                if matches!(self.peek(), Some(Token::LParen)) {
+                    self.advance();
+                    if matches!(self.peek(), Some(Token::RParen)) {
+                        self.advance();
+                        props.push((key, Expr::Bool(true)));
+                    } else {
+                        let expr = self.parse_game_prop_expr()?;
+                        self.expect_simple(Token::RParen, "`)` after loop prop")?;
+                        props.push((key, expr));
+                    }
+                } else {
+                    props.push((key, Expr::Bool(true)));
+                }
+                prop_spans.push(key_span);
+            } else if self.at_loop_node() {
+                children.push(self.parse_loop_node()?);
+            } else {
+                return Err(self.error_here("expected `:prop(...)` or `loop::node(...)`"));
+            }
+        }
+        self.expect_simple(Token::RParen, "`)` after loop node")?;
+        Ok(LoopNode {
+            name,
+            name_span,
+            props,
+            prop_spans,
+            children,
+            span: self.finish_span(start),
+        })
+    }
+
     fn parse_game_prop_expr(&mut self) -> Result<Expr, ParseError> {
         match self.peek() {
             Some(Token::UnitLiteral(_)) => {
@@ -1038,18 +1112,18 @@ impl Parser {
         let mut lhs = self.parse_prefix()?;
         loop {
             let op = match self.peek() {
-                Some(Token::OrOr) if min_bp <= 1 => BinOpKind::Or,
-                Some(Token::AndAnd) if min_bp <= 2 => BinOpKind::And,
-                Some(Token::EqEq) if min_bp <= 3 => BinOpKind::Eq,
-                Some(Token::NotEq) if min_bp <= 3 => BinOpKind::Ne,
-                Some(Token::LAngle) if min_bp <= 4 => BinOpKind::Lt,
-                Some(Token::RAngle) if min_bp <= 4 => BinOpKind::Gt,
-                Some(Token::Le) if min_bp <= 4 => BinOpKind::Le,
-                Some(Token::Ge) if min_bp <= 4 => BinOpKind::Ge,
-                Some(Token::Plus) if min_bp <= 5 => BinOpKind::Add,
-                Some(Token::Minus) if min_bp <= 5 => BinOpKind::Sub,
-                Some(Token::Star) if min_bp <= 6 => BinOpKind::Mul,
-                Some(Token::Slash) if min_bp <= 6 => BinOpKind::Div,
+                Some(Token::OrOr) => BinOpKind::Or,
+                Some(Token::AndAnd) => BinOpKind::And,
+                Some(Token::EqEq) => BinOpKind::Eq,
+                Some(Token::NotEq) => BinOpKind::Ne,
+                Some(Token::LAngle) => BinOpKind::Lt,
+                Some(Token::RAngle) => BinOpKind::Gt,
+                Some(Token::Le) => BinOpKind::Le,
+                Some(Token::Ge) => BinOpKind::Ge,
+                Some(Token::Plus) => BinOpKind::Add,
+                Some(Token::Minus) => BinOpKind::Sub,
+                Some(Token::Star) => BinOpKind::Mul,
+                Some(Token::Slash) => BinOpKind::Div,
                 Some(Token::Eq) if min_bp <= 0 => {
                     self.advance();
                     let rhs = self.parse_expr_bp(0)?;
@@ -1088,11 +1162,11 @@ impl Parser {
                 }
                 _ => break,
             };
-            self.advance();
             let (l_bp, r_bp) = op.binding_power();
             if l_bp < min_bp {
                 break;
             }
+            self.advance();
             let rhs = self.parse_expr_bp(r_bp)?;
             lhs = Expr::BinOp {
                 op: op.into_core(),
@@ -1768,6 +1842,9 @@ fn ident_like_name(token: &Token) -> Option<String> {
         Token::When => Some("when".into()),
         Token::Else => Some("else".into()),
         Token::Await => Some("await".into()),
+        Token::Where => Some("where".into()),
+        Token::Is => Some("is".into()),
+        Token::Of => Some("of".into()),
         _ => None,
     }
 }
@@ -1869,7 +1946,7 @@ mod tests {
     #[test]
     fn parses_component_and_app() {
         let src = r#"
-@version("0.4.0")
+@version("0.5.0")
 contract Product {
     has Str $.name;
     has num64 $.price;
@@ -1912,7 +1989,7 @@ app ShopApp {
     #[test]
     fn parses_intent_declarations() {
         let src = r#"
-@version("0.4.0")
+@version("0.5.0")
 contract Record { has Str $.id; }
 component Page { method render() { ui::page() } }
 resource Records for Record {
@@ -1939,7 +2016,7 @@ task Cleanup {}
     #[test]
     fn parses_resource_seeds() {
         let src = r#"
-@version("0.4.0")
+@version("0.5.0")
 contract Article {
     has Str $.id;
     has Str $.title;
@@ -1961,7 +2038,7 @@ resource Articles for Article {
     #[test]
     fn rejects_seed_wrong_contract() {
         let src = r#"
-@version("0.4.0")
+@version("0.5.0")
 contract Article { has Str $.id; }
 contract Other { has Str $.id; }
 resource Articles for Article {
@@ -1976,7 +2053,7 @@ resource Articles for Article {
     #[test]
     fn validate_rejects_seed_without_id() {
         let src = r#"
-@version("0.4.0")
+@version("0.5.0")
 contract Article {
     has Str $.id;
     has Str $.title;
@@ -1997,7 +2074,7 @@ app Demo { route "/" => Page; }
     fn rejects_author_sink_with_migration_diagnostic() {
         let err = parse("sink Db is storage(SQLite) {}").unwrap_err();
         assert!(err.message.contains("sink"), "error: {err}");
-        assert!(err.message.contains("0.4.0"), "error: {err}");
+        assert!(err.message.contains("0.5.0"), "error: {err}");
     }
 
     #[test]
@@ -2023,7 +2100,7 @@ app Demo { route "/" => Page; }
     #[test]
     fn parses_subset_where_contains() {
         let src = r#"
-@version("0.4.0")
+@version("0.5.0")
 subset Uri of Str where { .contains("://") }
 contract Item {
     has Uri $.url;
@@ -2050,7 +2127,7 @@ subset Uri of Str where { .len > 0 }
     #[test]
     fn validate_rejects_bad_subset_literal() {
         let src = r#"
-@version("0.4.0")
+@version("0.5.0")
 subset Uri of Str where { .contains("://") }
 contract Product {
     has Uri $.url;
@@ -2075,7 +2152,7 @@ app App {
     #[test]
     fn parses_minimal_game_scene() {
         let src = r#"
-@version("0.4.0")
+@version("0.5.0")
 game Foo {
     game::scene(
         :title("T"),
@@ -2094,5 +2171,67 @@ game Foo {
         assert_eq!(program.games[0].root.children.len(), 1);
         assert_eq!(program.games[0].root.children[0].name, "overlay");
         program.validate().expect("validate minimal game");
+    }
+
+    #[test]
+    fn comparison_binds_tighter_than_logic() {
+        let mut parser = Parser::new(lex(r#"$a != "" && $b != "" || $c < 1 + 2 * 3"#).unwrap());
+        let expr = parser.parse_expr().unwrap();
+        let rendered = format!("{expr:?}");
+        let Expr::BinOp { op: sil_core::BinOp::Or, left, right } = expr else {
+            panic!("`||` should be the root: {rendered}");
+        };
+        let Expr::BinOp { op: sil_core::BinOp::And, left: and_l, right: and_r } = *left else {
+            panic!("`&&` should be under `||`: {rendered}");
+        };
+        assert!(matches!(*and_l, Expr::BinOp { op: sil_core::BinOp::Ne, .. }), "{rendered}");
+        assert!(matches!(*and_r, Expr::BinOp { op: sil_core::BinOp::Ne, .. }), "{rendered}");
+        let Expr::BinOp { op: sil_core::BinOp::Lt, right: sum, .. } = *right else {
+            panic!("`<` should be the right of `||`: {rendered}");
+        };
+        let Expr::BinOp { op: sil_core::BinOp::Add, right: product, .. } = *sum else {
+            panic!("`+` under `<`: {rendered}");
+        };
+        assert!(matches!(*product, Expr::BinOp { op: sil_core::BinOp::Mul, .. }), "{rendered}");
+    }
+
+    #[test]
+    fn parses_rfi_chase_loops() {
+        let src = include_str!("../../../examples/rfiChaseApp/main.silc");
+        let program = parse(src).expect("parse");
+        assert_eq!(program.loops.len(), 2);
+        let chase = &program.loops[0];
+        assert_eq!(chase.name, "RfiChase");
+        assert_eq!(chase.root.name, "flow");
+        assert_eq!(chase.trigger().unwrap().name, "schedule");
+        let find = &chase.steps()[0];
+        assert_eq!(find.name, "find");
+        assert_eq!(find.ref_prop("from"), Some(("Rfis", "list")));
+        assert!(find.prop("where").is_some());
+        let each = &chase.steps()[1];
+        assert_eq!(each.children.len(), 6);
+        assert_eq!(program.loops[1].trigger().unwrap().name, "manual");
+        program.validate().expect("validate rfi chase");
+    }
+
+    #[test]
+    fn loop_stays_an_identifier_outside_top_level() {
+        let src = r#"
+@version("0.5.0")
+game Foo {
+    game::scene(
+        :title("T"),
+        game::entity(:name("a"), game::audio(:asset("x"), :kind(loop)))
+    )
+}
+"#;
+        let program = parse(src).expect("parse");
+        assert!(program.loops.is_empty());
+    }
+
+    #[test]
+    fn rejects_loop_without_namespace_root() {
+        let err = parse("@version(\"0.5.0\")\nloop Foo { flow() }").unwrap_err();
+        assert!(err.message.contains("loop::"), "{}", err.message);
     }
 }

@@ -146,7 +146,7 @@ decisions—not prompt decisions.
 
 ## How it looks in practice
 
-Examples below are Silc 0.4.0 source. GitHub fences use `raku` for highlighting
+Examples below are Silc 0.5.0 source. GitHub fences use `raku` for highlighting
 only. The surface is **Raku-inspired**, not Raku-compatible. Source files are
 `.silc` only.
 
@@ -159,7 +159,7 @@ the compiler.
 
 ```raku
 #!/usr/bin/env silc
-@version("0.4.0")
+@version("0.5.0")
 
 game ProjectWalkthrough {
     game::scene(
@@ -231,7 +231,7 @@ scorer. Dual-surface web/terminal serving and SQLite persistence are
 **synthesized**.
 
 ```raku
-@version("0.4.0")
+@version("0.5.0")
 
 contract Note {
     has Str $.author;
@@ -390,7 +390,7 @@ scene, asset, physics, camera, and entity kernel available to VDC and simulation
 programs.
 
 ```raku
-@version("0.4.0")
+@version("0.5.0")
 
 game Arena {
     game::scene(:title("MEGASTRUCTURE"), :renderer(webgpu), :target_fps(90),
@@ -424,7 +424,7 @@ From [`examples/pipelineApp`](examples/pipelineApp/) — no UI app required. One
 intent file becomes a Bun/CPython/Go ingestion graph.
 
 ```raku
-@version("0.4.0")
+@version("0.5.0")
 
 subset Uri of Str where { .starts-with("http") }
 subset Emb384 of Vec[num32; 384];
@@ -510,16 +510,20 @@ then provisions pinned engines on first use.
 | [`examples/pipelineApp/`](examples/pipelineApp/) | Scrape → MiniLM/ONNX → SQLite | — | — |
 | [`examples/blogApp/`](examples/blogApp/) | Seeded blog; year/month filters; admin modal CRUD; grounded search | 18120 | 18121 |
 | [`examples/dataExtractorApp/`](examples/dataExtractorApp/) | File upload + `doc::extract` → documents ledger | 18130 | 18131 |
+| [`examples/oneThingApp/`](examples/oneThingApp/) | Daily `loop`: Moz MCP reads → silclm brief → one sentence for today | 18088 | — |
+| [`examples/rfiChaseApp/`](examples/rfiChaseApp/) | Weekday `loop`: overdue RFIs → silclm draft → PM approval → keyed reminder | 18088 | — |
 
 See [`examples/README.md`](examples/README.md).
 
 ---
 
-## What ships today (0.4.0)
+## What ships today (0.5.0)
 
-Silc is **pre-1.0**. Release 0.4.0 makes the product rule explicit: authors
+Silc is **pre-1.0**. Release 0.4.0 made the product rule explicit: authors
 declare intent; the compiler synthesizes runtime mechanics
-([ADR-009](docs/ADR-009-compiler-synthesized-runtime.md)).
+([ADR-009](docs/ADR-009-compiler-synthesized-runtime.md)). Release 0.5.0 adds
+the `loop` subject for scheduled, approval-gated, model-assisted work
+([ADR-014](docs/ADR-014-loop-subject.md)).
 
 ### Applications
 
@@ -559,6 +563,36 @@ assets at compile time. Go persists saves, runs, and analytics to SQLite. Bun
 serves the WebGPU host and handles HTTP for settings and telemetry.
 
 See [ADR-012](docs/ADR-012-webgpu-game-subject.md) for the full design.
+
+### Scheduled loops
+
+`loop Name { loop::flow(...) }` declares work that runs on its own beside an
+`app`: a cron schedule in an explicit time zone, Run now, or a resource
+mutation starts a run. Steps come from a closed `loop::*` catalog: find rows,
+read outside data (`scrape::page`, or one MCP tool with `mcp::call`), ask
+silclm for a typed contract, gate, branch, iterate with a bound, approve, and
+write or notify exactly once per key.
+
+```silc
+loop OneThingToday {
+    loop::flow(
+        loop::schedule(:cron("0 5 * * *"), :tz("UTC")),
+        loop::read(:as(decisions), :op("mcp::call"), :server("https://moz.example/mcp"),
+            :auth_env("MOZ_MCP_TOKEN"), :tool("kb_jsonl_read_window"),
+            :args(WindowArgs.new(:path("memory/decisions.jsonl"), :tailRecords(6)))),
+        loop::ask(:as(action), :into(OneThing), :from($decisions.data),
+            :prompt("One imperative sentence for {$calendar.today}.")),
+        loop::gate(:that($action.sentence != ""), :reason("one sentence or nothing")),
+        loop::notify(:to("Dan"), :text("{$action.sentence}"), :key("one-thing:{$calendar.today}"))
+    )
+}
+```
+
+Gates fail closed, model output must pass a gate or approval before an effect,
+and `silc build` prints the worst-case model calls, effects, and reads per run.
+A compiler-owned Go kernel records every outside input and model answer, so a
+run resumed after a crash or an approval replays instead of redoing work. See
+[ADR-014](docs/ADR-014-loop-subject.md).
 
 ### Executable operations
 
@@ -766,6 +800,7 @@ Pre-1.0 SemVer 0.x: breaking language/compiler changes bump the minor.
 | [docs/ADR-010-tensor-minilm-pipeline.md](docs/ADR-010-tensor-minilm-pipeline.md) | MiniLM embedding pipeline |
 | [docs/ADR-011-document-extract.md](docs/ADR-011-document-extract.md) | `doc::*` upload + extract |
 | [docs/ADR-012-webgpu-game-subject.md](docs/ADR-012-webgpu-game-subject.md) | WebGPU game kernel |
+| [docs/ADR-014-loop-subject.md](docs/ADR-014-loop-subject.md) | Loop subject: scheduled, approval-gated, model-assisted work |
 | [docs/SILC-IPC-ABI-v1.md](docs/SILC-IPC-ABI-v1.md) | Shared buffer ABI |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
 

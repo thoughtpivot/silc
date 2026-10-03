@@ -6,7 +6,7 @@ Silc's **authoring surface is intent-oriented** (see
 organized around durable language concepts instead of allowing compiler phases
 to become the owners of the model.
 
-Silc 0.4.0 implements subjects, lexing, parsing, deterministic routing,
+Silc 0.5.0 implements subjects, lexing, parsing, deterministic routing,
 runnable Bun/Python/Go codegen, supervisor-owned mmap + UDS IPC, generic
 SQLite resources, dual-surface component applications synthesized from `app`
 routes ([ADR-009](ADR-009-compiler-synthesized-runtime.md)), fused `scrape::*`
@@ -28,7 +28,7 @@ chat: [ADR-005](ADR-005-local-llm-complete.md). Recursive authoring assist
 (`silc assist` / `sil-rlm`): [ADR-008](ADR-008-recursive-silclm-assist.md).
 Decision index: [ADR-INDEX.md](ADR-INDEX.md).
 
-The exhaustive 0.4.0 authoring and UI API contract (language constructs,
+The exhaustive 0.5.0 authoring and UI API contract (language constructs,
 executable operations, and the 38-primitive dual-surface catalog) lives in
 [`crates/silc/templates/AGENTS.md`](../crates/silc/templates/AGENTS.md) and is
 mirrored in the root [README](../README.md). Compiler sources
@@ -211,6 +211,17 @@ still use Silc’s Bun (host + HTTP), CPython (compile-time `game_bake.json`), a
 Go (SQLite saves/runs/events) engines. A program must not mix `game` with `app`
 / UI resources in v1.
 
+**Loop subject (scheduled work beside an app).** `loop Name { loop::flow(...) }`
+declares work that runs on its own: a cron schedule, Run now, or a resource
+mutation starts a run of steps from the closed `loop::*` catalog
+([ADR-014](ADR-014-loop-subject.md)). The compiler checks bounds, effect keys,
+fail-closed gates, and that model output is gated or approved before an effect,
+then lowers each loop to a content-addressed plan. A compiler-owned Go loop
+kernel runs the plan with receipts and an append-only event log so runs resume
+by replay. `loop::ask` reaches silclm in CPython through an `ASK` control
+frame, `loop::read(:op("mcp::call"))` calls MCP tools over streamable HTTP, and
+Bun serves a synthesized `/loops` inbox on both surfaces.
+
 Codegen consumes one component graph and emits equal web and terminal adapters.
 Web lowers to compiler-owned React/Tailwind templates. Terminal lowers to a
 compiler-owned **OpenTUI** app that renders the same routes, state, events, and
@@ -252,7 +263,7 @@ Silc buffers as Arrow for external analytical tools.
 ## Project layout and execution
 
 `silc` is the compile-and-run entrypoint (CLI or shebang
-`#!/usr/bin/env silc`). Runnable 0.4.0 programs execute under the Rust supervisor;
+`#!/usr/bin/env silc`). Runnable 0.5.0 programs execute under the Rust supervisor;
 other programs emit inspectable stubs.
 
 | Concept | Meaning |
@@ -266,7 +277,7 @@ other programs emit inspectable stubs.
 - `silc init` / `silc init <path>` — scaffold project files, provision Silc-owned
   Bun/CPython/Go into `~/.silc/runtimes/`, and write `.silc/runtimes.lock.json`
 - `silc build <entry>` — compile only
-- `silc <entry>` — compile; run when the program is runnable in 0.4.0
+- `silc <entry>` — compile; run when the program is runnable in 0.5.0
 - `silc run <entry> --input-json '<json>'` / `--input <file.json>` — execute a
   one-shot pipeline-only program (ADR-010)
 - `silc assist "<task>"` — experimental recursive authoring help (ADR-008)
@@ -297,7 +308,7 @@ Bare `init` is the subcommand; `init.silc` still compiles as a path.
 | `{workdir}/.runtime/` | Per-program **generated codegen** produced when `silc` runs |
 
 Compiler-owned embedding bundles live under
-`~/.silc/models/<catalog-id>/`. The 0.4.0 MiniLM pipeline adapter
+`~/.silc/models/<catalog-id>/`. The 0.5.0 MiniLM pipeline adapter
 ([ADR-010](ADR-010-tensor-minilm-pipeline.md)) verifies pinned ONNX/tokenizer
 artifacts, runs CPU-only attention-mask mean pooling and L2 normalization in
 CPython, and persists the generic JSON record through a synthesized Go sink
@@ -322,7 +333,7 @@ splitting does not.
 
 ## Future work
 
-- Expand expression and subject type inference beyond the 0.4.0 grammar
+- Expand expression and subject type inference beyond the 0.5.0 grammar
 - Generalize executable target adapters beyond the current operation registry
 - Deepen OpenTUI terminal fidelity (dialogs, dense tables, chat polish) while preserving surface parity
 - Add typed field views atop the implemented mmap/UDS ABI

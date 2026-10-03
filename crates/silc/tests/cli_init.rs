@@ -33,7 +33,7 @@ fn init_scaffolds_runnable_dual_surface_app() {
     assert!(root.join("AGENTS.md").is_file());
 
     let main = fs::read_to_string(root.join("main.silc")).unwrap();
-    assert!(main.contains("@version(\"0.4.0\")"));
+    assert!(main.contains("@version(\"0.5.0\")"));
     assert!(main.contains("component HomePage"));
     assert!(main.contains("app MyApp"));
     assert!(main.contains("route \"/\" => HomePage"));
@@ -56,7 +56,7 @@ fn init_scaffolds_runnable_dual_surface_app() {
     assert!(agents.contains("resource X for Contract"));
     assert!(agents.contains("app X"));
     assert!(agents.contains("ui::web") && agents.contains("ui::terminal"));
-    assert!(agents.contains("Complete UI primitive catalog (38)"));
+    assert!(agents.contains("Complete UI primitive catalog (39)"));
     assert!(agents.contains("`ui::page`") && agents.contains("`ui::button`"));
     assert!(agents.contains("`ui::chat`") && agents.contains("`ui::table`"));
     assert!(agents.contains("llm::complete"));
@@ -127,7 +127,7 @@ fn rejects_raku_extension() {
     fs::write(
         &entry,
         r#"
-@version("0.4.0")
+@version("0.5.0")
 component Page {
     method render() { ui::page(ui::heading(:text("x"))) }
 }
@@ -176,12 +176,12 @@ fn rejects_old_and_missing_source_versions() {
         (
             "old",
             "@version(\"0.2.0\")\ncontract Note { has Str $.text; }\n",
-            "migrate to `@version(\"0.4.0\")`",
+            "migrate to `@version(\"0.5.0\")`",
         ),
         (
             "missing",
             "contract Note { has Str $.text; }\n",
-            "add `@version(\"0.4.0\")`",
+            "add `@version(\"0.5.0\")`",
         ),
     ] {
         let root = tempdir();

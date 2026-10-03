@@ -1415,7 +1415,7 @@ pub fn ensure_version(program: &str) -> Option<String> {
     }
     let mut lines: Vec<&str> = program.lines().collect();
     let insert_at = usize::from(lines.first().is_some_and(|l| l.starts_with("#!")));
-    lines.insert(insert_at, "@version(\"0.4.0\")");
+    lines.insert(insert_at, "@version(\"0.5.0\")");
     Some(lines.join("\n"))
 }
 
@@ -2029,7 +2029,7 @@ pub fn run_author_with_failure(
                     max_turns: attempts,
                     elapsed_secs: 0.0,
                     kind: ActionKind::AutoFixed {
-                        what: "added missing @version(\"0.4.0\")".into(),
+                        what: "added missing @version(\"0.5.0\")".into(),
                     },
                 },
             );
@@ -2838,7 +2838,7 @@ mod tests {
         let ctx = select_context(
             "hotel sign up form with name phone room comment",
             &corpus,
-            Some("#!/usr/bin/env silc\n@version(\"0.4.0\")\n"),
+            Some("#!/usr/bin/env silc\n@version(\"0.5.0\")\n"),
         );
         assert!(!ctx.examples.is_empty());
         assert!(ctx.target.is_some());
@@ -2852,7 +2852,7 @@ mod tests {
 
     #[test]
     fn strip_end_marker_removes_trailing_marker() {
-        let src = "#!/usr/bin/env silc\n@version(\"0.4.0\")\napp X { route \"/\" => Y; }\n# END\n";
+        let src = "#!/usr/bin/env silc\n@version(\"0.5.0\")\napp X { route \"/\" => Y; }\n# END\n";
         let out = strip_end_marker(src);
         assert!(!out.contains("# END"));
         assert!(out.contains("@version"));
@@ -2860,12 +2860,12 @@ mod tests {
 
     #[test]
     fn looks_complete_requires_app_route() {
-        assert!(!looks_complete("@version(\"0.4.0\")\ncomponent X {}"));
+        assert!(!looks_complete("@version(\"0.5.0\")\ncomponent X {}"));
         assert!(looks_complete(
-            "@version(\"0.4.0\")\ncomponent Home {}\napp App { route \"/\" => Home; }\n"
+            "@version(\"0.5.0\")\ncomponent Home {}\napp App { route \"/\" => Home; }\n"
         ));
         assert!(looks_complete(
-            "@version(\"0.4.0\")\ngame Demo { game::scene(:title(\"T\"), game::overlay(:toggle(\"F1\"))) }\n"
+            "@version(\"0.5.0\")\ngame Demo { game::scene(:title(\"T\"), game::overlay(:toggle(\"F1\"))) }\n"
         ));
     }
 
@@ -2905,7 +2905,7 @@ mod tests {
     #[test]
     fn autofix_renames_resource_colliding_with_component() {
         let program = concat!(
-            "#!/usr/bin/env silc\n@version(\"0.4.0\")\n",
+            "#!/usr/bin/env silc\n@version(\"0.5.0\")\n",
             "contract Guest { has Str $.name; }\n",
             "component GuestForm { method render() { ui::stack() } }\n",
             "resource GuestForm for Guest {\n    query list;\n    mutation create;\n}\n",
@@ -2922,7 +2922,7 @@ mod tests {
     #[test]
     fn autofix_drops_seeds_without_stable_id() {
         let program = concat!(
-            "#!/usr/bin/env silc\n@version(\"0.4.0\")\n",
+            "#!/usr/bin/env silc\n@version(\"0.5.0\")\n",
             "resource Guests for Guest {\n",
             "    query list;\n",
             "    seed Guest.new(:name(\"Ada\"), :room(\"101\"));\n",
@@ -2963,7 +2963,7 @@ mod tests {
     #[test]
     fn autofix_hoists_method_nested_in_render() {
         let program = concat!(
-            "#!/usr/bin/env silc\n@version(\"0.4.0\")\n",
+            "#!/usr/bin/env silc\n@version(\"0.5.0\")\n",
             "contract Visitor {\n    has Str $.name;\n}\n\n",
             "component HelloForm {\n",
             "    has state Str $.name = \"\";\n\n",
@@ -3004,7 +3004,7 @@ mod tests {
     #[test]
     fn select_context_keeps_real_target_over_starter() {
         let corpus = Corpus::builtin();
-        let seed = "#!/usr/bin/env silc\n@version(\"0.4.0\")\n# mine\n";
+        let seed = "#!/usr/bin/env silc\n@version(\"0.5.0\")\n# mine\n";
         let ctx = select_context("edit it", &corpus, Some(seed));
         assert!(!ctx.target_is_starter);
         assert_eq!(ctx.target.as_deref(), Some(seed));
@@ -3037,7 +3037,7 @@ mod tests {
     #[test]
     fn autofix_removes_a_repeated_resource_block() {
         let program = concat!(
-            "#!/usr/bin/env silc\n@version(\"0.4.0\")\n",
+            "#!/usr/bin/env silc\n@version(\"0.5.0\")\n",
             "contract Guest {\n    has Str $.name;\n}\n\n",
             "resource Guests for Guest {\n    query list;\n    mutation create;\n}\n\n",
             "component GuestForm {\n    has state Str $.name = \"\";\n\n",
@@ -3068,7 +3068,7 @@ mod tests {
     #[test]
     fn autofix_drops_contract_that_collides_with_component() {
         let program = concat!(
-            "#!/usr/bin/env silc\n@version(\"0.4.0\")\n\n",
+            "#!/usr/bin/env silc\n@version(\"0.5.0\")\n\n",
             "contract Guest {\n    has Str $.name;\n    has Str $.phone;\n}\n\n",
             "contract GuestForm {\n    has Str $.name;\n    has Str $.phone;\n}\n\n",
             "resource Guests for Guest {\n    query list;\n    mutation create;\n}\n\n",
@@ -3100,7 +3100,7 @@ mod tests {
     #[test]
     fn autofix_renames_non_component_collider_it_cannot_delete() {
         let program = concat!(
-            "#!/usr/bin/env silc\n@version(\"0.4.0\")\n\n",
+            "#!/usr/bin/env silc\n@version(\"0.5.0\")\n\n",
             "contract Guest {\n    has Str $.name;\n}\n\n",
             "processor GuestForm {\n    method score(Guest $g) {\n",
             "        $g.name ==> text::score()\n    }\n}\n\n",
@@ -3263,7 +3263,7 @@ mod tests {
     #[test]
     fn autofix_drops_any_contract_colliding_with_a_component() {
         let program = concat!(
-            "#!/usr/bin/env silc\n@version(\"0.4.0\")\n\n",
+            "#!/usr/bin/env silc\n@version(\"0.5.0\")\n\n",
             "contract Guest {\n    has Str $.name;\n}\n\n",
             "contract GuestLedger {\n    has Guest $.guest;\n}\n\n",
             "resource Guests for Guest {\n    query list;\n    mutation create;\n}\n\n",
@@ -3334,7 +3334,7 @@ mod tests {
 
     #[test]
     fn draft_token_budget_uses_ceiling_for_game_trees() {
-        let game = "@version(\"0.4.0\")\ngame Demo { game::scene(:title(\"Demo\")) }\n";
+        let game = "@version(\"0.5.0\")\ngame Demo { game::scene(:title(\"Demo\")) }\n";
         assert_eq!(draft_token_budget(Some(game), 4_096), 8_192);
         assert_eq!(draft_token_budget(Some(game), 16_384), 16_384);
     }
@@ -3342,7 +3342,7 @@ mod tests {
     #[test]
     fn inject_named_fps_weapons_adds_closed_loadout() {
         let seed = r##"#!/usr/bin/env silc
-@version("0.4.0")
+@version("0.5.0")
 game Arena {
     game::scene(
         :title("ARENA"),
@@ -3371,19 +3371,19 @@ game Arena {
         let fixed = ensure_version(program).expect("missing pragma should be inserted");
         let lines: Vec<&str> = fixed.lines().collect();
         assert_eq!(lines[0], "#!/usr/bin/env silc");
-        assert_eq!(lines[1], "@version(\"0.4.0\")");
+        assert_eq!(lines[1], "@version(\"0.5.0\")");
     }
 
     #[test]
     fn ensure_version_leaves_valid_and_non_silc_input_alone() {
-        assert!(ensure_version("@version(\"0.4.0\")\ncomponent A {}").is_none());
+        assert!(ensure_version("@version(\"0.5.0\")\ncomponent A {}").is_none());
         assert!(ensure_version("Sure! Here is how you do it:").is_none());
     }
 
     #[test]
     fn autofix_avoids_double_plural_names() {
         let program = concat!(
-            "#!/usr/bin/env silc\n@version(\"0.4.0\")\n",
+            "#!/usr/bin/env silc\n@version(\"0.5.0\")\n",
             "contract Guest { has Str $.name; }\n",
             "component Visitors { method render() { ui::stack() } }\n",
             "resource Visitors for Guest {\n    query list;\n}\n"
@@ -3419,7 +3419,7 @@ game Arena {
 
     #[test]
     fn autofix_declines_unrelated_errors() {
-        let program = "#!/usr/bin/env silc\n@version(\"0.4.0\")\n";
+        let program = "#!/usr/bin/env silc\n@version(\"0.5.0\")\n";
         assert!(autofix(program, "parse: unexpected token `}`").is_none());
     }
 
@@ -3515,7 +3515,7 @@ game Arena {
         let ctx = AuthorContext {
             rules: String::new(),
             examples: vec![],
-            target: Some("@version(\"0.4.0\")\n".into()),
+            target: Some("@version(\"0.5.0\")\n".into()),
             target_is_starter: false,
             game_catalog: None,
         };
@@ -3568,7 +3568,7 @@ game Arena {
         let ctx = AuthorContext {
             rules: String::new(),
             examples: vec![],
-            target: Some("@version(\"0.4.0\")\n".into()),
+            target: Some("@version(\"0.5.0\")\n".into()),
             target_is_starter: true,
             game_catalog: None,
         };
@@ -3582,7 +3582,7 @@ game Arena {
     #[test]
     fn autofix_reencloses_orphaned_game_siblings() {
         let broken = r##"#!/usr/bin/env silc
-@version("0.4.0")
+@version("0.5.0")
 game Mega {
     game::scene(
         :title("MEGA"),

@@ -1,10 +1,11 @@
-//! A Silc 0.4.0 program: contracts, modules, components, resources, and apps.
+//! A Silc 0.5.0 program: contracts, modules, components, resources, and apps.
 
 use crate::app::App;
 use crate::component::{Component, UiTemplate};
 use crate::contract::{Contract, Subset, SubsetPredicate};
 use crate::expr::Expr;
 use crate::game::{validate_game, Game};
+use crate::loops::{validate_loops, Loop};
 use crate::module::Module;
 use crate::resource::Resource;
 use crate::types::TypeExpr;
@@ -20,6 +21,7 @@ pub struct Program {
     pub resources: Vec<Resource>,
     pub apps: Vec<App>,
     pub games: Vec<Game>,
+    pub loops: Vec<Loop>,
 }
 
 impl Program {
@@ -81,6 +83,11 @@ impl Program {
         for game in &self.games {
             if !names.insert(game.name.clone()) {
                 return Err(format!("duplicate game name `{}`", game.name));
+            }
+        }
+        for lp in &self.loops {
+            if !names.insert(lp.name.clone()) {
+                return Err(format!("duplicate loop name `{}`", lp.name));
             }
         }
         if !self.games.is_empty() && !self.apps.is_empty() {
@@ -352,6 +359,8 @@ impl Program {
             }
         }
 
+        validate_loops(self)?;
+
         reject_author_runtime_mechanics(self)?;
 
         let _graph = crate::operation::infer_graph(self)?;
@@ -378,7 +387,7 @@ fn reject_author_runtime_mechanics(program: &Program) -> Result<(), String> {
         return Ok(());
     }
     Err(format!(
-        "runtime mechanics are compiler-owned in Silc 0.4.0 and must not appear in source ({}); remove `method serve()`, `sink`, `ipc::*`, `store::*`, and `resource::*` pipelines — declare `app` routes, `resource Name for Contract {{ query/mutation; }}`, and processor workflows only",
+        "runtime mechanics are compiler-owned in Silc 0.5.0 and must not appear in source ({}); remove `method serve()`, `sink`, `ipc::*`, `store::*`, and `resource::*` pipelines — declare `app` routes, `resource Name for Contract {{ query/mutation; }}`, and processor workflows only",
         forbidden.join(", ")
     ))
 }

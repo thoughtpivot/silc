@@ -1,4 +1,4 @@
-//! Executable operation registry for Silc 0.4.0 runnable programs.
+//! Executable operation registry for Silc 0.5.0 runnable programs.
 
 use crate::app::App;
 use crate::component::Component;
@@ -17,7 +17,7 @@ use crate::scrape_catalog::{
 };
 use crate::types::TypeExpr;
 
-/// Author-facing operations Silc 0.4.0 can codegen and run.
+/// Author-facing operations Silc 0.5.0 can codegen and run.
 /// Runtime-owned surfaces (`ui::web`/`ui::terminal`), IPC/store, and resource CRUD
 /// pipelines are synthesized by the compiler and must not appear in source.
 pub const EXECUTABLE_OPS: &[(&str, &str)] = &[
@@ -38,7 +38,7 @@ const SUPPORTED_OPS_HELP: &str =
     "`app` routes (dual-surface UI synthesized), `game` (WebGPU scene synthesized), `resource Name for Contract` capabilities, optional text::score or llm::complete, scrape::*, doc::extract, tensor::tokenize/infer pipeline, or service::http API-only";
 
 const TENSOR_CPU_ONLY: &str =
-    "tensor::infer is CPU-only in Silc 0.4.0; remove :prefer(CUDA) (default/CPU accepted)";
+    "tensor::infer is CPU-only in Silc 0.5.0; remove :prefer(CUDA) (default/CPU accepted)";
 
 const SCRAPE_MIGRATE_HINT: &str =
     "use scrape::page / scrape::site / scrape::select instead of http::get / html::* (see ADR-006)";
@@ -210,7 +210,7 @@ pub struct ExecutableGraph {
     pub model_ref: Option<String>,
     /// Closed embedding output dimension when `processor_op` is `TensorInfer`.
     pub embedding_dim: Option<u32>,
-    /// Tensor runtime device (`CPU` only in Silc 0.4.0).
+    /// Tensor runtime device (`CPU` only in Silc 0.5.0).
     pub tensor_device: Option<String>,
     /// Contract field read by the tensor pipeline (default `raw_content`).
     pub tensor_input_field: Option<String>,
@@ -219,6 +219,10 @@ pub struct ExecutableGraph {
     pub actions: Vec<ActionDef>,
     pub resource_tables: Vec<(String, String)>, // (resource_name, table)
     pub root_component: Option<String>,
+    /// Declared `loop` names; non-empty means the Go loop kernel runs (ADR-014).
+    pub loops: Vec<String>,
+    /// Any loop uses `loop::ask`, so the silclm worker must be provisioned.
+    pub loop_ask: bool,
 }
 
 impl ExecutableGraph {
@@ -260,7 +264,11 @@ impl ExecutableGraph {
     }
 
     pub fn needs_llm(&self) -> bool {
-        self.processor_op.needs_llm() || self.capabilities.llm
+        self.processor_op.needs_llm() || self.capabilities.llm || self.loop_ask
+    }
+
+    pub fn has_loops(&self) -> bool {
+        !self.loops.is_empty()
     }
 
     pub fn needs_tensor(&self) -> bool {
@@ -381,8 +389,10 @@ pub fn classify_program(program: &Program) -> Result<ExecutionMode, String> {
         }
     });
 
-    let declaration_runnable =
-        !program.apps.is_empty() || !program.games.is_empty() || !program.resources.is_empty();
+    let declaration_runnable = !program.apps.is_empty()
+        || !program.games.is_empty()
+        || !program.resources.is_empty()
+        || !program.loops.is_empty();
 
     if (saw_exec || declaration_runnable) && saw_unknown_ns {
         if saw_legacy_http_html {
@@ -406,7 +416,7 @@ pub fn classify_program(program: &Program) -> Result<ExecutionMode, String> {
                     {
                         if is_v1_exec_namespace(ns) && !is_executable_op(ns, name) {
                             return Err(format!(
-                                "operation `{ns}::{name}` is not executable in Silc 0.4.0"
+                                "operation `{ns}::{name}` is not executable in Silc 0.5.0"
                             ));
                         }
                     }
@@ -651,6 +661,8 @@ fn infer_game_graph(program: &Program) -> Result<Option<ExecutableGraph>, String
             ("GameTelemetry".into(), "game_telemetry".into()),
         ],
         root_component: None,
+        loops: Vec::new(),
+        loop_ask: false,
     }))
 }
 
@@ -959,9 +971,9 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
     let has_tensor = saw_tokenize || saw_infer;
     if !has_ui && !has_api && !has_scrape && !has_doc && !has_tensor {
         // Resource-only or processor pipelines without surface — still runnable if we have resources + app.
-        if program.apps.is_empty() && program.resources.is_empty() {
+        if program.apps.is_empty() && program.resources.is_empty() && program.loops.is_empty() {
             return Err(format!(
-                "runnable program must declare an `app`, scrape::*, doc::*, tensor::*, or service::http; {SUPPORTED_OPS_HELP}"
+                "runnable program must declare an `app`, `loop`, scrape::*, doc::*, tensor::*, or service::http; {SUPPORTED_OPS_HELP}"
             ));
         }
     }
@@ -1062,9 +1074,17 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
         }
         if !prefer.eq_ignore_ascii_case("CPU") {
             return Err(format!(
-                "unsupported tensor::infer :prefer({prefer}); Silc 0.4.0 accepts CPU only"
+                "unsupported tensor::infer :prefer({prefer}); Silc 0.5.0 accepts CPU only"
             ));
         }
+    }
+
+    let loop_ask = crate::loops::loops_use_ask(program);
+    if loop_ask && saw_score {
+        return Err("cannot mix text::score and loop::ask in one program".into());
+    }
+    if !program.loops.is_empty() && (saw_infer || has_scrape) {
+        return Err("loops cannot be combined with scrape::* or tensor::* pipelines in Silc 0.5.0; use loop::read for pages".into());
     }
 
     let processor_op = if saw_score && saw_llm {
@@ -1102,6 +1122,8 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
                 Some(DEFAULT_TENSOR_INPUT_FIELD.into()),
                 Some(DEFAULT_TENSOR_OUTPUT_FIELD.into()),
             )
+        } else if loop_ask {
+            (Some(crate::model_catalog::DEFAULT_MODEL_ID.to_string()), None, None, None, None)
         } else {
             (None, None, None, None, None)
         };
@@ -1117,7 +1139,7 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
         }
         if !sinks.is_empty() {
             return Err(
-                "author `sink` modules are not supported in Silc 0.4.0; remove them — the compiler synthesizes SQLite persistence"
+                "author `sink` modules are not supported in Silc 0.5.0; remove them — the compiler synthesizes SQLite persistence"
                     .into(),
             );
         }
@@ -1142,7 +1164,7 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
             })?;
         sqlite_table = sink_table_for_contract(&contract);
         synthesized_sink = format!("{}Db", contract);
-        let _ = (saw_publish, saw_sqlite, saw_commit); // legacy scan flags unused in 0.4.0
+        let _ = (saw_publish, saw_sqlite, saw_commit); // legacy scan flags unused in 0.5.0
     }
 
     if processor_op.needs_tensor() {
@@ -1253,6 +1275,8 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
         actions,
         resource_tables,
         root_component,
+        loops: program.loops.iter().map(|l| l.name.clone()).collect(),
+        loop_ask,
     }))
 }
 
@@ -1268,7 +1292,7 @@ mod tests {
 
     fn runnable_tensor_pipeline() -> Program {
         Program {
-            version: Some("0.4.0".into()),
+            version: Some("0.5.0".into()),
             subsets: vec![
                 Subset {
                     name: "Uri".into(),
@@ -1376,12 +1400,13 @@ mod tests {
             resources: vec![],
             apps: vec![],
             games: vec![],
+            loops: vec![],
         }
     }
 
     fn legacy_stub_pipeline() -> Program {
         Program {
-            version: Some("0.4.0".into()),
+            version: Some("0.5.0".into()),
             subsets: vec![],
             contracts: vec![Contract {
                 name: "ArticlePayload".into(),
@@ -1457,6 +1482,7 @@ mod tests {
             resources: vec![],
             apps: vec![],
             games: vec![],
+            loops: vec![],
         }
     }
 

@@ -1,4 +1,4 @@
-//! Semantic core of ThoughtPivot Silc 0.4.0.
+//! Semantic core of ThoughtPivot Silc 0.5.0.
 //!
 //! Author surface is intent-oriented and declaration-based (`contract`,
 //! `component`, `resource`, `app`, `service`, `processor`, `task`). Internally,
@@ -11,6 +11,7 @@ pub mod constraint;
 pub mod contract;
 pub mod expr;
 pub mod game;
+pub mod loops;
 pub mod model_catalog;
 pub mod module;
 pub mod operation;
@@ -35,6 +36,14 @@ pub use game::{
     game_closed_value_owners, game_prop_doc, lookup_game_node, validate_game, validate_game_node,
     Game, GameCapabilities, GameChildPolicy, GameNode, GameNodeSpec, GamePropKind, GamePropSpec,
     GameSurface, DEFAULT_GAME_FPS, DEFAULT_GAME_PORT, GAME_NODE_CATALOG,
+};
+pub use loops::{
+    catalog_loop_node_names, describe_loop_trigger, format_loop_catalog_line,
+    format_loop_catalog_md, format_loop_cost_report, loop_bounds,
+    loop_prop_doc, loops_use_ask, lookup_loop_node, parse_loop_duration, template_placeholders,
+    validate_cron, validate_loop, validate_loops, Loop, LoopBounds, LoopChildPolicy, LoopNode,
+    LoopNodeRole, LoopNodeSpec, LoopPropKind, LoopPropSpec, LOOP_NODE_CATALOG, LOOP_STEPS,
+    LOOP_TRIGGERS,
 };
 pub use model_catalog::{
     is_known_embedding_model_id, is_known_model_id, lookup_embedding_model, lookup_model,
@@ -98,7 +107,7 @@ mod tests {
 
     pub fn sample_article_pipeline() -> Program {
         Program {
-            version: Some("0.4.0".into()),
+            version: Some("0.5.0".into()),
             subsets: vec![
                 Subset {
                     name: "Uri".into(),
@@ -191,6 +200,7 @@ mod tests {
             resources: vec![],
             apps: vec![],
             games: vec![],
+            loops: vec![],
         }
     }
 }

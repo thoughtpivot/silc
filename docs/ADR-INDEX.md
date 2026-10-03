@@ -22,6 +22,8 @@ root [README](../README.md).
 | [010](ADR-010-tensor-minilm-pipeline.md) | Tensor / MiniLM embedding pipeline | Accepted | Closed CPU pipeline; `pipelineApp` |
 | [011](ADR-011-document-extract.md) | Document extract (`doc::*`) | Accepted | Upload + Python extract; `dataExtractorApp` |
 | [012](ADR-012-webgpu-game-subject.md) | WebGPU game subject (`game::*`) | Accepted | Web-only surface; Bun+CPython+Go spine |
+| [013](ADR-013-procedural-asset-generation.md) | Procedural asset generation | Accepted | Game asset bake step |
+| [014](ADR-014-loop-subject.md) | Loop subject (`loop::*`) | Accepted | Go kernel; receipts, replay, approvals inbox |
 
 ### Partial supersession (0.4.0)
 

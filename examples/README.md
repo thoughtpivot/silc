@@ -1,6 +1,6 @@
 # Silc example apps
 
-Each directory under `examples/` is a **standalone Silc 0.4.0 project** —
+Each directory under `examples/` is a **standalone Silc 0.5.0 project** —
 the same shape `silc init` creates for end users.
 
 ## Layout
@@ -23,7 +23,8 @@ The shared block between `<!-- BEGIN SILC_AGENTS_TEMPLATE -->` and
 byte-for-byte. App-specific notes go **after** the end marker only.
 
 Tracked examples today: `chatApp`, `inventoryApp`, `scraperApp`,
-`pipelineApp`, `blogApp`, `dataExtractorApp`, `arenaGameApp`, and `platformGameApp`.
+`pipelineApp`, `blogApp`, `dataExtractorApp`, `arenaGameApp`, `platformGameApp`,
+`rfiChaseApp`, and `oneThingApp`.
 
 ## Current apps
 
@@ -37,6 +38,8 @@ Tracked examples today: `chatApp`, `inventoryApp`, `scraperApp`,
 | [`dataExtractorApp/`](dataExtractorApp/) | File upload + `doc::extract` → documents ledger | 18130 | 18131 |
 | [`arenaGameApp/`](arenaGameApp/) | WebGPU game kernel (Godot/Unity/Unreal synthesis on Babylon) | 18140 | — |
 | [`platformGameApp/`](platformGameApp/) | WebGPU platformer (side-scroll camera, arrows+jump controls) | 18140 | — |
+| [`rfiChaseApp/`](rfiChaseApp/) | Weekday `loop`: overdue RFIs → silclm draft → PM approval in `/loops` → keyed reminder | 18088 | — |
+| [`oneThingApp/`](oneThingApp/) | Daily `loop`: four Moz MCP reads → silclm brief → Dan's one sentence (needs `MOZ_MCP_TOKEN`) | 18088 | — |
 
 ## Conventions
 

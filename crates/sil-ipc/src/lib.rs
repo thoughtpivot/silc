@@ -151,6 +151,20 @@ pub enum ControlFrame {
         #[serde(default)]
         persona: String,
     },
+    /// `loop::ask` from the Go loop kernel: one typed contract answer from silclm.
+    Ask {
+        request_id: String,
+        /// Loop name, for prompts and logs.
+        #[serde(default)]
+        name: String,
+        prompt: String,
+        /// JSON of the `:from` value (untrusted reference data).
+        #[serde(default)]
+        context: String,
+        /// Human-readable field list the answer must match.
+        #[serde(default)]
+        schema: String,
+    },
     Response {
         request_id: String,
         ok: bool,
@@ -533,6 +547,20 @@ mod tests {
                 assert_eq!(persona, "");
             }
             other => panic!("expected Ingest, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ask_decodes_kernel_frame() {
+        let json = br#"{"type":"ASK","request_id":"ask-1","name":"RfiChase","prompt":"Draft","context":"{}","schema":"\"body\" (Str)"}"#;
+        let frame: ControlFrame = serde_json::from_slice(json).expect("deserialize ASK");
+        match frame {
+            ControlFrame::Ask { request_id, name, prompt, .. } => {
+                assert_eq!(request_id, "ask-1");
+                assert_eq!(name, "RfiChase");
+                assert_eq!(prompt, "Draft");
+            }
+            other => panic!("expected Ask, got {other:?}"),
         }
     }
 

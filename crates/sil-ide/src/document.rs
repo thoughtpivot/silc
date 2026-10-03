@@ -79,6 +79,7 @@ impl Document {
                         resources: vec![],
                         apps: vec![],
                         games: vec![],
+                        loops: vec![],
                     },
                     tokens,
                     parse_error: Some(format_parse_error(&err)),

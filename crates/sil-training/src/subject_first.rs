@@ -1,7 +1,7 @@
 //! Historical subject-first declarator benchmark harness.
 //!
 //! The report schema and paired variants remain available for reproducing the
-//! migration evidence. Product validation uses the Silc 0.4.0 parser directly.
+//! migration evidence. Product validation uses the Silc 0.5.0 parser directly.
 
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
@@ -18,7 +18,7 @@ use crate::schema::TaskSeed;
 pub enum SyntaxVariant {
     /// Historical pre-0.3.0 `class X is resource|component|app|…` surface.
     ClassIs,
-    /// Current Silc 0.4.0 direct-declaration / intent surface
+    /// Current Silc 0.5.0 direct-declaration / intent surface
     /// (historical harness label: “subject-first”).
     SubjectFirst,
 }
@@ -43,7 +43,7 @@ impl SyntaxVariant {
 This syntax is intentionally rejected by the current compiler."#
             }
             Self::SubjectFirst => {
-                r#"Use current Silc 0.4.0 direct declarations (intent surface):
+                r#"Use current Silc 0.5.0 direct declarations (intent surface):
 - `contract Name { … }` instead of bare `class Name`
 - `component Name { … }` instead of `class Name is component`
 - `resource Name for Contract { query list; mutation create; … }` (capability-only)
@@ -427,7 +427,7 @@ pub fn run_benchmark(
         notes: vec![
             "Baseline records current fixtures under both historical report labels and is excluded from decision metrics.".into(),
             "Agent TrialInput rows determine go/no-go metrics.".into(),
-            "Silc 0.4.0 validates both variants directly; legacy class-is inputs receive migration diagnostics.".into(),
+            "Silc 0.5.0 validates both variants directly; legacy class-is inputs receive migration diagnostics.".into(),
         ],
         prompts,
         trials,
@@ -474,7 +474,7 @@ mod tests {
 
     #[test]
     fn current_subject_first_source_checks_directly() {
-        let source = r#"@version("0.4.0")
+        let source = r#"@version("0.5.0")
 contract Note { has Str $.text; }
 component Page {
     method render() { ui::page(ui::heading(:text("Hi"))) }

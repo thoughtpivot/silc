@@ -41,7 +41,7 @@ fn game_catalog_lines_present_in_agents_template() {
     let template = read_workspace("crates/silc/templates/AGENTS.md");
     assert_eq!(
         sil_core::GAME_NODE_CATALOG.len(),
-        44,
+        58,
         "game catalog size changed; update docs and this assertion"
     );
     for spec in sil_core::GAME_NODE_CATALOG {
@@ -55,6 +55,23 @@ fn game_catalog_lines_present_in_agents_template() {
     assert!(
         template.contains("### Complete game::* catalog (ADR-012)"),
         "AGENTS must include the game catalog section"
+    );
+}
+
+#[test]
+fn loop_catalog_lines_present_in_agents_template() {
+    let template = read_workspace("crates/silc/templates/AGENTS.md");
+    for spec in sil_core::LOOP_NODE_CATALOG {
+        let line = sil_core::format_loop_catalog_line(spec);
+        assert!(
+            template.contains(&line),
+            "AGENTS template missing catalog line for loop::{}:\n{line}",
+            spec.name
+        );
+    }
+    assert!(
+        template.contains("### Complete loop::* catalog (ADR-014)"),
+        "AGENTS must include the loop catalog section"
     );
 }
 
@@ -160,7 +177,7 @@ fn removed_author_ops_not_listed_as_runnable() {
 
     for (label, doc) in [("AGENTS", &template), ("README", &readme)] {
         let start = doc
-            .find("Runnable operations (0.4.0)")
+            .find("Runnable operations (0.5.0)")
             .or_else(|| doc.find("### Executable operations"))
             .unwrap_or_else(|| panic!("{label}: missing runnable ops section"));
         let section = &doc[start..];
@@ -212,6 +229,8 @@ fn tracked_example_agents_embed_template_common_block() {
         "blogApp",
         "dataExtractorApp",
         "arenaGameApp",
+        "rfiChaseApp",
+        "oneThingApp",
     ] {
         let agents = read_workspace(&format!("examples/{app}/AGENTS.md"));
         let actual = template_common_block(&agents);
@@ -236,6 +255,8 @@ fn canonical_silc_sources_omit_runtime_plumbing() {
         "examples/blogApp/main.silc",
         "examples/dataExtractorApp/main.silc",
         "examples/arenaGameApp/main.silc",
+        "examples/rfiChaseApp/main.silc",
+        "examples/oneThingApp/main.silc",
         "crates/silc/templates/main.silc",
         "crates/silc/tests/fixtures/scored_form.silc",
         "crates/silc/tests/fixtures/shopping_app.silc",
@@ -261,6 +282,7 @@ fn canonical_silc_sources_omit_runtime_plumbing() {
         "resource::delete",
         "is storage",
         "has $.table",
+        "@version(\"0.4.0\")",
         "@version(\"0.3.0\")",
         "@version(\"0.2.0\")",
     ];
@@ -268,8 +290,8 @@ fn canonical_silc_sources_omit_runtime_plumbing() {
     for rel in roots {
         let src = read_workspace(rel);
         assert!(
-            src.contains("@version(\"0.4.0\")"),
-            "{rel} must declare @version(\"0.4.0\")"
+            src.contains("@version(\"0.5.0\")"),
+            "{rel} must declare @version(\"0.5.0\")"
         );
         for needle in forbidden {
             assert!(

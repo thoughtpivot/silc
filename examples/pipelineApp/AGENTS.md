@@ -1,7 +1,7 @@
 <!-- BEGIN SILC_AGENTS_TEMPLATE -->
 # Silc project guidance for AI tools
 
-This directory is a **Silc 0.4.0** project. Silc (said like “silk”) is an
+This directory is a **Silc 0.5.0** project. Silc (said like “silk”) is an
 independent intent language with a Raku-inspired surface and a local Rust
 compiler. Edit `.silc` source only (not `.raku` / `.sil`).
 
@@ -23,7 +23,7 @@ application code.
 - Surface syntax: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-002-silc-surface-syntax.md
 - Pipeline feeds (`==>`): https://github.com/thoughtpivot/silc/blob/main/docs/ADR-007-pipeline-feeds.md
 - Declarative UI: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-003-declarative-ui.md
-- Synthesized runtime (0.4.0): https://github.com/thoughtpivot/silc/blob/main/docs/ADR-009-compiler-synthesized-runtime.md
+- Synthesized runtime (0.5.0): https://github.com/thoughtpivot/silc/blob/main/docs/ADR-009-compiler-synthesized-runtime.md
 - Local LLM: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-005-local-llm-complete.md
 - Scrape: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-006-scrape-namespace.md
 - Document extract: https://github.com/thoughtpivot/silc/blob/main/docs/ADR-011-document-extract.md
@@ -44,17 +44,18 @@ silc main.silc --terminal     # also attach OpenTUI (+ telnet fallback)
 Treat compiler diagnostics as authoritative. Prefer `silc build` after each
 meaningful edit. Stop and report limits instead of inventing substrates.
 
-## Silc 0.4.0 authoring model
+## Silc 0.5.0 authoring model
 
 | Construct | Role |
 | --- | --- |
-| `@version("0.4.0")` | Required exact source-version annotation |
+| `@version("0.5.0")` | Required exact source-version annotation |
 | `subset Name of Base where { … }` | Semantic type alias; v1 `where` predicates (Str): `.contains` / `.starts-with` / `.ends-with` (ADR-002) |
 | `contract X { has T $.f; }` | **Contract** — typed data schema |
 | `component X` | **Component** — props, `has state`, slots, `emit`, handlers, `render()` |
 | `resource X for Contract` | **Resource** — capability CRUD (`query list;`, `mutation create;`, …) |
 | `app X` | **App** — `route` table (dual-surface serving is synthesized) |
 | `game X` | **Game** — web-only WebGPU scene tree (`game::scene(...)`; ADR-012). Do not mix with `app` / UI routes |
+| `loop X` | **Loop** — scheduled, approval-gated, model-assisted work (`loop::flow(...)`; ADR-014). Runs beside an `app`; the compiler adds the `/loops` inbox |
 | `service X` / `processor X` / `task X` | Optional workflow modules |
 | `==>` | Pipeline feed between values and `ns::op(...)` calls |
 
@@ -182,11 +183,11 @@ API contract (props / events / slots / children).
 
 WebGPU-only. One `game Name { game::scene(...) }` root. Godot tree+signals, Unity prefabs/data/components, Unreal mode/pawn/controller. Do not mix with `app` / `component` / `resource`.
 
-- `game::scene` — props: `title`, `renderer?`, `target_fps?`; children: `entity`, `prefab`, `spawn`, `data`, `asset`, `material`, `mode`, `controller`, `camera`, `post_process`, `overlay`, `hud`, `environment`, `shadow`, `zone`, `weapon`, `encounter`, `objective`, `signal`, `group`
-- `game::entity` — props: `name`, `x?`, `y?`, `z?`, `yaw?`, `pitch?`, `roll?`, `sx?`, `sy?`, `sz?`; children: `entity`, `mesh`, `light`, `collider`, `movement`, `attribute`, `pawn`, `ability`, `weapon`, `ammo`, `damage`, `pickup`, `npc`, `perception`, `behavior`, `mind`, `nav_agent`, `door`, `trigger`, `cover`, `audio`, `signal`, `group`, `spawn`
-- `game::prefab` — props: `name`, `x?`, `y?`, `z?`, `yaw?`, `pitch?`, `roll?`, `sx?`, `sy?`, `sz?`; children: `entity`, `mesh`, `light`, `collider`, `movement`, `attribute`, `pawn`, `ability`, `weapon`, `ammo`, `damage`, `pickup`, `npc`, `perception`, `behavior`, `mind`, `nav_agent`, `door`, `trigger`, `cover`, `audio`, `signal`, `group`, `spawn`
+- `game::scene` — props: `title`, `renderer?`, `target_fps?`; children: `entity`, `prefab`, `spawn`, `data`, `asset`, `generate`, `material`, `mode`, `controller`, `camera`, `post_process`, `overlay`, `hud`, `environment`, `shadow`, `zone`, `weapon`, `encounter`, `objective`, `signal`, `group`, `tilemap`, `parallax`, `particle_effect`, `floating_text`
+- `game::entity` — props: `name`, `x?`, `y?`, `z?`, `yaw?`, `pitch?`, `roll?`, `sx?`, `sy?`, `sz?`; children: `entity`, `mesh`, `light`, `collider`, `movement`, `attribute`, `pawn`, `ability`, `weapon`, `ammo`, `damage`, `pickup`, `npc`, `perception`, `behavior`, `mind`, `nav_agent`, `door`, `trigger`, `cover`, `audio`, `signal`, `group`, `spawn`, `sprite`, `collectible`, `interactable`, `patrol`, `warp`, `level_end`, `state_machine`, `particle_effect`
+- `game::prefab` — props: `name`, `x?`, `y?`, `z?`, `yaw?`, `pitch?`, `roll?`, `sx?`, `sy?`, `sz?`; children: `entity`, `mesh`, `light`, `collider`, `movement`, `attribute`, `pawn`, `ability`, `weapon`, `ammo`, `damage`, `pickup`, `npc`, `perception`, `behavior`, `mind`, `nav_agent`, `door`, `trigger`, `cover`, `audio`, `signal`, `group`, `spawn`, `sprite`, `collectible`, `interactable`, `patrol`, `warp`, `level_end`, `state_machine`, `particle_effect`
 - `game::spawn` — props: `prefab`, `x?`, `y?`, `z?`, `as_pawn?` (flag); children: none
-- `game::data` — props: `name`, `speed?`, `cooldown?`, `cost?`, `damage?`, `range?`, `fire_rate?`, `magazine?`, `reload?`, `spread?`, `pellet_count?`, `charge_time?`, `splash_radius?`, `cadence_s?`, `persona?`, `aggression?`, `morale?`, `health?`, `armor?`; children: none
+- `game::data` — props: `name`, `speed?`, `jump_height?`, `gravity?`, `cooldown?`, `cost?`, `damage?`, `range?`, `fire_rate?`, `magazine?`, `reload?`, `spread?`, `pellet_count?`, `charge_time?`, `splash_radius?`, `cadence_s?`, `persona?`, `aggression?`, `morale?`, `health?`, `armor?`; children: none
 - `game::signal` — props: `name`, `on?`; children: none
 - `game::group` — props: `name`; children: none
 - `game::mesh` — props: `shape?`, `asset?`, `material?`, `size?`, `color?`; children: none
@@ -212,7 +213,7 @@ WebGPU-only. One `game Name { game::scene(...) }` root. Godot tree+signals, Unit
 - `game::ammo` — props: `name`, `amount?`, `max?`; children: none
 - `game::damage` — props: `amount`, `type_ident`; children: none
 - `game::pickup` — props: `kind`, `ref`, `amount?`; children: none
-- `game::hud` — props: `show_crosshair?`, `show_ammo?`, `show_health?`; children: none
+- `game::hud` — props: `show_crosshair?`, `show_ammo?`, `show_health?`, `score_label?`; children: none
 - `game::npc` — props: `archetype`, `faction`; children: none
 - `game::perception` — props: `sight_m?`, `hear_m?`, `fov_deg?`; children: none
 - `game::behavior` — props: `tree`, `default_tactic?`; children: none
@@ -221,13 +222,68 @@ WebGPU-only. One `game Name { game::scene(...) }` root. Godot tree+signals, Unit
 - `game::encounter` — props: `id`, `wave?`; children: `spawn`
 - `game::objective` — props: `id`, `kind`, `target?`; children: none
 - `game::audio` — props: `kind`, `path?`, `ref?`, `volume?`; children: none
-- `game::environment` — props: `fog_density?`, `fog_color?`, `sky_color?`, `exposure?`; children: none
+- `game::environment` — props: `fog_density?`, `fog_color?`, `sky_color?`, `exposure?`; children: `clouds`, `stars`
 - `game::shadow` — props: `enabled?`, `cascade_count?`; children: none
+- `game::clouds` — props: `count?`, `altitude?`, `spread?`, `speed?`, `scale?`, `color?`, `opacity?`; children: none
+- `game::stars` — props: `count?`, `altitude?`, `size?`, `color?`, `opacity?`, `twinkle?`; children: none
 - `game::door` — props: `state?`, `auto?`; children: none
 - `game::trigger` — props: `kind`, `on`; children: none
 - `game::cover` — props: `quality`; children: none
+- `game::sprite` — props: `atlas`, `frame?`, `width?`, `height?`, `animation?`, `flip_x?`, `billboard?`; children: none
+- `game::tilemap` — props: `asset`, `tileset`, `tile_size?`, `collision_layer?`; children: none
+- `game::collectible` — props: `kind`, `value?`, `on_collect?`, `respawn?`; children: none
+- `game::interactable` — props: `kind`, `contents?`, `health?`, `on_interact?`; children: none
+- `game::patrol` — props: `behavior`, `speed?`, `bounds?`, `on_stomp?`, `on_touch?`; children: none
+- `game::warp` — props: `target`, `direction?`, `on_warp?`; children: none
+- `game::level_end` — props: `on_complete?`, `next_level?`; children: none
+- `game::state_machine` — props: `initial`, `on_stomp_state?`, `on_hit_state?`, `on_touch_state?`, `death_delay?`, `on_state_change?`; children: none
+- `game::parallax` — props: `texture`, `depth`, `y?`, `scale?`, `repeat_x?`, `tint?`; children: none
+- `game::particle_effect` — props: `id`, `preset?`, `count?`, `speed?`, `spread?`, `lifetime?`, `gravity?`, `color?`, `on_trigger?`; children: none
+- `game::floating_text` — props: `on_trigger`, `prefix?`, `color?`, `duration?`, `rise_speed?`; children: none
+- `game::generate` — props: `type`, `name`, `preset?`, `style?`, `frame_size?`, `palette?`, `animations?`, `export?`; children: none
 
 Closed enums: `:renderer(webgpu)`; mesh/collider `:shape(plane|box|capsule|sphere)`; mesh `:asset` XOR `:shape`; light `:kind(directional|point|spot)`; movement `:style(walk|first_person|sprint|jump)`; controller `:scheme(wasd_mouse)`; camera `:mode(third_person|first_person)`; asset `:kind(gltf|texture|audio|navmesh)`; zone `:kind(room|walkway|outdoor)`; weapon `:fire_mode(hitscan|pellet|projectile|beam)`; projectile `:kind(tracer|shell|plasma|rail)`; damage `:type_ident(bullet|pellet|plasma|rail|melee)`; pickup `:kind(weapon|ammo|health)`; npc `:archetype(suppressor|flanker|breacher)` `:faction(hostile|neutral)`; behavior `:tree(patrol_combat|guard)` `:default_tactic(suppress|flank|push|retreat)`; objective `:kind(clear_hostiles|reach)`; audio `:kind(oneshot|loop)`; door `:state(open|closed)`; trigger `:kind(enter|exit)`; cover `:quality(low|med|high)`; particle `:kind(burst|spark|smoke)`; post `:stage(taa|ssao|ssr|dof|bloom|tonemap|grain|sharpen)`.
+
+### Complete loop::* catalog (ADR-014)
+
+Declare `loop Name { loop::flow(trigger, steps...) }`. Exactly one trigger
+(`schedule`, `manual`, or `on_mutation`) comes first; steps run in order. The
+compiler adds a `/loops` inbox (approvals, Run now, runs, notices) on both
+surfaces and a Go loop kernel that records every outside input and model answer
+so a resumed run replays instead of redoing work.
+
+- `loop::flow` — props: none; children: one trigger, then steps
+- `loop::schedule` — props: `cron`, `tz`, `catch_up?`; children: none
+- `loop::manual` — props: none; children: none
+- `loop::on_mutation` — props: `resource`, `mutation`; children: none
+- `loop::let` — props: `as`, `value`; children: none
+- `loop::find` — props: `as`, `from`, `where?`, `order?`, `desc?` (flag), `max?`, `one?` (flag); children: none
+- `loop::read` — props: `as`, `op`, `url?`, `server?`, `tool?`, `args?`, `auth_env?`, `select?`, `retry?`; children: none
+- `loop::ask` — props: `as`, `into`, `prompt`, `from?`, `retry?`; children: `otherwise`
+- `loop::gate` — props: `that`, `reason`; children: `otherwise`
+- `loop::branch` — props: none; children: `when`, `otherwise`
+- `loop::when` — props: `that`; children: steps
+- `loop::otherwise` — props: none; children: steps
+- `loop::each` — props: `in`, `as`, `max`; children: steps
+- `loop::write` — props: `to`, `value`, `key`, `unchecked?`; children: none
+- `loop::notify` — props: `to`, `text`, `key`, `unchecked?`; children: none
+- `loop::approve` — props: `by`, `message`, `show?`, `within`, `as?`; children: `declined`, `timed_out`
+- `loop::declined` — props: none; children: steps
+- `loop::timed_out` — props: none; children: steps
+- `loop::stop` — props: `reason?`; children: none
+- `loop::fail` — props: `reason`; children: none
+- `loop::skip` — props: `reason`; children: none
+
+Rules the compiler enforces:
+
+- Every `find` and `each` has `:max`; every `write` and `notify` has a `:key` with at least one placeholder; every `approve` has `:within` (max `30d`).
+- `loop::ask` output (and anything built from it) must be referenced by a `gate`, shown by an `approve`, or the effect must say `:unchecked("why")`.
+- Gates fail closed: a missing field makes a condition unknown, and unknown never passes.
+- The `otherwise` of `gate`/`ask` and the `declined`/`timed_out` blocks end in `stop`, `fail`, or `skip`; `skip` only inside `each`.
+- Reserved bindings: `$today` and `$now` (loop time zone), `$event` (trigger data), `$calendar` (`today`, `weekday`, `last7_start`, `last7_end`, `next7_end`).
+- `loop::read(:op("mcp::call"), :server("https://…/mcp"), :tool("name"), :args(Contract.new(...)), :auth_env("TOKEN_VAR"), :select("records.parsed"))` calls one MCP tool; the result is `$x.text` and `$x.data`. Tokens come from the environment, never from source.
+- Run now in `/loops` starts `manual` and `schedule` loops. A loop never overlaps itself.
+- `silc build` prints worst-case model calls, effects, approvals, and reads per run.
 
 ## Valid patterns
 
@@ -418,7 +474,7 @@ Wire handlers with `:on(click(handler))`, `:on(submit(handler))`, navigation
 with `ui::nav_item(:to("/path"))`, collections with `for $.items -> $item { … }`,
 and conditionals with `when expr { … }`.
 
-## Runnable operations (0.4.0)
+## Runnable operations (0.5.0)
 
 Author-facing executable ops today (registry in `sil-core`):
 
@@ -452,7 +508,7 @@ Pipeline-only programs use `scrape::page ==> scrape::extract`, then
 Persistence is synthesized. Their contract must carry `raw_content` and
 `vector_embedding: Emb384`, where `subset Emb384 of Vec[num32; 384]`. Run them
 with `silc run main.silc --input-json '{"url":"https://…"}'`. CUDA and
-arbitrary tensor models/shapes are not executable in 0.4.0.
+arbitrary tensor models/shapes are not executable in 0.5.0.
 
 Stub-only namespaces (parse/route/emit, do not run): `http`, `html`,
 `numpy`, `pandas`, `ws`, `sys`, `schema`, `payload`, `json`, plus non-registry

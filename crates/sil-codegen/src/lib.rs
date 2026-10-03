@@ -1,4 +1,4 @@
-//! Silc 0.4.0 code generation: inspectable stubs and runnable dual-surface apps.
+//! Silc 0.5.0 code generation: inspectable stubs and runnable dual-surface apps.
 //!
 //! Pipeline vocabulary: **codegen** renders target source from the validated
 //! semantic model; **emit** writes those artifacts into `.runtime/`. Dual-surface
@@ -8,6 +8,7 @@
 //! + emit, not lowering.
 
 mod game_lower;
+pub mod loop_lower;
 mod ui_lower;
 
 use sil_core::{
@@ -106,6 +107,8 @@ pub struct EmitResult {
     pub execution_mode: ExecutionMode,
     pub graph: Option<ExecutableGraph>,
     pub schema_id: u32,
+    /// Worst-case loop costs per run (`silc build` prints this).
+    pub loop_report: Option<String>,
 }
 
 pub fn emit(
@@ -115,6 +118,14 @@ pub fn emit(
     runtime_root: &Path,
     compiler_version: &str,
 ) -> Result<EmitResult, String> {
+    let loop_report = sil_core::format_loop_cost_report(program);
+    let with_inbox;
+    let program = if program.loops.is_empty() {
+        program
+    } else {
+        with_inbox = loop_lower::synthesize_loop_surface(program)?;
+        &with_inbox
+    };
     fs::create_dir_all(runtime_root)
         .map_err(|error| format!("create {}: {error}", runtime_root.display()))?;
     for target in ["go", "python", "typescript", "ipc"] {
@@ -470,6 +481,27 @@ pub fn emit(
                 "slot_capacity": 65_536,
             });
         }
+        if g.has_loops() {
+            let plan = loop_lower::lower_loop_plan(program, compiler_version);
+            entrypoints.insert("loop_kernel_source".into(), serde_json::json!("go/loop/kernel.go"));
+            entrypoints.insert("loop_kernel_binary".into(), serde_json::json!("go/loop/kernel"));
+            entrypoints.insert("loop_plan".into(), serde_json::json!("loop/plan.json"));
+            manifest["loop"] = serde_json::json!({
+                "plan": "loop/plan.json",
+                "plan_hash": plan["hash"],
+                "pinned_plans": "loop/plans",
+                "kernel": "go/loop/kernel",
+                "inbox_route": loop_lower::LOOP_INBOX_ROUTE,
+                "ask": g.loop_ask,
+                "loops": program.loops.iter().map(|l| serde_json::json!({
+                    "name": l.name,
+                    "trigger": sil_core::describe_loop_trigger(l),
+                })).collect::<Vec<_>>(),
+                "tables": plan["tables"],
+                "provenance": "compiler-owned loop::flow → Go kernel + CPython silclm ask + Bun inbox (ADR-014)",
+                "catalog": sil_core::catalog_loop_node_names(),
+            });
+        }
         manifest["entrypoints"] = serde_json::Value::Object(entrypoints);
         if g.has_scrape() {
             manifest["scrape"] = scrape_manifest(g);
@@ -512,6 +544,7 @@ pub fn emit(
         execution_mode: mode,
         graph,
         schema_id,
+        loop_report,
     })
 }
 
@@ -530,6 +563,9 @@ fn emit_runnable(
     }
     if graph.has_ui() {
         emit_ui_app(root, program, graph, schema_id, compiler_version, generated)?;
+    }
+    if graph.has_loops() {
+        loop_lower::emit_loop_kernel(root, program, compiler_version, generated)?;
     }
     if graph.has_api() {
         emit_service_http(root, program, graph, schema_id, generated)?;
@@ -1596,7 +1632,7 @@ fn render_stub(module: &Module, decision: &RouteDecision) -> String {
                 .iter()
                 .map(|name| {
                     format!(
-                        "  async {name}(): Promise<void> {{\n    // TODO: operation is not executable in Silc 0.4.0\n  }}"
+                        "  async {name}(): Promise<void> {{\n    // TODO: operation is not executable in Silc 0.5.0\n  }}"
                     )
                 })
                 .collect::<Vec<_>>()
@@ -1611,7 +1647,7 @@ fn render_stub(module: &Module, decision: &RouteDecision) -> String {
                 .iter()
                 .map(|name| {
                     format!(
-                        "    def {name}(self):\n        # TODO: operation is not executable in Silc 0.4.0\n        pass"
+                        "    def {name}(self):\n        # TODO: operation is not executable in Silc 0.5.0\n        pass"
                     )
                 })
                 .collect::<Vec<_>>()
@@ -1626,7 +1662,7 @@ fn render_stub(module: &Module, decision: &RouteDecision) -> String {
                 .iter()
                 .map(|name| {
                     format!(
-                        "func (m *{}) {}() {{\n\t// TODO: operation is not executable in Silc 0.4.0\n}}",
+                        "func (m *{}) {}() {{\n\t// TODO: operation is not executable in Silc 0.5.0\n}}",
                         module.name,
                         pascal_case(name)
                     )
@@ -1745,7 +1781,7 @@ mod tests {
     }
 
     const STUB_SOURCE: &str = r#"
-@version("0.4.0")
+@version("0.5.0")
 contract Payload { has Str $.text; }
 service Ingress {
     method fetch() { $url ==> http::get() ==> html::extract_body() }
@@ -1756,7 +1792,7 @@ processor Engine {
 "#;
 
     const PIPELINE_SOURCE: &str = r#"
-@version("0.4.0")
+@version("0.5.0")
 subset Uri of Str where { .contains("://") }
 subset Emb384 of Vec[num32; 384];
 contract ArticlePayload {
@@ -1808,7 +1844,7 @@ processor EmbeddingEngine {
     }
 
     const FEEDBACK_SOURCE: &str = r#"
-@version("0.4.0")
+@version("0.5.0")
 contract FeedbackRecord {
     has Str $.author;
     has Str $.text;
@@ -1842,7 +1878,7 @@ processor TextAnalyzer {
 "#;
 
     const CHAT_SOURCE: &str = r#"
-@version("0.4.0")
+@version("0.5.0")
 contract ChatRecord {
     has Str $.prompt;
     has Str $.reply;
@@ -1884,7 +1920,7 @@ processor Assistant {
 "#;
 
     const RESOURCE_SOURCE: &str = r#"
-@version("0.4.0")
+@version("0.5.0")
 contract Product {
     has Str $.name;
     has num64 $.price;
@@ -1913,7 +1949,7 @@ app ShopApp {
 "#;
 
     const API_SOURCE: &str = r#"
-@version("0.4.0")
+@version("0.5.0")
 contract FeedbackRecord {
     has UUID $.id;
     has Str $.author;
@@ -2352,7 +2388,7 @@ service FeedbackApi {
     }
 
     const SCRAPE_SOURCE: &str = r#"
-@version("0.4.0")
+@version("0.5.0")
 contract ScrapedPage {
     has Str $.id;
     has Str $.scrape_id;
@@ -2453,7 +2489,7 @@ processor Summarizer {
     }
 
     const DOC_SOURCE: &str = r#"
-@version("0.4.0")
+@version("0.5.0")
 
 contract Document {
     has Str $.title;
@@ -2545,7 +2581,7 @@ service Extractor {
     #[test]
     fn rejects_legacy_class_declarators() {
         let source = r#"
-@version("0.4.0")
+@version("0.5.0")
 class BadView is view {
     method render() { ui::page() }
 }

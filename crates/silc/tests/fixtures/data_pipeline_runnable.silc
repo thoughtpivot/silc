@@ -1,4 +1,4 @@
-@version("0.4.0")
+@version("0.5.0")
 
 # Runnable closed tensor pipeline (scrape → embed → SQLite).
 

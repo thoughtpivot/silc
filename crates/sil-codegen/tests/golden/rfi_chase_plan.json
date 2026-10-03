@@ -1,0 +1,577 @@
+{
+  "compiler_version": "test",
+  "contracts": {
+    "LoopApproval": [
+      {
+        "name": "id",
+        "type": "Str"
+      },
+      {
+        "name": "loop",
+        "type": "Str"
+      },
+      {
+        "name": "run_id",
+        "type": "Str"
+      },
+      {
+        "name": "step",
+        "type": "Str"
+      },
+      {
+        "name": "by",
+        "type": "Str"
+      },
+      {
+        "name": "message",
+        "type": "Str"
+      },
+      {
+        "name": "show",
+        "type": "Str"
+      },
+      {
+        "name": "summary",
+        "type": "Str"
+      },
+      {
+        "name": "status",
+        "type": "Str"
+      },
+      {
+        "name": "deadline",
+        "type": "Str"
+      },
+      {
+        "name": "decided_by",
+        "type": "Str"
+      },
+      {
+        "name": "decided_at",
+        "type": "Str"
+      },
+      {
+        "name": "note",
+        "type": "Str"
+      }
+    ],
+    "LoopNotice": [
+      {
+        "name": "id",
+        "type": "Str"
+      },
+      {
+        "name": "loop",
+        "type": "Str"
+      },
+      {
+        "name": "run_id",
+        "type": "Str"
+      },
+      {
+        "name": "to",
+        "type": "Str"
+      },
+      {
+        "name": "text",
+        "type": "Str"
+      },
+      {
+        "name": "key",
+        "type": "Str"
+      }
+    ],
+    "LoopRequest": [
+      {
+        "name": "id",
+        "type": "Str"
+      },
+      {
+        "name": "loop",
+        "type": "Str"
+      },
+      {
+        "name": "requested_by",
+        "type": "Str"
+      },
+      {
+        "name": "status",
+        "type": "Str"
+      },
+      {
+        "name": "run_id",
+        "type": "Str"
+      }
+    ],
+    "LoopRun": [
+      {
+        "name": "id",
+        "type": "Str"
+      },
+      {
+        "name": "loop",
+        "type": "Str"
+      },
+      {
+        "name": "plan",
+        "type": "Str"
+      },
+      {
+        "name": "trigger",
+        "type": "Str"
+      },
+      {
+        "name": "identity",
+        "type": "Str"
+      },
+      {
+        "name": "status",
+        "type": "Str"
+      },
+      {
+        "name": "outcome",
+        "type": "Str"
+      },
+      {
+        "name": "detail",
+        "type": "Str"
+      },
+      {
+        "name": "started_at",
+        "type": "Str"
+      },
+      {
+        "name": "finished_at",
+        "type": "Str"
+      }
+    ],
+    "Reminder": [
+      {
+        "name": "id",
+        "type": "Str"
+      },
+      {
+        "name": "rfi",
+        "type": "Str"
+      },
+      {
+        "name": "to",
+        "type": "Str"
+      },
+      {
+        "name": "subject",
+        "type": "Str"
+      },
+      {
+        "name": "body",
+        "type": "Str"
+      }
+    ],
+    "ReminderDraft": [
+      {
+        "name": "subject",
+        "type": "Str"
+      },
+      {
+        "name": "body",
+        "type": "Str"
+      }
+    ],
+    "Rfi": [
+      {
+        "name": "id",
+        "type": "Str"
+      },
+      {
+        "name": "number",
+        "type": "Str"
+      },
+      {
+        "name": "title",
+        "type": "Str"
+      },
+      {
+        "name": "status",
+        "type": "Str"
+      },
+      {
+        "name": "due",
+        "type": "Str"
+      },
+      {
+        "name": "assignee",
+        "type": "Str"
+      },
+      {
+        "name": "pm",
+        "type": "Str"
+      },
+      {
+        "name": "last_reminded",
+        "type": "Str"
+      }
+    ]
+  },
+  "hash": "9c6486707c568c15600a8acb5a533a2775557ca5744428db1b81f9328ec0bc34",
+  "loops": [
+    {
+      "bounds": {
+        "approvals": 200,
+        "model_calls": 600,
+        "notices": 200,
+        "reads": 0,
+        "rows_scanned": 200,
+        "writes": 400
+      },
+      "name": "RfiChase",
+      "steps": [
+        {
+          "as": "overdue",
+          "contract": "Rfi",
+          "desc": false,
+          "max": 200,
+          "one": false,
+          "op": "find",
+          "order": "due",
+          "path": "0",
+          "resource": "Rfis",
+          "row_fields": [
+            "id",
+            "number",
+            "title",
+            "status",
+            "due",
+            "assignee",
+            "pm",
+            "last_reminded"
+          ],
+          "table": "rfis",
+          "where": {
+            "k": "bin",
+            "l": {
+              "k": "bin",
+              "l": {
+                "k": "var",
+                "name": "status"
+              },
+              "op": "==",
+              "r": {
+                "k": "str",
+                "s": "open"
+              }
+            },
+            "op": "&&",
+            "r": {
+              "k": "bin",
+              "l": {
+                "k": "var",
+                "name": "due"
+              },
+              "op": "<",
+              "r": {
+                "k": "var",
+                "name": "today"
+              }
+            }
+          }
+        },
+        {
+          "as": "rfi",
+          "in": {
+            "k": "var",
+            "name": "overdue"
+          },
+          "max": 200,
+          "op": "each",
+          "path": "1",
+          "steps": [
+            {
+              "op": "gate",
+              "otherwise": [
+                {
+                  "op": "skip",
+                  "path": "1.each.0.otherwise.0",
+                  "reason": "{$rfi.number} has no assignee"
+                }
+              ],
+              "path": "1.each.0",
+              "reason": "an RFI needs an assignee before anyone is chased",
+              "that": {
+                "k": "bin",
+                "l": {
+                  "base": {
+                    "k": "var",
+                    "name": "rfi"
+                  },
+                  "field": "assignee",
+                  "k": "member"
+                },
+                "op": "!=",
+                "r": {
+                  "k": "str",
+                  "s": ""
+                }
+              }
+            },
+            {
+              "as": "draft",
+              "from": {
+                "k": "var",
+                "name": "rfi"
+              },
+              "into": "ReminderDraft",
+              "op": "ask",
+              "otherwise": [
+                {
+                  "op": "fail",
+                  "path": "1.each.1.otherwise.0",
+                  "reason": "could not draft a reminder for {$rfi.number}"
+                }
+              ],
+              "path": "1.each.1",
+              "prompt": "Write a short, polite reminder to {$rfi.assignee} that {$rfi.number} ({$rfi.title}) was due {$rfi.due}.",
+              "retry": 2
+            },
+            {
+              "as": "decision",
+              "by": "{$rfi.pm}",
+              "declined": [
+                {
+                  "op": "skip",
+                  "path": "1.each.2.declined.0",
+                  "reason": "{$rfi.pm} declined the reminder"
+                }
+              ],
+              "message": "Send this reminder for {$rfi.number} to {$rfi.assignee}?",
+              "op": "approve",
+              "path": "1.each.2",
+              "show": {
+                "k": "var",
+                "name": "draft"
+              },
+              "timed_out": [
+                {
+                  "op": "skip",
+                  "path": "1.each.2.timed_out.0",
+                  "reason": "no decision within a day"
+                }
+              ],
+              "within_minutes": 1440
+            },
+            {
+              "contract": "Reminder",
+              "key": "{$rfi.id}:remind:{$today}",
+              "mode": "create",
+              "op": "write",
+              "path": "1.each.3",
+              "resource": "Reminders",
+              "table": "reminders",
+              "value": {
+                "fields": [
+                  {
+                    "name": "rfi",
+                    "value": {
+                      "base": {
+                        "k": "var",
+                        "name": "rfi"
+                      },
+                      "field": "id",
+                      "k": "member"
+                    }
+                  },
+                  {
+                    "name": "to",
+                    "value": {
+                      "base": {
+                        "k": "var",
+                        "name": "rfi"
+                      },
+                      "field": "assignee",
+                      "k": "member"
+                    }
+                  },
+                  {
+                    "name": "subject",
+                    "value": {
+                      "base": {
+                        "k": "var",
+                        "name": "draft"
+                      },
+                      "field": "subject",
+                      "k": "member"
+                    }
+                  },
+                  {
+                    "name": "body",
+                    "value": {
+                      "base": {
+                        "k": "var",
+                        "name": "draft"
+                      },
+                      "field": "body",
+                      "k": "member"
+                    }
+                  }
+                ],
+                "k": "new",
+                "type": "Reminder"
+              }
+            },
+            {
+              "contract": "Rfi",
+              "key": "{$rfi.id}:stamp:{$today}",
+              "mode": "update",
+              "op": "write",
+              "path": "1.each.4",
+              "resource": "Rfis",
+              "table": "rfis",
+              "value": {
+                "fields": [
+                  {
+                    "name": "id",
+                    "value": {
+                      "base": {
+                        "k": "var",
+                        "name": "rfi"
+                      },
+                      "field": "id",
+                      "k": "member"
+                    }
+                  },
+                  {
+                    "name": "last_reminded",
+                    "value": {
+                      "k": "var",
+                      "name": "today"
+                    }
+                  }
+                ],
+                "k": "new",
+                "type": "Rfi"
+              }
+            },
+            {
+              "key": "{$rfi.id}:notice:{$today}",
+              "op": "notify",
+              "path": "1.each.5",
+              "text": "Reminder for {$rfi.number}: {$draft.subject}",
+              "to": "{$rfi.assignee}"
+            }
+          ]
+        }
+      ],
+      "trigger": {
+        "catch_up_minutes": 240,
+        "cron": "0 8 * * 1-5",
+        "kind": "schedule",
+        "tz": "America/New_York"
+      },
+      "tz": "America/New_York"
+    },
+    {
+      "bounds": {
+        "approvals": 0,
+        "model_calls": 0,
+        "notices": 1,
+        "reads": 0,
+        "rows_scanned": 500,
+        "writes": 0
+      },
+      "name": "OpenRfiDigest",
+      "steps": [
+        {
+          "as": "open",
+          "contract": "Rfi",
+          "desc": false,
+          "max": 500,
+          "one": false,
+          "op": "find",
+          "path": "0",
+          "resource": "Rfis",
+          "row_fields": [
+            "id",
+            "number",
+            "title",
+            "status",
+            "due",
+            "assignee",
+            "pm",
+            "last_reminded"
+          ],
+          "table": "rfis",
+          "where": {
+            "k": "bin",
+            "l": {
+              "k": "var",
+              "name": "status"
+            },
+            "op": "==",
+            "r": {
+              "k": "str",
+              "s": "open"
+            }
+          }
+        },
+        {
+          "arms": [
+            {
+              "steps": [
+                {
+                  "op": "stop",
+                  "path": "1.when0.0",
+                  "reason": "no open RFIs"
+                }
+              ],
+              "that": {
+                "k": "bin",
+                "l": {
+                  "base": {
+                    "k": "var",
+                    "name": "open"
+                  },
+                  "field": "count",
+                  "k": "member"
+                },
+                "op": "==",
+                "r": {
+                  "k": "num",
+                  "n": 0.0
+                }
+              }
+            }
+          ],
+          "op": "branch",
+          "otherwise": [
+            {
+              "key": "digest:{$event.requested_at}",
+              "op": "notify",
+              "path": "1.otherwise.0",
+              "text": "{$open.count} RFIs are open as of {$today}.",
+              "to": "project team"
+            }
+          ],
+          "path": "1"
+        }
+      ],
+      "trigger": {
+        "kind": "manual"
+      },
+      "tz": "UTC"
+    }
+  ],
+  "plan_version": 1,
+  "resource_tables": [
+    "rfis",
+    "reminders",
+    "loop_approvals",
+    "loop_runs",
+    "loop_notices",
+    "loop_requests"
+  ],
+  "tables": {
+    "approvals": "loop_approvals",
+    "notices": "loop_notices",
+    "requests": "loop_requests",
+    "runs": "loop_runs"
+  }
+}

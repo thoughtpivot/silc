@@ -66,7 +66,7 @@ Point the editor at a local binary without reinstalling:
 | Colon pairs | `:label("Save")`, `:sortable` | `entity.other.attribute-name.silc` |
 | Attributes | `$.title`, `$record` | `variable.other.member.silc` |
 | Feed / arrows | `==>`, `=>`, `->` | `keyword.operator.feed.silc`, `keyword.operator.arrow.silc` |
-| Annotations | `@version("0.4.0")` | `entity.name.function.decorator.silc` |
+| Annotations | `@version("0.5.0")` | `entity.name.function.decorator.silc` |
 | Unit literals | `250ms`, `512MB`, `90fps`, `8cm`, `14deg` | `constant.numeric.unit.silc` |
 
 ## Maintaining

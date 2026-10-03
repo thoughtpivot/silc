@@ -74,7 +74,7 @@ fn every_ui_component_has_description() {
 
 #[test]
 fn every_game_node_and_prop_has_docs() {
-    assert_eq!(GAME_NODE_CATALOG.len(), 56);
+    assert_eq!(GAME_NODE_CATALOG.len(), 58);
     for spec in GAME_NODE_CATALOG {
         assert!(spec.description.len() > 40, "game::{} thin", spec.name);
         let _ = format_game_catalog_line(spec);
@@ -95,7 +95,7 @@ fn every_game_node_and_prop_has_docs() {
 fn every_executable_op_has_specific_hover_prose() {
     for (ns, name) in EXECUTABLE_OPS {
         let snippet = format!(
-            r#"@version("0.4.0")
+            r#"@version("0.5.0")
 processor P {{
     method run() {{
         {ns}::{name}();
@@ -207,7 +207,7 @@ fn arena_game_prop_and_enum_hovers() {
 
 #[test]
 fn service_http_keyword_namespace_hover() {
-    let src = r#"@version("0.4.0")
+    let src = r#"@version("0.5.0")
 service Api {
     method boot() {
         service::http(:port(8080));
@@ -278,7 +278,7 @@ fn doc_extract_and_op_prop_hover() {
 
 #[test]
 fn unit_literal_and_vec_hover() {
-    let src = r#"@version("0.4.0")
+    let src = r#"@version("0.5.0")
 contract C {
     has Vec[num32; 384] $.embedding;
 }
@@ -311,7 +311,7 @@ component X {
 
 #[test]
 fn navigate_submit_new_builtin_hovers() {
-    let src = r#"@version("0.4.0")
+    let src = r#"@version("0.5.0")
 contract Item { has Str $.id; has Str $.title; }
 component Page {
     method go() {
@@ -340,5 +340,31 @@ component Page {
             "{needle} -> {}",
             hover.markdown
         );
+    }
+}
+
+#[test]
+fn loop_nodes_props_and_keyword_hover() {
+    let src = workspace_file("examples/oneThingApp/main.silc");
+    let node = hover_on_member(&src, "loop::read(");
+    assert!(node.contains("loop::read") && node.contains("mcp::call"), "{node}");
+
+    let prop_offset = src.find(":auth_env(").expect("auth_env") as u32 + 1;
+    let prop = hover_at(&src, prop_offset);
+    assert!(prop.contains("loop::read") && prop.contains("environment variable"), "{prop}");
+
+    let ns_offset = src.find("loop::schedule").expect("schedule") as u32;
+    let ns = hover_at(&src, ns_offset);
+    assert!(ns.contains("Loop step catalog"), "{ns}");
+
+    let kw_offset = src.find("loop OneThingToday").expect("decl") as u32;
+    let kw = hover_at(&src, kw_offset);
+    assert!(kw.contains("ADR-014"), "{kw}");
+
+    for spec in sil_core::LOOP_NODE_CATALOG {
+        assert!(spec.description.len() > 40, "loop::{} description too short", spec.name);
+        for p in spec.props {
+            assert!(p.description.len() > 10, "loop::{} :{} description too short", spec.name, p.name);
+        }
     }
 }

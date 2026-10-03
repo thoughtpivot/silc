@@ -49,6 +49,8 @@ struct Pending {
     segment_id: u64,
     response_writer: Option<Arc<Mutex<BufWriter<UnixStream>>>>,
     id: String,
+    /// `loop::ask`: answer straight from CPython, skipping the Go store.
+    ask_only: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -86,6 +88,106 @@ pub fn build_go_worker(lock: &RuntimeLock, runtime_root: &Path) -> Result<PathBu
 }
 
 /// Build the compiler-owned Gin HTTP API binary for `service::http`.
+/// Build the compiler-owned Go loop kernel (ADR-014).
+pub fn build_loop_kernel(lock: &RuntimeLock, runtime_root: &Path) -> Result<PathBuf, String> {
+    let dir = runtime_root.join("go/loop");
+    if !dir.join("kernel.go").is_file() {
+        return Err("missing compiler-generated go/loop/kernel.go".into());
+    }
+    let out = dir.join("kernel");
+    let tidy = Command::new(&lock.go_bin)
+        .current_dir(&dir)
+        .args(["mod", "tidy"])
+        .env("GOTOOLCHAIN", "local")
+        .output()
+        .map_err(|e| format!("failed to tidy Go loop kernel with Silc Go: {e}"))?;
+    if !tidy.status.success() {
+        return Err(format!(
+            "Silc Go loop kernel `go mod tidy` failed:\n{}",
+            String::from_utf8_lossy(&tidy.stderr)
+        ));
+    }
+    let build = Command::new(&lock.go_bin)
+        .current_dir(&dir)
+        .args(["build", "-o", "kernel", "."])
+        .env("GOTOOLCHAIN", "local")
+        .output()
+        .map_err(|e| format!("failed to build Go loop kernel with Silc Go: {e}"))?;
+    if !build.status.success() || !out.is_file() {
+        return Err(format!(
+            "Silc Go loop kernel build failed:\n{}",
+            String::from_utf8_lossy(&build.stderr)
+        ));
+    }
+    Ok(out)
+}
+
+/// Run the loop kernel and restart it if it exits, until `stop` is set.
+fn supervise_loop_kernel(
+    output: &EmitResult,
+    socket: &Path,
+    db_path: &Path,
+    stop: Arc<AtomicBool>,
+) -> Result<(thread::JoinHandle<()>, Arc<Mutex<Option<Child>>>), String> {
+    let bin = output.root.join("go/loop/kernel");
+    if !bin.is_file() {
+        return Err(format!("Go loop kernel missing at {} (run `silc build`)", bin.display()));
+    }
+    let plan = output.root.join("loop/plan.json");
+    let socket = socket.to_path_buf();
+    let db_path = db_path.to_path_buf();
+    let slot: Arc<Mutex<Option<Child>>> = Arc::new(Mutex::new(None));
+    let spawn = {
+        let bin = bin.clone();
+        move || {
+            Command::new(&bin)
+                .env("SILC_SOCKET", &socket)
+                .env("SILC_DB_PATH", &db_path)
+                .env("SILC_LOOP_PLAN", &plan)
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit())
+                .spawn()
+        }
+    };
+    let first = spawn().map_err(|e| format!("failed to spawn Silc loop kernel: {e}"))?;
+    *slot.lock().map_err(|_| "kernel lock".to_string())? = Some(first);
+    let watch = Arc::clone(&slot);
+    let handle = thread::spawn(move || {
+        let mut restarts = 0u32;
+        loop {
+            thread::sleep(Duration::from_millis(500));
+            if stop.load(Ordering::SeqCst) {
+                break;
+            }
+            let exited = match watch.lock() {
+                Ok(mut guard) => match guard.as_mut().map(|c| c.try_wait()) {
+                    Some(Ok(Some(status))) => Some(status),
+                    _ => None,
+                },
+                Err(_) => break,
+            };
+            if let Some(status) = exited {
+                if stop.load(Ordering::SeqCst) {
+                    break;
+                }
+                restarts += 1;
+                let backoff = Duration::from_millis(500 * u64::from(restarts.min(10)));
+                eprintln!("silc: loop kernel exited ({status}); restarting in {backoff:?}");
+                thread::sleep(backoff);
+                match spawn() {
+                    Ok(child) => {
+                        if let Ok(mut guard) = watch.lock() {
+                            *guard = Some(child);
+                        }
+                    }
+                    Err(e) => eprintln!("silc: failed to restart loop kernel: {e}"),
+                }
+            }
+        }
+    });
+    Ok((handle, slot))
+}
+
 pub fn build_go_api_worker(lock: &RuntimeLock, runtime_root: &Path) -> Result<PathBuf, String> {
     let api_dir = runtime_root.join("go/api");
     if !api_dir.join("worker.go").is_file() {
@@ -800,7 +902,7 @@ pub fn run_api(output: &EmitResult, _lock: &RuntimeLock) -> Result<(), String> {
     let graph = output
         .graph
         .as_ref()
-        .ok_or_else(|| "program is not executable in Silc 0.4.0".to_string())?;
+        .ok_or_else(|| "program is not executable in Silc 0.5.0".to_string())?;
     if !graph.is_api_only() {
         return Err("run_api requires an API-only service::http program".into());
     }
@@ -879,7 +981,7 @@ fn run_graph(
     let graph = output
         .graph
         .as_ref()
-        .ok_or_else(|| "program is not executable in Silc 0.4.0".to_string())?;
+        .ok_or_else(|| "program is not executable in Silc 0.5.0".to_string())?;
     if graph.is_api_only() {
         return run_api(output, lock);
     }
@@ -1088,6 +1190,14 @@ fn run_graph(
     children.push(bun_child);
     wait_for_pool(&workers, "bun", 1, Duration::from_secs(30))?;
 
+    let loop_kernel = if graph.has_loops() {
+        let kernel = supervise_loop_kernel(output, &socket_path, &db_path, Arc::clone(&stop))?;
+        wait_for_pool(&workers, "loop", 1, Duration::from_secs(30))?;
+        Some(kernel)
+    } else {
+        None
+    };
+
     if graph.is_pipeline_only() {
         if pipeline_input.is_none() {
             return Err(
@@ -1191,10 +1301,27 @@ fn run_graph(
             println!("silc:   {} {}", route.method, route.path);
         }
     }
+    if graph.has_loops() && graph.capabilities.web {
+        println!(
+            "silc: loops ({}) — approvals and runs at http://127.0.0.1:{}{}",
+            graph.loops.join(", "),
+            graph.http_port,
+            sil_codegen::loop_lower::LOOP_INBOX_ROUTE
+        );
+    }
     println!("silc: press Ctrl-C to stop");
 
     wait_for_ctrl_c();
     stop.store(true, Ordering::SeqCst);
+    if let Some((watcher, slot)) = loop_kernel {
+        let _ = watcher.join();
+        if let Ok(mut guard) = slot.lock() {
+            if let Some(mut child) = guard.take() {
+                let _ = child.kill();
+                let _ = child.wait();
+            }
+        }
+    }
     let _ = UnixStream::connect(&socket_path);
     let _ = accept_workers.join();
 
@@ -1370,6 +1497,55 @@ fn handle_client(
                     }
                 });
             }
+            ControlFrame::Ask {
+                request_id,
+                name,
+                prompt,
+                context,
+                schema,
+            } if role == "loop" => {
+                let workers = Arc::clone(&workers);
+                let pending = Arc::clone(&pending);
+                let pool = Arc::clone(&pool);
+                let response_writer = Arc::clone(&writer);
+                let model_id = model_id.clone();
+                thread::spawn(move || {
+                    if let Err(err) = start_ask(
+                        workers.as_ref(),
+                        pending.as_ref(),
+                        pool.as_ref(),
+                        request_id.clone(),
+                        name,
+                        prompt,
+                        context,
+                        schema,
+                        model_id,
+                        Arc::clone(&response_writer),
+                    ) {
+                        let tracked = pending
+                            .lock()
+                            .map(|map| map.contains_key(&request_id))
+                            .unwrap_or(false);
+                        if tracked {
+                            let _ = fail_pending(pending.as_ref(), &request_id, err);
+                        } else if let Ok(mut w) = response_writer.lock() {
+                            let _ = write_frame(
+                                &mut *w,
+                                &ControlFrame::Response {
+                                    request_id,
+                                    ok: false,
+                                    id: None,
+                                    score: None,
+                                    summary: None,
+                                    reply: None,
+                                    model: None,
+                                    error: Some(err),
+                                },
+                            );
+                        }
+                    }
+                });
+            }
             ControlFrame::Ack {
                 request_id,
                 segment_id,
@@ -1470,6 +1646,61 @@ fn start_ingest(
                 segment_id,
                 response_writer,
                 id,
+                ask_only: false,
+            },
+        );
+    }
+    notify_role(
+        workers,
+        "python",
+        ControlFrame::Notify {
+            request_id,
+            segment_id,
+            offset: HEADER_SIZE as u32,
+            len: header.payload_len,
+            schema_id: header.schema_id,
+            seq: header.seq,
+            stage: "python".into(),
+        },
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn start_ask(
+    workers: &Mutex<HashMap<String, WorkerPool>>,
+    pending: &Mutex<HashMap<String, Pending>>,
+    pool: &Mutex<SlotPool>,
+    request_id: String,
+    name: String,
+    prompt: String,
+    context: String,
+    schema: String,
+    model_id: Option<String>,
+    response_writer: Arc<Mutex<BufWriter<UnixStream>>>,
+) -> Result<(), String> {
+    let id = Uuid::new_v4().to_string();
+    let record = serde_json::json!({
+        "id": id,
+        "loop_ask": true,
+        "loop": name,
+        "prompt": prompt,
+        "context": context,
+        "schema": schema,
+        "reply": "",
+        "model": model_id.unwrap_or_else(|| sil_core::DEFAULT_MODEL_ID.to_string()),
+    });
+    let bytes = serde_json::to_vec(&record).map_err(|e| e.to_string())?;
+    let (segment_id, header) = acquire_slot(pool, &bytes)?;
+    {
+        let mut pending = pending.lock().map_err(|_| "pending lock".to_string())?;
+        pending.insert(
+            request_id.clone(),
+            Pending {
+                stage: Stage::Python,
+                segment_id,
+                response_writer: Some(response_writer),
+                id,
+                ask_only: true,
             },
         );
     }
@@ -1504,6 +1735,36 @@ fn on_ack(
         return Ok(());
     };
     match entry.stage {
+        Stage::Python if entry.ask_only => {
+            let response = ControlFrame::Response {
+                request_id: request_id.clone(),
+                ok: true,
+                id: Some(entry.id.clone()),
+                score: None,
+                summary: None,
+                reply: result
+                    .as_ref()
+                    .and_then(|v| v.get("reply"))
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string),
+                model: result
+                    .as_ref()
+                    .and_then(|v| v.get("model"))
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string),
+                error: None,
+            };
+            if let Some(writer) = entry.response_writer.clone() {
+                if let Ok(mut w) = writer.lock() {
+                    let _ = write_frame(&mut *w, &response);
+                }
+            }
+            let seg = entry.segment_id as usize;
+            pending_map.remove(&request_id);
+            drop(pending_map);
+            let mut pool = pool.lock().map_err(|_| "pool lock".to_string())?;
+            pool.release(seg)
+        }
         Stage::Python => {
             entry.stage = Stage::Go;
             let schema_id = {

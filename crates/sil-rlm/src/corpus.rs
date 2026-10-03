@@ -341,7 +341,7 @@ mod tests {
         let mut agents = fs::File::create(dir.path().join("AGENTS.md")).unwrap();
         writeln!(agents, "# Project agents").unwrap();
         let target = dir.path().join("main.silc");
-        fs::write(&target, "@version(\"0.4.0\")\n").unwrap();
+        fs::write(&target, "@version(\"0.5.0\")\n").unwrap();
         let mut c = Corpus::new();
         let path = c.load_project_agents(&target).unwrap();
         assert!(path.ends_with("AGENTS.md"));

@@ -35,6 +35,11 @@ pub fn keyword_doc(keyword: &str) -> Option<&'static str> {
              dual-surface `app` routes; the compiler synthesizes a Babylon/Vite runtime from the \
              closed `game::*` catalog (ADR-012)."
         }
+        "loop" => {
+            "Declares scheduled, approval-gated work (`loop Name { loop::flow(trigger, steps...) }`). \
+             One trigger per loop; the compiler checks bounds, keys, and fail-closed gates, adds \
+             the `/loops` inbox, and runs the plan in a replaying Go kernel (ADR-014)."
+        }
         "service" => {
             "Declares a service module, commonly used with `service::http` to expose an API \
              surface. Keep service bodies focused on transport concerns rather than UI."
@@ -272,6 +277,12 @@ pub fn namespace_doc(ns: &str) -> Option<String> {
              runtime manifest. Game programs are web-only (no terminal surface).",
             count = sil_core::GAME_NODE_CATALOG.len()
         ),
+        "loop" => format!(
+            "Loop step catalog ({count} nodes). Author `loop::flow` with one trigger \
+             (`schedule`, `manual`, `on_mutation`) followed by steps such as `find`, `read`, \
+             `ask`, `gate`, `each`, `approve`, `write`, and `notify` inside a `loop` declaration.",
+            count = sil_core::LOOP_NODE_CATALOG.len()
+        ),
         "service" => {
             "Runnable service namespace. Author `service::http` in a service module to expose \
              an HTTP API surface; the compiler wires routes from resources and handlers."
@@ -299,7 +310,7 @@ pub fn namespace_doc(ns: &str) -> Option<String> {
         }
         "tensor" => {
             "Runnable tensor namespace. Author `tensor::tokenize` then `tensor::infer` for the \
-             CPU MiniLM embedding path (exactly 384 `num32` values in Silc 0.4.0)."
+             CPU MiniLM embedding path (exactly 384 `num32` values in Silc 0.5.0)."
                 .into()
         }
         "ipc" => {
@@ -319,42 +330,42 @@ pub fn namespace_doc(ns: &str) -> Option<String> {
                 .into()
         }
         "http" => {
-            "Stub-only HTTP namespace in Silc 0.4.0. It parses and routes but does not execute; \
+            "Stub-only HTTP namespace in Silc 0.5.0. It parses and routes but does not execute; \
              prefer `scrape::*` for fetches and `service::http` for API surfaces."
                 .into()
         }
         "html" => {
-            "Stub-only HTML namespace in Silc 0.4.0. Prefer `scrape::select` / `scrape::extract` \
+            "Stub-only HTML namespace in Silc 0.5.0. Prefer `scrape::select` / `scrape::extract` \
              for structured extraction from fetched pages."
                 .into()
         }
         "numpy" | "pandas" => format!(
-            "Stub-only `{ns}` namespace in Silc 0.4.0. It parses and routes but does not \
+            "Stub-only `{ns}` namespace in Silc 0.5.0. It parses and routes but does not \
              execute; keep numerical / tabular work in typed contracts and runnable ops \
              such as `text::score` or `tensor::*`."
         ),
         "ws" => {
-            "Stub-only WebSocket namespace in Silc 0.4.0. It is recognized by the classifier \
+            "Stub-only WebSocket namespace in Silc 0.5.0. It is recognized by the classifier \
              but is not an author-runnable executable op today."
                 .into()
         }
         "sys" => {
-            "Stub-only system namespace in Silc 0.4.0. Recognized for routing, but not \
+            "Stub-only system namespace in Silc 0.5.0. Recognized for routing, but not \
              executable; keep side effects in resources, services, and processors."
                 .into()
         }
         "schema" => {
-            "Stub-only schema namespace in Silc 0.4.0. Prefer `contract` / `subset` \
+            "Stub-only schema namespace in Silc 0.5.0. Prefer `contract` / `subset` \
              declarations for typed shapes rather than `schema::*` pipeline ops."
                 .into()
         }
         "payload" => {
-            "Stub-only payload namespace in Silc 0.4.0. Cross-engine payloads move through \
+            "Stub-only payload namespace in Silc 0.5.0. Cross-engine payloads move through \
              synthesized IPC; do not author `payload::*` calls."
                 .into()
         }
         "json" => {
-            "Stub-only JSON namespace in Silc 0.4.0. It parses and routes but does not \
+            "Stub-only JSON namespace in Silc 0.5.0. It parses and routes but does not \
              execute; prefer typed contracts and resource/HTTP surfaces for structured data."
                 .into()
         }
@@ -420,7 +431,7 @@ pub fn executable_op_doc(namespace: &str, name: &str) -> Option<String> {
              tokenization; expect non-trivial CPU cost on larger batches."
         }
         _ => {
-            "Runnable Silc 0.4.0 operation. Legal in the module or pipeline contexts documented \
+            "Runnable Silc 0.5.0 operation. Legal in the module or pipeline contexts documented \
              for its namespace; prefer the executable set over stub-only ops."
         }
     };
@@ -438,7 +449,7 @@ pub fn op_prop_doc(namespace: &str, op: &str, prop: &str) -> Option<&'static str
             "Closed model id from the Silc model catalog (for example `silclm` or `minilm-l6-v2`)."
         }
         (_, _, "prefer") => {
-            "Preferred execution device. Silc 0.4.0 accepts `CPU` for tensor inference; `CUDA` is rejected."
+            "Preferred execution device. Silc 0.5.0 accepts `CPU` for tensor inference; `CUDA` is rejected."
         }
         (_, _, "port") => {
             "TCP port for the HTTP API surface when used with `service::http`."
@@ -527,7 +538,7 @@ pub fn builtin_call_doc(name: &str) -> Option<&'static str> {
 pub fn stub_op_doc(namespace: &str, name: &str) -> String {
     format!(
         "Namespace operation `{namespace}::{name}`.\n\n\
-         This symbol is recognized but is not an author-runnable executable op in Silc 0.4.0. \
+         This symbol is recognized but is not an author-runnable executable op in Silc 0.5.0. \
          Prefer scrape::*, doc::extract, llm::complete, tensor::*, text::score, or service::http inside \
          processor, service, or awaited handler pipelines."
     )

@@ -20,6 +20,26 @@ pub fn resolve_hover(doc: &Document, offset: u32) -> Option<HoverContent> {
         Span::new(token.start, token.end, token.line, token.col),
     );
 
+    // `loop` is contextual: a declaration keyword or the `loop::` namespace.
+    if matches!(&token.token, Token::Ident(name) if name == "loop") {
+        let next = doc.tokens.get(idx + 1).map(|t| &t.token);
+        if matches!(next, Some(Token::DoubleColon)) {
+            if let Some(text) = namespace_doc("loop") {
+                return Some(HoverContent {
+                    markdown: md("namespace", "loop", &text, None),
+                    range,
+                });
+            }
+        } else if matches!(next, Some(Token::Ident(_))) {
+            if let Some(text) = keyword_doc("loop") {
+                return Some(HoverContent {
+                    markdown: md("keyword", "loop", text, None),
+                    range,
+                });
+            }
+        }
+    }
+
     // Prefer AST-backed resolution for idents / members / ui / ops.
     if let Some(content) = resolve_ident_context(doc, idx) {
         return Some(content);
@@ -31,7 +51,7 @@ pub fn resolve_hover(doc: &Document, offset: u32) -> Option<HoverContent> {
                 "annotation",
                 &format!("@{name}"),
                 "Source annotation attached to the following declaration. \
-                 `@version(\"0.4.0\")` pins the Silc language version so tooling and the \
+                 `@version(\"0.5.0\")` pins the Silc language version so tooling and the \
                  compiler agree on syntax and runnable ops.",
                 None,
             ),
@@ -197,6 +217,20 @@ fn resolve_ident_context(doc: &Document, idx: usize) -> Option<HoverContent> {
                     });
                 }
             }
+            if ns == "loop" {
+                if let Some(spec) = sil_core::lookup_loop_node(name) {
+                    let signature = sil_core::format_loop_catalog_line(spec);
+                    let detail = format!(
+                        "{}\n\n{}",
+                        spec.description,
+                        signature.trim_start_matches('-').trim()
+                    );
+                    return Some(HoverContent {
+                        markdown: md("loop node", &format!("loop::{name}"), &detail, None),
+                        range: ns_range,
+                    });
+                }
+            }
             if let Some(text) = executable_op_doc(ns, name) {
                 return Some(HoverContent {
                     markdown: md("executable op", &format!("{ns}::{name}"), &text, None),
@@ -262,6 +296,9 @@ fn resolve_ident_context(doc: &Document, idx: usize) -> Option<HoverContent> {
             return Some(content);
         }
         if let Some(content) = resolve_game_prop(doc, idx, name, range.clone()) {
+            return Some(content);
+        }
+        if let Some(content) = resolve_loop_prop(doc, idx, name, range.clone()) {
             return Some(content);
         }
         if let Some(content) = resolve_op_prop(doc, idx, name, range.clone()) {
@@ -743,6 +780,55 @@ fn resolve_game_prop(
     None
 }
 
+fn resolve_loop_prop(
+    doc: &Document,
+    idx: usize,
+    prop: &str,
+    range: HoverRange,
+) -> Option<HoverContent> {
+    let mut depth = 0usize;
+    let mut i = idx;
+    while i > 0 {
+        i -= 1;
+        match &doc.tokens[i].token {
+            Token::RParen => depth += 1,
+            Token::LParen if depth > 0 => depth -= 1,
+            Token::Ident(node)
+                if depth == 0
+                    && i >= 2
+                    && matches!(doc.tokens[i - 1].token, Token::DoubleColon)
+                    && matches!(&doc.tokens[i - 2].token, Token::Ident(ns) if ns == "loop") =>
+            {
+                let spec = sil_core::lookup_loop_node(node)?;
+                let p = spec.props.iter().find(|p| p.name == prop)?;
+                let req = if p.required { "required" } else { "optional" };
+                let closed = if p.closed_values.is_empty() {
+                    String::new()
+                } else {
+                    format!(
+                        "\n| **Closed values** | `{}` |",
+                        p.closed_values.join("` \\| `")
+                    )
+                };
+                return Some(HoverContent {
+                    markdown: md(
+                        "loop prop",
+                        prop,
+                        &format!(
+                            "{}\n\n| | |\n|---|---|\n| **Node** | `loop::{node}` |\n| **Kind** | `{:?}` |\n| **Required** | `{req}` |{closed}",
+                            p.description, p.kind
+                        ),
+                        None,
+                    ),
+                    range,
+                });
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 fn resolve_op_prop(
     doc: &Document,
     idx: usize,
@@ -760,7 +846,7 @@ fn resolve_op_prop(
                 let Token::Ident(op) = &doc.tokens[i].token else {
                     break;
                 };
-                if ns == "ui" || ns == "game" {
+                if ns == "ui" || ns == "game" || ns == "loop" {
                     break;
                 }
                 if let Some(prose) = op_prop_doc(ns, op, prop) {
@@ -1333,7 +1419,7 @@ fn md(kind: &str, name: &str, body: &str, footer: Option<&str>) -> String {
         out.push_str("\n\n");
         out.push_str(f);
     }
-    out.push_str("\n\n---\n*Silc 0.4.0*");
+    out.push_str("\n\n---\n*Silc 0.5.0*");
     out
 }
 

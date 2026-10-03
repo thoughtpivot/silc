@@ -145,7 +145,7 @@ mod tests {
         let main = fs::read_to_string(tmp.join("main.silc")).unwrap();
         assert!(main.contains("component HomePage"));
         assert!(main.contains("app MyApp"));
-        assert!(main.contains("@version(\"0.4.0\")"));
+        assert!(main.contains("@version(\"0.5.0\")"));
         assert!(!main.contains("method serve()"));
         assert!(!main.contains("ui::web"));
         assert!(!main.contains("sink "));

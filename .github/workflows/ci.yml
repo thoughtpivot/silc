@@ -35,7 +35,7 @@ jobs:
       - name: Cargo test
         run: cargo test --workspace --lib -- --test-threads=1
 
-      - name: Codegen smoke (0.4.0 apps)
+      - name: Codegen smoke (0.5.0 apps)
         run: |
           cargo test -p sil-codegen emits_runnable_feedback_app
           cargo test -p sil-codegen emits_chat_app_with_llm_processor
@@ -93,7 +93,7 @@ jobs:
           path: |
             ~/.silc
             ~/.cache/pip
-          key: silc-0.4.0-onnx-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('crates/sil-codegen/templates/*requirements.txt', 'crates/sil-core/src/model_catalog.rs') }}
+          key: silc-0.5.0-onnx-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('crates/sil-codegen/templates/*requirements.txt', 'crates/sil-core/src/model_catalog.rs') }}
 
       - name: Build all standalone examples
         run: |

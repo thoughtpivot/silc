@@ -1,6 +1,6 @@
 # blogApp
 
-Standalone Silc 0.4.0 blog application:
+Standalone Silc 0.5.0 blog application:
 
 - **Home** — chronological article cards, **silclm** natural-language feed filter, and grounded Q&A
 - **Admin** — create form plus searchable table; row click opens an edit/delete modal

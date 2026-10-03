@@ -182,6 +182,8 @@ function migrateResourceTable(db: Database, table: string): void {
 
 function openDb(): Database {
   const db = new Database(dbPath, { create: true });
+  // The loop kernel shares this file; wait for its short write transactions.
+  db.exec("PRAGMA busy_timeout = 5000;");
   db.exec(`
     CREATE TABLE IF NOT EXISTS app_events (
       id TEXT PRIMARY KEY,

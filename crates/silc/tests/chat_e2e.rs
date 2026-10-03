@@ -105,7 +105,7 @@ fn multi_session_chat_builds_race_safe_ui() {
     let source = root.join("multi_chat.silc");
     std::fs::write(
         &source,
-        r#"@version("0.4.0")
+        r#"@version("0.5.0")
 contract ChatRecord {
     has Str $.prompt;
     has Str $.reply;

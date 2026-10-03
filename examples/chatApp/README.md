@@ -1,6 +1,6 @@
 # chatApp
 
-Standalone Silc 0.4.0 multi-session chat assistant.
+Standalone Silc 0.5.0 multi-session chat assistant.
 
 ## Authored files
 

@@ -232,7 +232,7 @@ fn compile_and_run_pipeline(entry: &Path, input_json: &str) -> Result<(), String
     let graph = output
         .graph
         .as_ref()
-        .ok_or_else(|| "program is not executable in Silc 0.4.0".to_string())?;
+        .ok_or_else(|| "program is not executable in Silc 0.5.0".to_string())?;
     if !graph.is_pipeline_only() {
         return Err("`silc run --input-*` requires a pipeline-only program".into());
     }
@@ -250,7 +250,10 @@ fn build_only(entry: &Path) -> Result<(), String> {
         println!("go:      {}", lock.go_bin.display());
         println!("engines locked under .silc/runtimes.lock.json");
     } else {
-        println!("stub emit only — this program is not executable in Silc 0.4.0");
+        println!("stub emit only — this program is not executable in Silc 0.5.0");
+    }
+    if let Some(report) = &output.loop_report {
+        print!("{report}");
     }
     Ok(())
 }
@@ -262,11 +265,14 @@ fn compile_and_maybe_run(entry: &Path, attach_terminal: bool) -> Result<(), Stri
     println!("runtime:  {}", output.root.display());
     println!("manifest: {}", output.manifest.display());
     println!("mode:     {}", output.execution_mode);
+    if let Some(report) = &output.loop_report {
+        print!("{report}");
+    }
 
     match output.execution_mode {
         ExecutionMode::Stub => {
             println!();
-            println!("stub emit complete — worker execution requires runnable 0.4.0 operations");
+            println!("stub emit complete — worker execution requires runnable 0.5.0 operations");
             println!(
                 "(app with ui::web + ui::terminal, resources/actions, optional text::score or llm::complete, or service::http)"
             );
@@ -366,6 +372,9 @@ fn compile_common(
             if graph.has_doc() {
                 supervisor::build_doc_python(&lock, &output.root)?;
             }
+        }
+        if graph.has_loops() {
+            supervisor::build_loop_kernel(&lock, &output.root)?;
         }
         if graph.has_api() {
             supervisor::build_go_api_worker(&lock, &output.root)?;
