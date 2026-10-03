@@ -274,9 +274,10 @@ component LoopInbox {{
 }
 
 /// Add the reserved inbox contracts, resources, components, and `/loops`
-/// route. Programs without loops are returned unchanged.
+/// route. Programs without loops, and command programs (every loop manual,
+/// no `app`), are returned unchanged: a command has no surface to serve.
 pub fn synthesize_loop_surface(program: &Program) -> Result<Program, String> {
-    if program.loops.is_empty() {
+    if program.loops.is_empty() || sil_core::loops_are_command(program) {
         return Ok(program.clone());
     }
     let taken = program

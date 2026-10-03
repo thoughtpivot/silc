@@ -231,6 +231,7 @@ fn tracked_example_agents_embed_template_common_block() {
         "arenaGameApp",
         "rfiChaseApp",
         "oneThingApp",
+        "oneThingCliApp",
         "whatToDoTodayApp",
     ] {
         let agents = read_workspace(&format!("examples/{app}/AGENTS.md"));
@@ -258,6 +259,7 @@ fn canonical_silc_sources_omit_runtime_plumbing() {
         "examples/arenaGameApp/main.silc",
         "examples/rfiChaseApp/main.silc",
         "examples/oneThingApp/main.silc",
+        "examples/oneThingCliApp/main.silc",
         "examples/whatToDoTodayApp/main.silc",
         "crates/silc/templates/main.silc",
         "crates/silc/tests/fixtures/scored_form.silc",

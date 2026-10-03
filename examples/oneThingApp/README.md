@@ -7,6 +7,9 @@ ThoughtPivot Moz company brain over MCP, briefs it with **silclm**, and
 reduces it to one imperative sentence. The sentence lands in the
 `DailyActions` table on `/` and as a notice in `/loops`.
 
+For the same workflow with no UI at all, run once from the shell, see
+[`oneThingCliApp`](../oneThingCliApp/).
+
 ## Authored files
 
 - `main.silc` — the loop, the `DailyActions` resource, and a small board

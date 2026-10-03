@@ -223,6 +223,9 @@ pub struct ExecutableGraph {
     pub loops: Vec<String>,
     /// Any loop uses `loop::ask`, so the silclm worker must be provisioned.
     pub loop_ask: bool,
+    /// Every loop is `loop::manual` and nothing declares a surface: `silc
+    /// main.silc` runs the loops once, prints notices to stdout, and exits.
+    pub loop_command: bool,
 }
 
 impl ExecutableGraph {
@@ -269,6 +272,11 @@ impl ExecutableGraph {
 
     pub fn has_loops(&self) -> bool {
         !self.loops.is_empty()
+    }
+
+    /// Loop-only command: no web, terminal, or API surface; runs once and exits.
+    pub fn is_loop_command(&self) -> bool {
+        self.loop_command && self.has_loops() && !self.has_ui() && !self.has_api()
     }
 
     pub fn needs_tensor(&self) -> bool {
@@ -663,6 +671,7 @@ fn infer_game_graph(program: &Program) -> Result<Option<ExecutableGraph>, String
         root_component: None,
         loops: Vec::new(),
         loop_ask: false,
+        loop_command: false,
     }))
 }
 
@@ -1277,6 +1286,7 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
         root_component,
         loops: program.loops.iter().map(|l| l.name.clone()).collect(),
         loop_ask,
+        loop_command: crate::loops::loops_are_command(program),
     }))
 }
 

@@ -564,3 +564,14 @@ Compiler-owned (do not invent alternatives):
 7. Stay inside the UI catalog and runnable op set above.
 8. Validate with `silc build`; report errors instead of patching `.runtime/`.
 <!-- END SILC_AGENTS_TEMPLATE -->
+
+## App-specific notes (oneThingCliApp)
+
+- The command-line shape of `oneThingApp`: the same workflow as one `loop` with `loop::manual()` as its trigger and **no `component` or `app`**. That makes the program a loop command: `silc main.silc` runs `OneThingToday` once, prints the notice text to stdout, and exits. No web page, no terminal UI, no `/loops` inbox.
+- Keep it a command. Do not add an `app`, a `component`, a `loop::schedule`, or a `loop::approve`; any of those turns the program back into a served app with a `/loops` inbox (and `approve` is a compile error without one).
+- Four `loop::read(:op("mcp::call"))` steps call `kb_jsonl_read_window` on the Moz MCP server (decisions, interactions, projects, opportunities); `:select("records.parsed")` drops the raw JSONL copy.
+- The bearer token comes from `MOZ_MCP_TOKEN` in the environment (`:auth_env`). Never put tokens in `main.silc`.
+- Two **silclm** asks: a `Brief` (facts, goals, pressure for the `$calendar` window), then `OneThing` (one imperative sentence).
+- A gate requires a non-empty sentence and pressure before the `DailyActions` write and the notice; both are keyed by the run's recorded `$now`, so every invocation adds its own row. The notice `:text` is what the command prints; stdout carries nothing else, and status goes to stderr.
+- The exit code is `0` only when the run succeeded. A failed run prints nothing on stdout.
+- The kernel trims the oldest records first when the combined context is too large for one ask.

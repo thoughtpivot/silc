@@ -39,6 +39,7 @@ cd myapp
 silc build main.silc          # compile + validate
 silc main.silc                # web by default
 silc main.silc --terminal     # also attach OpenTUI (+ telnet fallback)
+silc main.silc | pbcopy       # a loop command: run once, result on stdout, exit
 ```
 
 Treat compiler diagnostics as authoritative. Prefer `silc build` after each
@@ -55,7 +56,7 @@ meaningful edit. Stop and report limits instead of inventing substrates.
 | `resource X for Contract` | **Resource** — capability CRUD (`query list;`, `mutation create;`, …) |
 | `app X` | **App** — `route` table (dual-surface serving is synthesized) |
 | `game X` | **Game** — web-only WebGPU scene tree (`game::scene(...)`; ADR-012). Do not mix with `app` / UI routes |
-| `loop X` | **Loop** — scheduled, approval-gated, model-assisted work (`loop::flow(...)`; ADR-014). Runs beside an `app`; the compiler adds the `/loops` inbox |
+| `loop X` | **Loop** — scheduled, approval-gated, model-assisted work (`loop::flow(...)`; ADR-014). Runs beside an `app`; the compiler adds the `/loops` inbox. With no `app` and only `loop::manual` triggers it is a **command**: `silc main.silc` runs each loop once, prints its notices to stdout, and exits |
 | `service X` / `processor X` / `task X` | Optional workflow modules |
 | `==>` | Pipeline feed between values and `ns::op(...)` calls |
 
@@ -250,7 +251,11 @@ Declare `loop Name { loop::flow(trigger, steps...) }`. Exactly one trigger
 (`schedule`, `manual`, or `on_mutation`) comes first; steps run in order. The
 compiler adds a `/loops` inbox (approvals, Run now, runs, notices) on both
 surfaces and a Go loop kernel that records every outside input and model answer
-so a resumed run replays instead of redoing work.
+so a resumed run replays instead of redoing work. A program with no `app`, no
+`game`, and only `loop::manual` triggers is a **loop command**: no inbox and no
+surfaces are built; `silc main.silc` runs every loop once, narrates each step on
+stderr, prints each run's notices to stdout (one per line), and exits non-zero
+if any run failed.
 
 - `loop::flow` — props: none; children: one trigger, then steps
 - `loop::schedule` — props: `cron`, `tz`, `catch_up?`; children: none
@@ -283,6 +288,7 @@ Rules the compiler enforces:
 - Reserved bindings: `$today` and `$now` (loop time zone), `$event` (trigger data), `$calendar` (`today`, `weekday`, `last7_start`, `last7_end`, `next7_end`).
 - `loop::read(:op("mcp::call"), :server("https://…/mcp"), :tool("name"), :args(Contract.new(...)), :auth_env("TOKEN_VAR"), :select("records.parsed"))` calls one MCP tool; the result is `$x.text` and `$x.data`. Tokens come from the environment, never from source.
 - Run now in `/loops` starts `manual` and `schedule` loops. A loop never overlaps itself.
+- A loop command cannot use `loop::approve` (nobody is there to answer); use `loop::gate`, or add an `app` to get the `/loops` inbox.
 - `silc build` prints worst-case model calls, effects, approvals, and reads per run.
 
 ## Valid patterns

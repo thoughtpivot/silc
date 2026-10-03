@@ -1,0 +1,86 @@
+# Compiler fixture: a scheduled loop that reads two MCP streams, asks twice,
+# gates, writes one row, and posts one notice. Tests swap the schedule for
+# loop::manual() to get a command program.
+@version("0.5.0")
+
+contract ReadArgs {
+    has Str $.path;
+    has Int $.limit;
+}
+
+contract Summary {
+    has Str $.facts;
+    has Str $.focus;
+}
+
+contract Action {
+    has Str $.sentence;
+}
+
+contract Digest {
+    has Str $.id;
+    has Str $.day;
+    has Str $.at;
+    has Str $.sentence;
+    has Str $.focus;
+}
+
+resource Digests for Digest {
+    query list;
+    mutation create;
+}
+
+loop DailyDigest {
+    loop::flow(
+        loop::schedule(:cron("0 5 * * *"), :tz("UTC"), :catch_up("12h")),
+        loop::read(
+            :as(notes),
+            :op("mcp::call"),
+            :server("https://kb.example.test/mcp"),
+            :auth_env("KB_TOKEN"),
+            :tool("read_window"),
+            :args(ReadArgs.new(:path("notes.jsonl"), :limit(6))),
+            :select("records.parsed")
+        ),
+        loop::read(
+            :as(tasks),
+            :op("mcp::call"),
+            :server("https://kb.example.test/mcp"),
+            :auth_env("KB_TOKEN"),
+            :tool("read_window"),
+            :args(ReadArgs.new(:path("tasks.jsonl"), :limit(4))),
+            :select("records.parsed")
+        ),
+        loop::ask(
+            :as(summary),
+            :into(Summary),
+            :from([$notes.data, $tasks.data]),
+            :retry(2),
+            :prompt("Today is {$calendar.today} ({$calendar.weekday}). Use rows dated {$calendar.last7_start} through {$calendar.last7_end} and goals live through {$calendar.next7_end}. facts: what happened. focus: what matters most today."),
+            loop::otherwise(loop::fail(:reason("could not summarize")))
+        ),
+        loop::ask(
+            :as(action),
+            :into(Action),
+            :from($summary),
+            :retry(2),
+            :prompt("One imperative sentence for {$calendar.today}, using only the summary."),
+            loop::otherwise(loop::fail(:reason("could not pick an action")))
+        ),
+        loop::gate(
+            :that($action.sentence != "" && $summary.focus != ""),
+            :reason("one grounded sentence or nothing"),
+            loop::otherwise(loop::fail(:reason("empty action")))
+        ),
+        loop::write(
+            :to(Digests.create),
+            :key("digest:{$now}"),
+            :value(Digest.new(:day($calendar.today), :at($now), :sentence($action.sentence), :focus($summary.focus)))
+        ),
+        loop::notify(
+            :to("Reader"),
+            :text("{$action.sentence}"),
+            :key("digest:{$now}")
+        )
+    )
+}

@@ -111,6 +111,15 @@ GET) and `mcp::call` (one named tool per step).
 7. **Run now.** The inbox starts `manual` and `schedule` loops on request, so
    a scheduled loop can be run off schedule without a second declaration. The
    no-overlap rule still applies.
+   - **Loop commands.** A program with no `app`, no `game`, and only
+     `loop::manual` triggers has nobody to serve, so the compiler builds no
+     inbox and no surfaces. `silc main.silc` starts the kernel with
+     `SILC_LOOP_ONCE=1`: it finishes any run a crash left behind, runs every
+     loop once, narrates each step on stderr, prints each run's notices to
+     stdout (one per line), and exits non-zero if any run failed. Runs and
+     receipts land in the same SQLite file, so replay rules are unchanged.
+     `loop::approve` is a compile error in a command. Only the CPython model
+     worker starts, and only when the program uses `loop::ask`.
 8. **Plans are pinned.** `loop_lower` emits `loop/plan.json` and a
    content-addressed copy at `loop/plans/<sha256>.json`. The hash covers the
    lowered plan and the compiler version. Older plan files are kept so
@@ -129,4 +138,6 @@ GET) and `mcp::call` (one named tool per step).
   (four Moz MCP reads, two silclm asks, a gate, one keyed write per run), and
   `examples/whatToDoTodayApp`, the same reads reduced to a short to-do list
   with no authored `app`: the synthesized `/loops` inbox on the terminal
-  surface (or `curl` against `/api/loop_requests`) is its only interface.
+  surface (or `curl` against `/api/loop_requests`) is its only interface, and
+  `examples/oneThingCliApp`, the one-sentence brief as a loop command that
+  prints its result and exits.

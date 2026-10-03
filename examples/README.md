@@ -24,7 +24,7 @@ byte-for-byte. App-specific notes go **after** the end marker only.
 
 Tracked examples today: `chatApp`, `inventoryApp`, `scraperApp`,
 `pipelineApp`, `blogApp`, `dataExtractorApp`, `arenaGameApp`, `platformGameApp`,
-`rfiChaseApp`, `oneThingApp`, and `whatToDoTodayApp`.
+`rfiChaseApp`, `oneThingApp`, `oneThingCliApp`, and `whatToDoTodayApp`.
 
 ## Current apps
 
@@ -40,6 +40,7 @@ Tracked examples today: `chatApp`, `inventoryApp`, `scraperApp`,
 | [`platformGameApp/`](platformGameApp/) | WebGPU platformer (side-scroll camera, arrows+jump controls) | 18140 | — |
 | [`rfiChaseApp/`](rfiChaseApp/) | Weekday `loop`: overdue RFIs → silclm draft → PM approval in `/loops` → keyed reminder | 18088 | — |
 | [`oneThingApp/`](oneThingApp/) | Daily `loop`: four Moz MCP reads → silclm brief → Dan's one sentence (needs `MOZ_MCP_TOKEN`) | 18088 | — |
+| [`oneThingCliApp/`](oneThingCliApp/) | Loop **command**: the same reads and brief, run once by `silc main.silc`; the sentence is printed to stdout and the process exits. No UI, no `/loops` (needs `MOZ_MCP_TOKEN`) | — | — |
 | [`whatToDoTodayApp/`](whatToDoTodayApp/) | CLI-driven daily `loop`: same Moz MCP reads → silclm brief → 3 to 5 item to-do list; no authored UI, synthesized `/loops` inbox only (needs `MOZ_MCP_TOKEN`) | 18088 | 18023 |
 
 ## Conventions
@@ -59,6 +60,10 @@ Tracked examples today: `chatApp`, `inventoryApp`, `scraperApp`,
    ([ADR-010](../docs/ADR-010-tensor-minilm-pipeline.md)).
 8. Game programs declare `game { game::scene(...) }` only —
    web/WebGPU surface, no terminal ([ADR-012](../docs/ADR-012-webgpu-game-subject.md)).
+9. Loop commands (`oneThingCliApp`) have no `app` and only `loop::manual`
+   triggers. `silc main.silc` runs each loop once, narrates progress on stderr,
+   prints the notices on stdout, and exits; nothing is served
+   ([ADR-014](../docs/ADR-014-loop-subject.md)).
 
 ## Build / run
 
@@ -69,4 +74,7 @@ cd examples/chatApp
 silc build main.silc
 silc main.silc              # web by default
 silc main.silc --terminal   # also attach OpenTUI (+ telnet fallback)
+
+cd ../oneThingCliApp
+silc main.silc              # a loop command: runs once, prints the result, exits
 ```

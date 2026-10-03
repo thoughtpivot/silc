@@ -81,7 +81,7 @@ fn rfi_chase_cost_report() {
         report.contains("model calls 600 · effects 600 (writes 400, notices 200) · approvals 200"),
         "{report}"
     );
-    assert!(report.contains("manual (Run now in /loops)"), "{report}");
+    assert!(report.contains("OpenRfiDigest  manual\n"), "{report}");
 }
 
 #[test]
@@ -127,6 +127,21 @@ fn approval_showing_the_value_clears_it() {
             loop::timed_out(loop::skip(:reason("late")))),"#,
     );
     check(&body).unwrap();
+}
+
+#[test]
+fn command_program_cannot_wait_for_approval() {
+    let approve = GOOD.replace(
+        r#"loop::gate(:that($draft.text != ""), :reason("never write an empty note")),"#,
+        r#"loop::approve(:by("pm"), :message("Send?"), :show($draft), :within("1d"),
+            loop::declined(loop::skip(:reason("declined"))),
+            loop::timed_out(loop::skip(:reason("late")))),"#,
+    );
+    let manual = |body: &str| {
+        body.replace(r#"loop::schedule(:cron("0 8 * * 1-5"), :tz("America/New_York")),"#, "loop::manual(),")
+    };
+    check(&manual(GOOD)).unwrap();
+    expect_err(&manual(&approve), "this program is a command");
 }
 
 #[test]
@@ -423,13 +438,13 @@ fn mcp_result_and_calendar_fields_are_closed() {
 }
 
 #[test]
-fn one_thing_example_validates_and_reports_costs() {
-    let program = parse(include_str!("../../../examples/oneThingApp/main.silc")).unwrap();
+fn mcp_fixture_validates_and_reports_costs() {
+    let program = parse(include_str!("../../sil-codegen/tests/fixtures/loop_digest.silc")).unwrap();
     program.validate().unwrap();
     let report = sil_core::format_loop_cost_report(&program).unwrap();
-    assert!(report.contains("OneThingToday  schedule \"0 5 * * *\" UTC, catch up 12h"), "{report}");
+    assert!(report.contains("DailyDigest  schedule \"0 5 * * *\" UTC, catch up 12h"), "{report}");
     assert!(
-        report.contains("model calls 6 · effects 2 (writes 1, notices 1) · approvals 0 · reads 12"),
+        report.contains("model calls 6 · effects 2 (writes 1, notices 1) · approvals 0 · reads 6"),
         "{report}"
     );
 }

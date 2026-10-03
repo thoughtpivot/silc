@@ -711,15 +711,28 @@ pub fn build_llm_python(lock: &RuntimeLock, runtime_root: &Path) -> Result<PathB
             ));
         }
     }
+    // pip chatter belongs with the other build status on stderr: a loop
+    // command's stdout is its result.
     let status = Command::new(&python)
         .args(["-m", "pip", "install", "--disable-pip-version-check", "-r"])
         .arg(&requirements)
+        .stdout(stdout_as_stderr())
         .status()
         .map_err(|e| format!("failed to install llm::complete Python dependency: {e}"))?;
     if !status.success() {
         return Err("Silc install of compiler-pinned llama-cpp-python failed".into());
     }
     Ok(python)
+}
+
+/// A child's stdout handle that writes to this process's stderr.
+fn stdout_as_stderr() -> Stdio {
+    use std::os::fd::{AsRawFd, FromRawFd};
+    let fd = unsafe { libc::dup(std::io::stderr().as_raw_fd()) };
+    if fd < 0 {
+        return Stdio::inherit();
+    }
+    unsafe { Stdio::from_raw_fd(fd) }
 }
 
 /// Install the compiler-pinned CPU ONNX adapter in an isolated tensor venv.
@@ -959,6 +972,135 @@ pub fn run_app(
     attach_terminal: bool,
 ) -> Result<(), String> {
     run_graph(output, lock, None, attach_terminal)
+}
+
+/// Run a loop command (ADR-014): every loop is manual and there is no `app`.
+/// No web, terminal, or API surface starts. The silclm worker comes up only
+/// when a loop asks the model; the kernel runs each loop once, prints the
+/// notices to stdout, and the process exits with the kernel's status.
+pub fn run_loop_command(output: &EmitResult, lock: &RuntimeLock) -> Result<(), String> {
+    let graph = output
+        .graph
+        .as_ref()
+        .ok_or_else(|| "program is not executable in Silc 0.5.0".to_string())?;
+    if !graph.is_loop_command() {
+        return Err("internal: run_loop_command needs a loop command program".into());
+    }
+    let kernel_bin = output.root.join("go/loop/kernel");
+    if !kernel_bin.is_file() {
+        return Err(format!(
+            "Go loop kernel missing at {} (run `silc build`)",
+            kernel_bin.display()
+        ));
+    }
+
+    let ipc_dir = output.root.join("ipc");
+    let data_dir = output.root.join("data");
+    fs::create_dir_all(&ipc_dir).map_err(|e| e.to_string())?;
+    fs::create_dir_all(&data_dir).map_err(|e| e.to_string())?;
+    let _ = fs::write(ipc_dir.join(".metadata_never_index"), b"");
+    let _ = fs::write(data_dir.join(".metadata_never_index"), b"");
+
+    let socket_path = short_socket_path(&output.root)?;
+    let _ = fs::remove_file(&socket_path);
+    let listener =
+        UnixListener::bind(&socket_path).map_err(|e| format!("bind supervisor socket: {e}"))?;
+    let db_path = data_dir.join("app.db");
+    fs::write(
+        output.root.join("run.json"),
+        serde_json::to_string_pretty(&serde_json::json!({
+            "socket": socket_path,
+            "ipc_dir": ipc_dir,
+            "db": &db_path,
+            "mode": "loop_command",
+            "model_ref": graph.model_ref,
+        }))
+        .unwrap(),
+    )
+    .map_err(|e| e.to_string())?;
+
+    let pool = Arc::new(Mutex::new(SlotPool::create(
+        &ipc_dir,
+        output.schema_id,
+        DEFAULT_SLOT_COUNT,
+        DEFAULT_PAYLOAD_CAPACITY,
+    )?));
+    let workers: Arc<Mutex<HashMap<String, WorkerPool>>> = Arc::new(Mutex::new(HashMap::new()));
+    let pending: Arc<Mutex<HashMap<String, Pending>>> = Arc::new(Mutex::new(HashMap::new()));
+    let stop = Arc::new(AtomicBool::new(false));
+    let accept_workers = {
+        let workers = Arc::clone(&workers);
+        let pending = Arc::clone(&pending);
+        let pool = Arc::clone(&pool);
+        let stop = Arc::clone(&stop);
+        let processor_op = graph.processor_op;
+        let model_id = graph.model_ref.clone();
+        let listener = listener.try_clone().map_err(|e| e.to_string())?;
+        thread::spawn(move || {
+            accept_loop(listener, workers, pending, pool, stop, processor_op, model_id)
+        })
+    };
+
+    let mut children: Vec<Child> = Vec::new();
+    let result = (|| -> Result<(), String> {
+        if graph.needs_llm() {
+            let model_path = crate::models::ensure_model(
+                graph
+                    .model_ref
+                    .as_deref()
+                    .ok_or_else(|| "loop::ask graph missing model_ref".to_string())?,
+            )?;
+            children.extend(spawn_workers(
+                output,
+                lock,
+                &socket_path,
+                &ipc_dir,
+                &data_dir,
+                graph,
+                1,
+                0,
+                Some(model_path.as_path()),
+            )?);
+            wait_for_pool(&workers, "python", 1, Duration::from_secs(300))?;
+        }
+        eprintln!("silc: running {} once", graph.loops.join(", "));
+        let mut kernel = Command::new(&kernel_bin)
+            .env("SILC_SOCKET", &socket_path)
+            .env("SILC_DB_PATH", &db_path)
+            .env("SILC_LOOP_PLAN", output.root.join("loop/plan.json"))
+            .env("SILC_LOOP_ONCE", "1")
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .map_err(|e| format!("failed to spawn Silc loop kernel: {e}"))?;
+        let status = kernel
+            .wait()
+            .map_err(|e| format!("wait for Silc loop kernel: {e}"))?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err("loop command did not finish cleanly (see messages above)".into())
+        }
+    })();
+
+    stop.store(true, Ordering::SeqCst);
+    let _ = UnixStream::connect(&socket_path);
+    let _ = accept_workers.join();
+    if let Ok(map) = workers.lock() {
+        for pool in map.values() {
+            for writer in &pool.writers {
+                if let Ok(mut w) = writer.lock() {
+                    let _ = write_frame(&mut *w, &ControlFrame::Shutdown {});
+                }
+            }
+        }
+    }
+    for child in &mut children {
+        let _ = child.kill();
+        let _ = child.wait();
+    }
+    let _ = fs::remove_file(&socket_path);
+    result
 }
 
 pub fn run_pipeline(
@@ -1240,6 +1382,7 @@ fn run_graph(
             graph.http_port, graph.http_route
         );
     }
+    let mut saved_tty = None;
     if graph.terminal_port.is_some() && !attach_terminal {
         println!("silc: ui::terminal skipped (pass --terminal to attach OpenTUI)");
     } else if let Some(port) = graph.terminal_port {
@@ -1249,7 +1392,11 @@ fn run_graph(
         let has_tty = std::io::IsTerminal::is_terminal(&std::io::stdin())
             || std::io::IsTerminal::is_terminal(&std::io::stdout());
         let mut opentui_attached = false;
+        // OpenTUI switches the shared TTY to raw mode and SGR mouse tracking.
+        // Ctrl-C kills that process before it can restore the terminal, which
+        // leaves mouse-move reports (`35;col;rowM`) for the shell to execute.
         if terminal_main.is_file() && has_tty {
+            saved_tty = capture_tty();
             // Classic JSX so TerminalApp lowers to OpenTUI `h`, not React.
             let opentui = Command::new(&lock.bun_bin)
                 .arg("--jsx-runtime=classic")
@@ -1337,6 +1484,9 @@ fn run_graph(
     for child in &mut children {
         let _ = child.kill();
         let _ = child.wait();
+    }
+    if saved_tty.is_some() {
+        restore_tty(saved_tty);
     }
     let _ = fs::remove_file(&socket_path);
     println!("silc: stopped");
@@ -1449,7 +1599,7 @@ fn handle_client(
             })
             .push(Arc::clone(&writer));
         let count = map.get(&role).map(|p| p.len()).unwrap_or(0);
-        println!("silc: worker ready role={role} id={worker_id} pool={count}");
+        eprintln!("silc: worker ready role={role} id={worker_id} pool={count}");
     }
 
     loop {
@@ -1966,7 +2116,7 @@ fn spawn_workers(
         );
     }
     let go_bin = output.root.join("go/worker");
-    if !go_bin.is_file() {
+    if go_replicas > 0 && !go_bin.is_file() {
         return Err(format!("Go worker binary missing at {}", go_bin.display()));
     }
     for _ in 0..go_replicas {
@@ -2016,6 +2166,35 @@ fn short_socket_path(runtime_root: &Path) -> Result<PathBuf, String> {
     hasher.update(runtime_root.to_string_lossy().as_bytes());
     let digest = hex::encode(hasher.finalize())[..16].to_string();
     Ok(std::env::temp_dir().join(format!("silc-{digest}.sock")))
+}
+
+/// Snapshot stdin so OpenTUI's raw mode and mouse tracking can be undone.
+fn capture_tty() -> Option<libc::termios> {
+    if !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+        return None;
+    }
+    unsafe {
+        let mut attrs = std::mem::MaybeUninit::<libc::termios>::uninit();
+        if libc::tcgetattr(libc::STDIN_FILENO, attrs.as_mut_ptr()) != 0 {
+            return None;
+        }
+        Some(attrs.assume_init())
+    }
+}
+
+/// Turn mouse tracking and the alternate screen off, then put the TTY back.
+fn restore_tty(saved: Option<libc::termios>) {
+    use std::io::Write;
+    let mut out = std::io::stdout();
+    let _ = out.write_all(
+        b"\x1b[?1000l\x1b[?1002l\x1b[?1003l\x1b[?1006l\x1b[?1015l\x1b[?25h\x1b[?1049l\x1b[0m\r",
+    );
+    let _ = out.flush();
+    if let Some(attrs) = saved {
+        unsafe {
+            libc::tcsetattr(libc::STDIN_FILENO, libc::TCSANOW, &attrs);
+        }
+    }
 }
 
 fn wait_for_ctrl_c() {

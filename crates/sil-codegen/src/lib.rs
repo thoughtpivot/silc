@@ -491,7 +491,12 @@ pub fn emit(
                 "plan_hash": plan["hash"],
                 "pinned_plans": "loop/plans",
                 "kernel": "go/loop/kernel",
-                "inbox_route": loop_lower::LOOP_INBOX_ROUTE,
+                "inbox_route": if g.is_loop_command() {
+                    serde_json::Value::Null
+                } else {
+                    serde_json::json!(loop_lower::LOOP_INBOX_ROUTE)
+                },
+                "command": g.is_loop_command(),
                 "ask": g.loop_ask,
                 "loops": program.loops.iter().map(|l| serde_json::json!({
                     "name": l.name,
@@ -563,6 +568,9 @@ fn emit_runnable(
     }
     if graph.has_ui() {
         emit_ui_app(root, program, graph, schema_id, compiler_version, generated)?;
+    }
+    if graph.is_loop_command() {
+        emit_loop_command(root, program, graph, schema_id, compiler_version, generated)?;
     }
     if graph.has_loops() {
         loop_lower::emit_loop_kernel(root, program, compiler_version, generated)?;
@@ -821,6 +829,50 @@ fn emit_pipeline(
             render_template(STORE_WORKER_GO, program, graph, schema_id, compiler_version),
         ),
         (root.join("go/go.mod"), STORE_GOMOD.to_string()),
+    ];
+    for (path, contents) in files {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|error| format!("create {}: {error}", parent.display()))?;
+        }
+        fs::write(&path, contents).map_err(|error| format!("write {}: {error}", path.display()))?;
+        generated.push(path);
+    }
+    Ok(())
+}
+
+/// A loop command (ADR-014) has no surface: no Bun worker, no Go store. The
+/// kernel owns the SQLite file; only `loop::ask` needs a worker, the silclm
+/// CPython processor the supervisor reaches over the UDS.
+fn emit_loop_command(
+    root: &Path,
+    program: &Program,
+    graph: &ExecutableGraph,
+    schema_id: u32,
+    compiler_version: &str,
+    generated: &mut Vec<PathBuf>,
+) -> Result<(), String> {
+    clear_dir_sources(&root.join("go"), &["go"])?;
+    clear_dir_sources(&root.join("typescript"), &["ts", "tsx", "js"])?;
+    clear_dir_sources(&root.join("python"), &["py"])?;
+    if !graph.needs_llm() {
+        return Ok(());
+    }
+    let files = [
+        (
+            root.join("python/worker.py"),
+            render_template(
+                PROCESSOR_WORKER_PY,
+                program,
+                graph,
+                schema_id,
+                compiler_version,
+            ),
+        ),
+        (
+            root.join("python/requirements.txt"),
+            LLM_REQUIREMENTS.to_string(),
+        ),
     ];
     for (path, contents) in files {
         if let Some(parent) = path.parent() {

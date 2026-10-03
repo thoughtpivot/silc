@@ -345,7 +345,7 @@ component Page {
 
 #[test]
 fn loop_nodes_props_and_keyword_hover() {
-    let src = workspace_file("examples/oneThingApp/main.silc");
+    let src = workspace_file("crates/sil-codegen/tests/fixtures/loop_digest.silc");
     let node = hover_on_member(&src, "loop::read(");
     assert!(node.contains("loop::read") && node.contains("mcp::call"), "{node}");
 
@@ -357,7 +357,7 @@ fn loop_nodes_props_and_keyword_hover() {
     let ns = hover_at(&src, ns_offset);
     assert!(ns.contains("Loop step catalog"), "{ns}");
 
-    let kw_offset = src.find("loop OneThingToday").expect("decl") as u32;
+    let kw_offset = src.find("loop DailyDigest").expect("decl") as u32;
     let kw = hover_at(&src, kw_offset);
     assert!(kw.contains("ADR-014"), "{kw}");
 

@@ -136,7 +136,7 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
     LoopNodeSpec {
         name: "manual",
         role: LoopNodeRole::Trigger,
-        description: "Starts a run when a person presses Run now in the synthesized /loops inbox on web or terminal.",
+        description: "Starts a run when a person asks for one. With an `app` (or any scheduled loop) that is Run now in the synthesized /loops inbox; when every loop is manual and there is no `app`, the program is a command: `silc main.silc` runs each loop once, prints its notices to stdout, and exits.",
         props: &[],
         children: LoopChildPolicy::None,
     },
@@ -1158,7 +1158,7 @@ impl<'a> Checker<'a> {
                             && env.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
                             && !env.starts_with(|c: char| c.is_ascii_digit());
                         if !valid {
-                            return Err(self.err(step, ":auth_env must be an environment variable name like MOZ_MCP_TOKEN"));
+                            return Err(self.err(step, ":auth_env must be an environment variable name like API_TOKEN"));
                         }
                     }
                     if let Some(sel) = step.string_prop("select") {
@@ -1439,7 +1439,30 @@ pub fn validate_loops(program: &Program) -> Result<(), String> {
         }
         validate_loop(program, lp)?;
     }
+    if loops_are_command(program) {
+        for lp in &program.loops {
+            if lp.contains_node("approve") {
+                return Err(format!(
+                    "loop `{}` uses loop::approve, but this program is a command (manual loops, no `app`) so nobody can approve it; add an `app` with a route, or replace the approval with loop::gate",
+                    lp.name
+                ));
+            }
+        }
+    }
     Ok(())
+}
+
+/// A command program: every loop is `loop::manual` and nothing declares a
+/// surface. `silc main.silc` runs each loop once, prints notices, and exits
+/// instead of serving the `/loops` inbox.
+pub fn loops_are_command(program: &Program) -> bool {
+    !program.loops.is_empty()
+        && program.apps.is_empty()
+        && program.games.is_empty()
+        && program
+            .loops
+            .iter()
+            .all(|l| l.trigger().is_some_and(|t| t.name == "manual"))
 }
 
 /// Human-readable trigger summary, e.g. `schedule "0 8 * * 1-5" America/New_York`.
@@ -1459,7 +1482,7 @@ pub fn describe_loop_trigger(lp: &Loop) -> String {
             }
             s
         }
-        "manual" => "manual (Run now in /loops)".into(),
+        "manual" => "manual".into(),
         "on_mutation" => format!(
             "on {} of {}",
             t.ident_prop("mutation").unwrap_or_default(),

@@ -255,18 +255,26 @@ fn build_only(entry: &Path) -> Result<(), String> {
     if let Some(report) = &output.loop_report {
         print!("{report}");
     }
+    if is_loop_command(&output) {
+        println!("command: `silc {}` runs each loop once, prints its notices, and exits (no web or terminal surface)", entry.display());
+    }
     Ok(())
 }
 
 fn compile_and_maybe_run(entry: &Path, attach_terminal: bool) -> Result<(), String> {
     let (_workdir, output, lock) = compile_common(entry)?;
-    println!("silc {}", env!("CARGO_PKG_VERSION"));
-    println!("entry:    {}", entry.display());
-    println!("runtime:  {}", output.root.display());
-    println!("manifest: {}", output.manifest.display());
-    println!("mode:     {}", output.execution_mode);
+    let quiet = is_loop_command(&output);
+    status_line(quiet, &format!("silc {}", env!("CARGO_PKG_VERSION")));
+    status_line(quiet, &format!("entry:    {}", entry.display()));
+    status_line(quiet, &format!("runtime:  {}", output.root.display()));
+    status_line(quiet, &format!("manifest: {}", output.manifest.display()));
+    status_line(quiet, &format!("mode:     {}", output.execution_mode));
     if let Some(report) = &output.loop_report {
-        print!("{report}");
+        if quiet {
+            eprint!("{report}");
+        } else {
+            print!("{report}");
+        }
     }
 
     match output.execution_mode {
@@ -283,7 +291,14 @@ fn compile_and_maybe_run(entry: &Path, attach_terminal: bool) -> Result<(), Stri
                 .graph
                 .as_ref()
                 .ok_or_else(|| "runnable program missing executable graph".to_string())?;
-            if graph.is_api_only() {
+            if graph.is_loop_command() {
+                if attach_terminal {
+                    eprintln!(
+                        "silc: this program is a loop command with no UI surface; --terminal ignored"
+                    );
+                }
+                supervisor::run_loop_command(&output, &lock)
+            } else if graph.is_api_only() {
                 supervisor::run_api(&output, &lock)
             } else if graph.has_game() {
                 supervisor::run_game(&output, &lock)
@@ -373,6 +388,14 @@ fn compile_common(
                 supervisor::build_doc_python(&lock, &output.root)?;
             }
         }
+        if graph.is_loop_command() && graph.needs_llm() {
+            let model_id = graph
+                .model_ref
+                .as_deref()
+                .ok_or_else(|| "loop::ask graph missing model_ref".to_string())?;
+            models::ensure_model(model_id)?;
+            supervisor::build_llm_python(&lock, &output.root)?;
+        }
         if graph.has_loops() {
             supervisor::build_loop_kernel(&lock, &output.root)?;
         }
@@ -390,17 +413,39 @@ fn compile_common(
         }
     }
 
-    println!("routes:");
+    // A loop command's stdout is its result; keep compiler chatter on stderr.
+    let quiet_stdout = is_loop_command(&output);
+    if !decisions.is_empty() || !quiet_stdout {
+        status_line(quiet_stdout, "routes:");
+    }
     for decision in &decisions {
-        println!(
-            "  {:<24} -> {:<6} ({})",
-            decision.module,
-            decision.target.as_str(),
-            decision.provenance
+        status_line(
+            quiet_stdout,
+            &format!(
+                "  {:<24} -> {:<6} ({})",
+                decision.module,
+                decision.target.as_str(),
+                decision.provenance
+            ),
         );
     }
 
     Ok((workdir, output, lock))
+}
+
+fn is_loop_command(output: &sil_codegen::EmitResult) -> bool {
+    output
+        .graph
+        .as_ref()
+        .is_some_and(|g| g.is_loop_command())
+}
+
+fn status_line(to_stderr: bool, line: &str) {
+    if to_stderr {
+        eprintln!("{line}");
+    } else {
+        println!("{line}");
+    }
 }
 
 #[cfg(test)]

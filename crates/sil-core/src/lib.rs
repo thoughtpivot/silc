@@ -40,7 +40,8 @@ pub use game::{
 pub use loops::{
     catalog_loop_node_names, describe_loop_trigger, format_loop_catalog_line,
     format_loop_catalog_md, format_loop_cost_report, loop_bounds,
-    loop_prop_doc, loops_use_ask, lookup_loop_node, parse_loop_duration, template_placeholders,
+    loop_prop_doc, loops_are_command, loops_use_ask, lookup_loop_node, parse_loop_duration,
+    template_placeholders,
     validate_cron, validate_loop, validate_loops, Loop, LoopBounds, LoopChildPolicy, LoopNode,
     LoopNodeRole, LoopNodeSpec, LoopPropKind, LoopPropSpec, LOOP_NODE_CATALOG, LOOP_STEPS,
     LOOP_TRIGGERS,

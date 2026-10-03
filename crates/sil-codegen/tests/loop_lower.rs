@@ -19,6 +19,30 @@ fn example_program() -> sil_core::Program {
     program
 }
 
+const DIGEST_SCHEDULE: &str =
+    r#"loop::schedule(:cron("0 5 * * *"), :tz("UTC"), :catch_up("12h")),"#;
+
+fn digest_source() -> &'static str {
+    include_str!("fixtures/loop_digest.silc")
+}
+
+fn parse_valid(source: &str) -> sil_core::Program {
+    let program = sil_parser::parse(source).expect("parse fixture");
+    program.validate().expect("validate fixture");
+    program
+}
+
+fn digest_program() -> sil_core::Program {
+    parse_valid(digest_source())
+}
+
+/// The digest fixture with a manual trigger: every loop manual, no `app` — a command.
+fn command_program() -> sil_core::Program {
+    let source = digest_source();
+    assert!(source.contains(DIGEST_SCHEDULE));
+    parse_valid(&source.replace(DIGEST_SCHEDULE, "loop::manual(),"))
+}
+
 fn temp_dir(label: &str) -> PathBuf {
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -169,15 +193,21 @@ fn loop_kernel_replay_traces() {
         serde_json::to_string_pretty(&plan).unwrap(),
     )
     .unwrap();
-    let one_thing = sil_parser::parse(
-        &std::fs::read_to_string(repo_root().join("examples/oneThingApp/main.silc")).unwrap(),
-    )
-    .expect("parse oneThingApp");
-    one_thing.validate().expect("validate oneThingApp");
-    let one_thing = synthesize_loop_surface(&one_thing).expect("synthesize oneThingApp");
+    let digest = synthesize_loop_surface(&digest_program()).expect("synthesize digest");
     std::fs::write(
-        dir.join("onething_plan.json"),
-        serde_json::to_string_pretty(&lower_loop_plan(&one_thing, "test")).unwrap(),
+        dir.join("digest_plan.json"),
+        serde_json::to_string_pretty(&lower_loop_plan(&digest, "test")).unwrap(),
+    )
+    .unwrap();
+    let command = command_program();
+    assert_eq!(
+        synthesize_loop_surface(&command).expect("synthesize command"),
+        command,
+        "a command program gets no inbox"
+    );
+    std::fs::write(
+        dir.join("command_plan.json"),
+        serde_json::to_string_pretty(&lower_loop_plan(&command, "test")).unwrap(),
     )
     .unwrap();
 

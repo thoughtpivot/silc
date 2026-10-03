@@ -1,9 +1,10 @@
 package main
 
 // Replay traces for the loop kernel against the lowered examples/rfiChaseApp
-// (plan.json) and examples/oneThingApp (onething_plan.json) plans. The Rust
-// test `loop_kernel_replay_traces` copies this file, the kernel template, and
-// both plans into a temp module and runs `go test`.
+// (plan.json) and the tests/fixtures/loop_digest.silc fixture, scheduled
+// (digest_plan.json) and as a command (command_plan.json). The Rust test
+// `loop_kernel_replay_traces` copies this file, the kernel template, and the
+// plans into a temp module and runs `go test`.
 
 import (
 	"database/sql"
@@ -544,7 +545,7 @@ func TestCronParsing(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------- oneThingApp
+// ---------------------------------------------------------------- digest fixture
 
 type fakeMcp struct {
 	calls []map[string]any
@@ -564,22 +565,76 @@ func (f *fakeMcp) call(server, tool string, args map[string]any, token string) (
 	return map[string]any{"text": "{}", "data": map[string]any{"records": records}}, nil
 }
 
-const goodBrief = `{"facts":"EverydayMeal SOW signed by the client on 2026-10-01.","goals":"Execute both EverydayMeal SOWs this week.","pressure":"Neither SOW is fully executed."}`
-const goodAction = `{"sentence":"Send both EverydayMeal SOWs through Sign.com today."}`
+// The model's words are never asserted. Tests feed a spread of well-formed
+// and malformed replies and check what the kernel guarantees for any of them.
+const goodSummary = `{"facts":"f","focus":"g"}`
+const goodAction = `{"sentence":"s"}`
 
-func newOneThing(t *testing.T, at string) (*harness, *fakeMcp) {
+var validActions = []string{
+	goodAction,
+	`{"sentence":"Ünïcode — and \"quotes\" survive."}`,
+	"Sure, here it is:\n{\"sentence\":\"Prose around the object is ignored.\"}\nHope that helps.",
+	`{"sentence":"Two\nlines"}`,
+}
+
+var invalidActions = []string{
+	`{"sentence":""}`,
+	`{"sentence":"   "}`,
+	`{"other":"field"}`,
+	`not json at all`,
+	``,
+}
+
+// assertSucceededRun checks a succeeded run against the fixture's contract:
+// exactly one row stamped with the run time, every Str field non-blank, and
+// one notice whose text is the row's sentence.
+func assertSucceededRun(t *testing.T, h *harness, at string) map[string]any {
 	t.Helper()
-	h := newBareHarness(t, at, "onething_plan.json")
-	h.asker.replies = []string{goodBrief, goodAction}
+	var row map[string]any
+	for _, r := range h.rows("digests") {
+		if r["at"] == at {
+			if row != nil {
+				t.Fatalf("two rows for one run at %s", at)
+			}
+			row = r
+		}
+	}
+	if row == nil {
+		t.Fatalf("no row for the run at %s: %v", at, h.rows("digests"))
+	}
+	for _, f := range []string{"day", "at", "sentence", "focus"} {
+		if s, _ := row[f].(string); strings.TrimSpace(s) == "" {
+			t.Fatalf("contract field %s is blank: %v", f, row)
+		}
+	}
+	if !strings.HasPrefix(at, row["day"].(string)) {
+		t.Fatalf("day %v is not the run's day %s", row["day"], at)
+	}
+	matched := 0
+	for _, n := range h.rows("loop_notices") {
+		if n["text"] == row["sentence"] {
+			matched++
+		}
+	}
+	if matched != 1 {
+		t.Fatalf("want one notice carrying the row's sentence, got %d", matched)
+	}
+	return row
+}
+
+func newDigest(t *testing.T, at, plan string) (*harness, *fakeMcp) {
+	t.Helper()
+	h := newBareHarness(t, at, plan)
+	h.asker.replies = []string{goodSummary, goodAction}
 	m := &fakeMcp{}
 	h.k.mcp = m.call
-	t.Setenv("MOZ_MCP_TOKEN", "moz-secret")
+	t.Setenv("KB_TOKEN", "kb-secret")
 	return h, m
 }
 
 func (h *harness) runNow(loop, id string) {
 	h.t.Helper()
-	h.seed("loop_requests", id, map[string]any{"loop": loop, "requested_by": "Dan Stephenson", "status": "pending", "run_id": ""})
+	h.seed("loop_requests", id, map[string]any{"loop": loop, "requested_by": "Reader", "status": "pending", "run_id": ""})
 	h.tick()
 }
 
@@ -595,26 +650,26 @@ func (r *recordingAsker) Ask(req AskRequest) (string, error) {
 	return r.fakeAsker.Ask(req)
 }
 
-func TestOneThingReadsMozOverMcpAndWritesEachRun(t *testing.T) {
-	h, m := newOneThing(t, "2026-10-02T15:00:00Z")
-	rec := &recordingAsker{fakeAsker: fakeAsker{replies: []string{goodBrief, goodAction}}}
+func TestMcpReadsFeedAsksAndEachRunWritesItsOwnRow(t *testing.T) {
+	h, m := newDigest(t, "2026-10-02T15:00:00Z", "digest_plan.json")
+	rec := &recordingAsker{fakeAsker: fakeAsker{replies: []string{goodSummary, goodAction}}}
 	h.k.asker = rec
-	h.runNow("OneThingToday", "req-1")
+	h.runNow("DailyDigest", "req-1")
 
-	run := h.runsOf("OneThingToday")[0]
+	run := h.runsOf("DailyDigest")[0]
 	if run["outcome"] != "succeeded" {
 		t.Fatalf("run: %v", run)
 	}
-	if len(m.calls) != 4 {
-		t.Fatalf("four Moz streams, got %d calls", len(m.calls))
+	if len(m.calls) != 2 {
+		t.Fatalf("two MCP reads, got %d calls", len(m.calls))
 	}
 	first := m.calls[0]
-	if first["tool"] != "kb_jsonl_read_window" || first["token"] != "moz-secret" ||
+	if first["tool"] != "read_window" || first["token"] != "kb-secret" ||
 		!strings.HasSuffix(first["server"].(string), "/mcp") {
 		t.Fatalf("call: %v", first)
 	}
 	args := first["args"].(map[string]any)
-	if args["path"] != "memory/decisions.jsonl" || args["tailRecords"] != float64(6) {
+	if args["path"] != "notes.jsonl" || args["limit"] != float64(6) {
 		t.Fatalf("args are sent as written in the contract: %v", args)
 	}
 	if !strings.Contains(rec.prompts[0], "Today is 2026-10-02 (Friday)") ||
@@ -622,66 +677,79 @@ func TestOneThingReadsMozOverMcpAndWritesEachRun(t *testing.T) {
 		!strings.Contains(rec.prompts[0], "through 2026-10-08") {
 		t.Fatalf("calendar window in the prompt: %s", rec.prompts[0])
 	}
-	if strings.Contains(rec.contexts[0], `"raw"`) || !strings.Contains(rec.contexts[0], "recent memory/decisions.jsonl") {
+	if strings.Contains(rec.contexts[0], `"raw"`) || !strings.Contains(rec.contexts[0], "recent notes.jsonl") {
 		t.Fatalf(":select keeps only parsed records: %s", rec.contexts[0])
 	}
-	action := h.one("daily_actions")
-	if action["day"] != "2026-10-02" || action["at"] != "2026-10-02T15:00:00Z" ||
-		action["sentence"] != "Send both EverydayMeal SOWs through Sign.com today." {
-		t.Fatalf("daily action: %v", action)
-	}
-	notice := h.one("loop_notices")
-	if notice["to"] != "Dan Stephenson" || notice["text"] != action["sentence"] {
-		t.Fatalf("notice: %v", notice)
+	firstRow := assertSucceededRun(t, h, "2026-10-02T15:00:00Z")
+	if h.one("loop_notices")["to"] != "Reader" {
+		t.Fatalf("notice goes to the :to in the program: %v", h.one("loop_notices"))
 	}
 
-	// A later run the same day records its own action alongside the first.
-	rec.replies = []string{goodBrief, `{"sentence":"Something else entirely."}`}
-	rec.calls = 0
-	h.setClock("2026-10-02T16:00:00Z")
-	h.runNow("OneThingToday", "req-2")
-	if n := len(h.runsOf("OneThingToday")); n != 2 {
-		t.Fatalf("want two runs, got %d", n)
+	// Later runs, whatever the model says, each add one run, one row, and one
+	// notice, and never touch earlier rows.
+	for i, reply := range validActions[1:] {
+		rec.replies = []string{goodSummary, reply}
+		rec.calls = 0
+		at := fmt.Sprintf("2026-10-02T%02d:00:00Z", 16+i)
+		h.setClock(at)
+		h.runNow("DailyDigest", fmt.Sprintf("req-%d", i+2))
+		if n := len(h.runsOf("DailyDigest")); n != i+2 {
+			t.Fatalf("reply %q: want %d runs, got %d", reply, i+2, n)
+		}
+		assertSucceededRun(t, h, at)
 	}
-	actions := h.rows("daily_actions")
-	if len(actions) != 2 {
-		t.Fatalf("each run keeps its own action, got %d", len(actions))
+	if n := len(h.rows("digests")); n != len(validActions) {
+		t.Fatalf("one row per run, got %d", n)
 	}
-	seen := map[string]string{}
-	for _, a := range actions {
-		seen[a["at"].(string)] = a["sentence"].(string)
-	}
-	if seen["2026-10-02T16:00:00Z"] != "Something else entirely." || seen["2026-10-02T15:00:00Z"] != action["sentence"] {
-		t.Fatalf("actions by run time: %v", seen)
-	}
-	if n := len(h.rows("loop_notices")); n != 2 {
-		t.Fatalf("each run posts its own notice, got %d", n)
+	if again := assertSucceededRun(t, h, "2026-10-02T15:00:00Z"); again["sentence"] != firstRow["sentence"] {
+		t.Fatalf("an earlier row changed: %v -> %v", firstRow, again)
 	}
 }
 
-func TestOneThingScheduleFiresAtFiveUtc(t *testing.T) {
-	h, m := newOneThing(t, "2026-10-03T04:59:00Z")
+// Whatever malformed reply the model gives, the gate fails the run closed:
+// no row, no notice.
+func TestInvalidRepliesFailClosed(t *testing.T) {
+	for _, reply := range invalidActions {
+		h, _ := newDigest(t, "2026-10-02T15:00:00Z", "digest_plan.json")
+		h.asker.replies = []string{goodSummary, reply}
+		h.runNow("DailyDigest", "req-1")
+		run := h.runsOf("DailyDigest")[0]
+		if run["outcome"] != "failed" {
+			t.Fatalf("reply %q: want failed, got %v", reply, run)
+		}
+		if n := len(h.rows("digests")); n != 0 {
+			t.Fatalf("reply %q: nothing written, got %d rows", reply, n)
+		}
+		if n := len(h.rows("loop_notices")); n != 0 {
+			t.Fatalf("reply %q: no notice, got %d", reply, n)
+		}
+	}
+}
+
+func TestDailyScheduleFiresAtFiveUtc(t *testing.T) {
+	h, m := newDigest(t, "2026-10-03T04:59:00Z", "digest_plan.json")
 	h.tick()
-	if n := len(h.runsOf("OneThingToday")); n != 0 {
+	if n := len(h.runsOf("DailyDigest")); n != 0 {
 		t.Fatalf("too early, got %d runs", n)
 	}
 	h.setClock("2026-10-03T05:00:10Z")
 	h.tick()
-	runs := h.runsOf("OneThingToday")
+	runs := h.runsOf("DailyDigest")
 	if len(runs) != 1 || runs[0]["trigger"] != "schedule" || runs[0]["outcome"] != "succeeded" {
 		t.Fatalf("05:00 UTC run: %v", runs)
 	}
-	if len(m.calls) != 4 || h.one("daily_actions")["day"] != "2026-10-03" {
-		t.Fatalf("calls %d, action %v", len(m.calls), h.rows("daily_actions"))
+	if len(m.calls) != 2 {
+		t.Fatalf("two MCP reads, got %d", len(m.calls))
 	}
+	assertSucceededRun(t, h, "2026-10-03T05:00:10Z")
 }
 
-func TestOneThingFailsClosedWithoutToken(t *testing.T) {
-	h, m := newOneThing(t, "2026-10-02T15:00:00Z")
-	t.Setenv("MOZ_MCP_TOKEN", "")
-	h.runNow("OneThingToday", "req-1")
-	run := h.runsOf("OneThingToday")[0]
-	if run["outcome"] != "failed" || !strings.Contains(run["detail"].(string), "MOZ_MCP_TOKEN is not set") {
+func TestMcpReadFailsClosedWithoutToken(t *testing.T) {
+	h, m := newDigest(t, "2026-10-02T15:00:00Z", "digest_plan.json")
+	t.Setenv("KB_TOKEN", "")
+	h.runNow("DailyDigest", "req-1")
+	run := h.runsOf("DailyDigest")[0]
+	if run["outcome"] != "failed" || !strings.Contains(run["detail"].(string), "KB_TOKEN is not set") {
 		t.Fatalf("run: %v", run)
 	}
 	if len(m.calls) != 0 || h.asker.calls != 0 {
@@ -689,18 +757,18 @@ func TestOneThingFailsClosedWithoutToken(t *testing.T) {
 	}
 }
 
-func TestOneThingRetriesThenFailsWhenMozIsDown(t *testing.T) {
-	h, m := newOneThing(t, "2026-10-02T15:00:00Z")
+func TestMcpReadRetriesThenFailsWhenServerIsDown(t *testing.T) {
+	h, m := newDigest(t, "2026-10-02T15:00:00Z", "digest_plan.json")
 	m.fail = true
-	h.runNow("OneThingToday", "req-1")
-	run := h.runsOf("OneThingToday")[0]
+	h.runNow("DailyDigest", "req-1")
+	run := h.runsOf("DailyDigest")[0]
 	if run["outcome"] != "failed" || !strings.Contains(run["detail"].(string), "HTTP 503") {
 		t.Fatalf("run: %v", run)
 	}
 	if len(m.calls) != 3 {
 		t.Fatalf("one try plus two retries, got %d", len(m.calls))
 	}
-	if n := len(h.rows("daily_actions")); n != 0 {
+	if n := len(h.rows("digests")); n != 0 {
 		t.Fatalf("nothing written, got %d", n)
 	}
 	// Replay reuses the recorded failure instead of calling again.
@@ -708,20 +776,22 @@ func TestOneThingRetriesThenFailsWhenMozIsDown(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(m.calls) != 3 {
-		t.Fatalf("replay must not call Moz again, got %d", len(m.calls))
+		t.Fatalf("replay must not call the server again, got %d", len(m.calls))
 	}
 }
 
-func TestOneThingRejectsBlankBrief(t *testing.T) {
-	h, _ := newOneThing(t, "2026-10-02T15:00:00Z")
-	h.asker.replies = []string{`{"facts":"x","goals":"y","pressure":" "}`, goodAction}
-	h.runNow("OneThingToday", "req-1")
-	run := h.runsOf("OneThingToday")[0]
-	if run["outcome"] != "failed" {
-		t.Fatalf("blank pressure is not a valid Brief: %v", run)
-	}
-	if n := len(h.rows("daily_actions")); n != 0 {
-		t.Fatalf("nothing written, got %d", n)
+func TestAskRejectsBlankContractField(t *testing.T) {
+	for _, summary := range []string{`{"facts":"x","focus":" "}`, `{"facts":"","focus":"y"}`, `{"facts":"x"}`} {
+		h, _ := newDigest(t, "2026-10-02T15:00:00Z", "digest_plan.json")
+		h.asker.replies = []string{summary, goodAction}
+		h.runNow("DailyDigest", "req-1")
+		run := h.runsOf("DailyDigest")[0]
+		if run["outcome"] != "failed" {
+			t.Fatalf("%s is not a valid Summary: %v", summary, run)
+		}
+		if n := len(h.rows("digests")); n != 0 {
+			t.Fatalf("nothing written, got %d", n)
+		}
 	}
 }
 
@@ -779,20 +849,109 @@ func TestMcpCallSpeaksStreamableHttp(t *testing.T) {
 
 func TestCheckContractTakesFirstObjectAndRejectsBlanks(t *testing.T) {
 	fields := []FieldSpec{{Name: "first", Type: "Str"}, {Name: "fourth", Type: "Str"}}
-	reply := "Sure.\n{\"first\":\"Send the SOW\",\"fourth\":\"File the W-8\"}\nJustification: the {pressure} is real."
+	reply := "Sure.\n{\"first\":\"Ship the release\",\"fourth\":\"Book the room\"}\nJustification: the {focus} is real."
 	got, err := checkContract(fields, reply)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got["first"] != "Send the SOW" || got["fourth"] != "File the W-8" {
+	if got["first"] != "Ship the release" || got["fourth"] != "Book the room" {
 		t.Fatalf("got %v", got)
 	}
-	blank := "{\"first\":\"Send the SOW\",\"fourth\":\"\"}"
+	blank := "{\"first\":\"Ship the release\",\"fourth\":\"\"}"
 	if _, err := checkContract(fields, blank); err == nil || !strings.Contains(err.Error(), "fourth") {
 		t.Fatalf("blank Str should fail, got %v", err)
 	}
 	if _, err := checkContract(fields, "no object here"); err == nil {
 		t.Fatal("expected a missing-object error")
+	}
+}
+
+// ---------------------------------------------------------------- command programs
+
+// RunOnce is `silc main.silc` for a command program: every manual loop runs
+// once, the run's notices go to the writer, and the runs persist like any other.
+func TestRunOnceRunsManualLoopsAndPrintsNotices(t *testing.T) {
+	h, m := newDigest(t, "2026-10-03T21:00:00Z", "command_plan.json")
+	var narration []string
+	h.k.progress = func(format string, args ...any) {
+		narration = append(narration, fmt.Sprintf(format, args...))
+	}
+
+	for i, reply := range validActions {
+		narration = nil
+		at := fmt.Sprintf("2026-10-03T%02d:00:00Z", 10+i)
+		h.setClock(at)
+		h.asker.replies = []string{goodSummary, reply}
+		h.asker.calls = 0
+		before := len(m.calls)
+
+		var out strings.Builder
+		ok, err := h.k.RunOnce("Reader", &out)
+		if err != nil || !ok {
+			t.Fatalf("reply %q: RunOnce ok=%v err=%v", reply, ok, err)
+		}
+		runs := h.runsOf("DailyDigest")
+		if len(runs) != i+1 {
+			t.Fatalf("one run per invocation, got %d after %d", len(runs), i+1)
+		}
+		var run map[string]any
+		for _, r := range runs {
+			if r["started_at"] == at {
+				run = r
+			}
+		}
+		if run == nil || run["outcome"] != "succeeded" || run["trigger"] != "manual" ||
+			!strings.HasPrefix(run["identity"].(string), "command:") {
+			t.Fatalf("run: %v", run)
+		}
+		if ev, _ := run["event"].(map[string]any); ev["requested_by"] != "Reader" {
+			t.Fatalf("event: %v", run["event"])
+		}
+		if len(m.calls)-before != 2 {
+			t.Fatalf("two MCP reads per invocation, got %d", len(m.calls)-before)
+		}
+		row := assertSucceededRun(t, h, at)
+		// stdout is exactly this run's notice text and nothing else.
+		if out.String() != row["sentence"].(string)+"\n" {
+			t.Fatalf("stdout %q is not the run's notice %q", out.String(), row["sentence"])
+		}
+		// The run narrates each step as it goes (this goes to stderr in silc).
+		joined := strings.Join(narration, "\n")
+		for _, want := range []string{
+			"DailyDigest: reading notes (mcp::call read_window)", "DailyDigest: read notes ok",
+			"DailyDigest: reading tasks", "DailyDigest: asking the model for Summary (summary)",
+			"DailyDigest: ask summary ok", "DailyDigest: asking the model for Action (action)",
+			"DailyDigest: gate passed", "DailyDigest: wrote one digests row", "DailyDigest: notice posted to Reader",
+		} {
+			if !strings.Contains(joined, want) {
+				t.Fatalf("narration missing %q:\n%s", want, joined)
+			}
+		}
+	}
+
+	// Malformed replies and a down server both print nothing and report not ok.
+	runs := len(h.runsOf("DailyDigest"))
+	for i, reply := range invalidActions {
+		h.setClock(fmt.Sprintf("2026-10-04T%02d:00:00Z", 10+i))
+		h.asker.replies = []string{goodSummary, reply}
+		h.asker.calls = 0
+		var out strings.Builder
+		ok, err := h.k.RunOnce("Reader", &out)
+		if err != nil || ok || out.String() != "" {
+			t.Fatalf("reply %q: ok=%v err=%v out=%q", reply, ok, err, out.String())
+		}
+	}
+	m.fail = true
+	h.setClock("2026-10-05T10:00:00Z")
+	var out strings.Builder
+	if ok, err := h.k.RunOnce("Reader", &out); err != nil || ok || out.String() != "" {
+		t.Fatalf("server down: ok=%v err=%v out=%q", ok, err, out.String())
+	}
+	if n := len(h.rows("digests")); n != len(validActions) {
+		t.Fatalf("failed runs write nothing: %d rows", n)
+	}
+	if n := len(h.runsOf("DailyDigest")); n != runs+len(invalidActions)+1 {
+		t.Fatalf("failed invocations are still recorded as runs, got %d", n)
 	}
 }
 

@@ -204,6 +204,14 @@ type Kernel struct {
 	// crash is a test hook called at effect checkpoints ("after_reserve").
 	crash func(point, path string)
 	logf  func(format string, args ...any)
+	// progress, when set, narrates each step of a run (command mode).
+	progress func(format string, args ...any)
+}
+
+func (c *runCtx) progress(format string, args ...any) {
+	if c.k.progress != nil {
+		c.k.progress(c.lp.Name+": "+format, args...)
+	}
 }
 
 func NewKernel(db *sql.DB, plan *Plan, plansDir string) (*Kernel, error) {
@@ -465,6 +473,90 @@ func (k *Kernel) resumeRuns() error {
 	return nil
 }
 
+// RunOnce is the command mode behind `silc main.silc` for a program whose
+// loops are all manual and that has no app. It finishes any run a crash left
+// behind, starts every loop exactly once, writes each run's notices to `out`
+// (one line per notice), and reports whether every run succeeded. The runs
+// and their receipts stay in the shared SQLite file like any other run.
+func (k *Kernel) RunOnce(requestedBy string, out io.Writer) (ok bool, err error) {
+	if err := k.resumeRuns(); err != nil {
+		return false, fmt.Errorf("resume: %w", err)
+	}
+	ok = true
+	for i := range k.plan.Loops {
+		lp := &k.plan.Loops[i]
+		if lp.Trigger.Kind != "manual" {
+			k.logf("%s: skipped (command mode runs manual loops only)", lp.Name)
+			continue
+		}
+		if busy, err := k.activeRun(lp.Name); err != nil {
+			return false, err
+		} else if busy {
+			k.logf("%s: a previous run is still waiting; nothing started", lp.Name)
+			ok = false
+			continue
+		}
+		at := k.now().UTC().Format(time.RFC3339Nano)
+		event := map[string]any{"requested_by": requestedBy, "requested_at": at}
+		id, started, err := k.startRun(lp, "manual", "command:"+at, event)
+		if err != nil {
+			return false, err
+		}
+		if !started {
+			k.logf("%s: run %s already existed; nothing started", lp.Name, id)
+			ok = false
+			continue
+		}
+		run, err := k.loadRun(id)
+		if err != nil {
+			return false, err
+		}
+		status, _ := run.Data["status"].(string)
+		outcome, _ := run.Data["outcome"].(string)
+		detail, _ := run.Data["detail"].(string)
+		for _, text := range k.noticesFor(id) {
+			fmt.Fprintln(out, text)
+		}
+		switch {
+		case status == "waiting":
+			k.logf("%s: run %s is waiting for an approval nobody can give in command mode", lp.Name, id)
+			ok = false
+		case outcome == "failed":
+			k.logf("%s: run %s failed: %s", lp.Name, id, detail)
+			ok = false
+		case outcome == "partial":
+			k.logf("%s: run %s finished partially: %s", lp.Name, id, detail)
+			ok = false
+		case outcome == "stopped" && detail != "":
+			k.logf("%s: run %s stopped: %s", lp.Name, id, detail)
+		}
+	}
+	return ok, nil
+}
+
+// noticesFor returns the notice texts one run posted, oldest first.
+func (k *Kernel) noticesFor(runID string) []string {
+	if k.plan.Tables.Notices == "" {
+		return nil
+	}
+	rows, err := k.db.Query(fmt.Sprintf(
+		`SELECT json_extract(data, '$.text') FROM %s WHERE json_extract(data, '$.run_id') = ? ORDER BY created_at, rowid`,
+		k.plan.Tables.Notices), runID)
+	if err != nil {
+		k.logf("notices for %s: %v", runID, err)
+		return nil
+	}
+	defer rows.Close()
+	var texts []string
+	for rows.Next() {
+		var text sql.NullString
+		if rows.Scan(&text) == nil && text.Valid {
+			texts = append(texts, text.String)
+		}
+	}
+	return texts
+}
+
 // ResumeRun replays one run regardless of status (tests and operators).
 func (k *Kernel) ResumeRun(id string) error {
 	run, err := k.loadRun(id)
@@ -719,35 +811,47 @@ func (c *runCtx) step(st *Step, sc *scope, path string, inEach bool) outcome {
 	case "read":
 		raw, ok := c.recordedValue(path, "read")
 		if !ok {
+			if st.ReadOp == "mcp::call" {
+				c.progress("reading %s (%s %s)", st.As, st.ReadOp, st.Tool)
+			} else {
+				c.progress("reading %s", st.As)
+			}
 			raw = c.record(path, "read", c.read(st, sc))
 		}
 		var res map[string]any
 		_ = json.Unmarshal([]byte(raw), &res)
 		if errText, _ := res["error"].(string); errText != "" {
+			c.progress("read %s failed: %s", st.As, errText)
 			return outcome{sigFail, "loop::read: " + errText}
 		}
+		c.progress("read %s ok", st.As)
 		sc.vars[st.As] = res["page"]
 	case "ask":
 		raw, ok := c.recordedValue(path, "ask")
 		if !ok {
+			c.progress("asking the model for %s (%s)", st.Into, st.As)
 			raw = c.record(path, "ask", c.ask(st, sc))
 		}
 		var res map[string]any
 		_ = json.Unmarshal([]byte(raw), &res)
 		if okv, _ := res["ok"].(bool); !okv {
 			errText, _ := res["error"].(string)
+			c.progress("ask %s failed: %s", st.As, errText)
 			c.record(path, "trace:ask_failed", errText)
 			if st.Otherwise != nil {
 				return c.block(st.Otherwise, sc.child(), path+".otherwise", inEach)
 			}
 			return outcome{sigFail, fmt.Sprintf("loop::ask could not produce a valid %s: %s", st.Into, errText)}
 		}
+		c.progress("ask %s ok", st.As)
 		sc.vars[st.As] = res["value"]
 	case "gate":
 		v, known := eval(st.That, sc)
 		if b, isBool := v.(bool); known && isBool && b {
+			c.progress("gate passed")
 			return none
 		}
+		c.progress("gate blocked: %s", st.Reason)
 		c.record(path, "trace:gate_blocked", st.Reason)
 		if st.Otherwise != nil {
 			return c.block(st.Otherwise, sc.child(), path+".otherwise", inEach)
@@ -799,11 +903,23 @@ func (c *runCtx) step(st *Step, sc *scope, path string, inEach bool) outcome {
 			return outcome{s: sigSuspend}
 		}
 	case "write":
-		return c.write(st, sc, path)
+		out := c.write(st, sc, path)
+		if out.s == sigNone {
+			c.progress("wrote one %s row", st.Table)
+		}
+		return out
 	case "notify":
-		return c.notify(st, sc, path)
+		out := c.notify(st, sc, path)
+		if out.s == sigNone {
+			c.progress("notice posted to %s", renderLoose(st.To, sc))
+		}
+		return out
 	case "approve":
-		return c.approve(st, sc, path, inEach)
+		out := c.approve(st, sc, path, inEach)
+		if out.s == sigSuspend {
+			c.progress("waiting for approval by %s", renderLoose(st.By, sc))
+		}
+		return out
 	case "stop":
 		return outcome{sigStop, renderLoose(st.Reason, sc)}
 	case "fail":
@@ -2177,6 +2293,21 @@ func main() {
 		} else {
 			k.asker = asker
 		}
+	}
+	if os.Getenv("SILC_LOOP_ONCE") == "1" {
+		// Command mode: run every manual loop once, print notices, exit.
+		// Narrate each step on stderr; stdout carries only the notices.
+		k.progress = k.logf
+		by := envOr("SILC_LOOP_REQUESTED_BY", envOr("USER", "command line"))
+		ok, err := k.RunOnce(by, os.Stdout)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "silc loop:", err)
+			os.Exit(1)
+		}
+		if !ok {
+			os.Exit(1)
+		}
+		return
 	}
 	tick := 1000
 	if v, err := strconv.Atoi(os.Getenv("SILC_LOOP_TICK_MS")); err == nil && v > 0 {
