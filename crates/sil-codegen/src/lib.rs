@@ -9,6 +9,7 @@
 
 mod game_lower;
 pub mod loop_lower;
+pub mod mcp_serve;
 mod ui_lower;
 
 use sil_core::{
@@ -110,6 +111,8 @@ pub struct EmitResult {
     pub schema_id: u32,
     /// Worst-case loop costs per run (`silc build` prints this).
     pub loop_report: Option<String>,
+    /// Synthesized MCP tool list and auth env (`silc build` prints this).
+    pub mcp_report: Option<String>,
 }
 
 pub fn emit(
@@ -127,6 +130,7 @@ pub fn emit(
         with_inbox = loop_lower::synthesize_loop_surface(program)?;
         &with_inbox
     };
+    let mcp_report = mcp_serve::format_mcp_report(program);
     fs::create_dir_all(runtime_root)
         .map_err(|error| format!("create {}: {error}", runtime_root.display()))?;
     for target in ["go", "python", "typescript", "ipc"] {
@@ -515,6 +519,9 @@ pub fn emit(
                 "catalog": sil_core::catalog_loop_node_names(),
             });
         }
+        if let Some(mcp) = mcp_serve::mcp_manifest_section(program) {
+            manifest["mcp"] = mcp;
+        }
         manifest["entrypoints"] = serde_json::Value::Object(entrypoints);
         if g.has_scrape() {
             manifest["scrape"] = scrape_manifest(g);
@@ -558,6 +565,7 @@ pub fn emit(
         graph,
         schema_id,
         loop_report,
+        mcp_report,
     })
 }
 
@@ -1510,6 +1518,18 @@ fn render_template(
         serde_json::to_string_pretty(&subset_rules_json(program)).unwrap_or_else(|_| "{}".into());
     let resource_seeds =
         serde_json::to_string_pretty(&resource_seeds_json(program)).unwrap_or_else(|_| "[]".into());
+    let mcp_tools = serde_json::to_string_pretty(
+        &mcp_serve::derive_mcp_tools(program)
+            .iter()
+            .map(mcp_serve::McpTool::to_json)
+            .collect::<Vec<_>>(),
+    )
+    .unwrap_or_else(|_| "[]".into());
+    let mcp_enabled = if mcp_serve::program_serves_mcp(program) {
+        "true"
+    } else {
+        "false"
+    };
 
     template
         .replace("__COMPILER_VERSION__", compiler_version)
@@ -1540,6 +1560,10 @@ fn render_template(
         .replace("__RESOURCE_SEEDS_JSON__", &resource_seeds)
         .replace("__ROUTES_JSON__", &routes)
         .replace("__SUBSET_RULES_JSON__", &subset_rules)
+        .replace("__MCP_ENABLED__", mcp_enabled)
+        .replace("__MCP_AUTH_ENV__", mcp_serve::MCP_AUTH_ENV)
+        .replace("__MCP_PATH__", mcp_serve::MCP_PATH)
+        .replace("__MCP_TOOLS_JSON__", &mcp_tools)
 }
 
 /// Table → field → { kind, lit } for resource/API ingress subset checks.
@@ -2176,6 +2200,10 @@ service FeedbackApi {
             assert!(!source.contains("__RESOURCE_TABLES__"));
             assert!(!source.contains("__RESOURCE_SEEDS_JSON__"));
             assert!(!source.contains("__ROUTES_JSON__"));
+            assert!(!source.contains("__MCP_ENABLED__"));
+            assert!(!source.contains("__MCP_AUTH_ENV__"));
+            assert!(!source.contains("__MCP_PATH__"));
+            assert!(!source.contains("__MCP_TOOLS_JSON__"));
         }
         assert!(ts.contains("HELLO"));
         assert!(ts.contains(r#"role: "bun""#));

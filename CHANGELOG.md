@@ -6,6 +6,13 @@ Entries before 0.5.0 are reconstructed from the commit history.
 
 ## Unreleased
 
+### Added
+
+- Synthesized MCP server on `POST /mcp` for programs with an `app` (or a loop
+  web surface). Tools come from resource queries/mutations and schedule/manual
+  loops (`talks_list`, `talk_today_run`, …). Auth is `SILC_MCP_TOKEN`. The plan
+  hash covers the tool list; `silc build` prints it.
+
 ### Changed
 
 - Silc 0.6.0. `@version("0.5.0")` sources are rejected. When a 0.5.0 program still writes a kernel node as `game::`, the diagnostic lists exactly those renames (`game::mesh` → `scene::mesh`).

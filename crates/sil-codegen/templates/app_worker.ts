@@ -23,6 +23,20 @@ const SUBSET_RULES: Record<
   string,
   Record<string, { subset: string; kind: string; lit: string }>
 > = __SUBSET_RULES_JSON__;
+const MCP_ENABLED = __MCP_ENABLED__;
+const MCP_AUTH_ENV = "__MCP_AUTH_ENV__";
+const MCP_PATH = "__MCP_PATH__";
+const MCP_TOOLS: Array<{
+  name: string;
+  kind: string;
+  description: string;
+  table?: string | null;
+  method?: string | null;
+  http_method?: string | null;
+  path?: string | null;
+  loop?: string | null;
+  inputSchema?: Record<string, unknown>;
+}> = __MCP_TOOLS_JSON__;
 const PROCESSOR = "__PROCESSOR_OP__";
 const HAS_LLM = __HAS_LLM__;
 const HAS_SCRAPE = __HAS_SCRAPE__;
@@ -308,6 +322,249 @@ async function handleResource(req: Request, pathname: string): Promise<Response 
     }
   }
   return null;
+}
+
+function mcpUnauthorized(): Response {
+  return json({ error: "unauthorized" }, 401);
+}
+
+function mcpExpectBearer(req: Request): boolean {
+  const expected = process.env[MCP_AUTH_ENV];
+  if (!expected) return false;
+  const header = req.headers.get("authorization") || "";
+  if (header === expected) return true;
+  if (header === `Bearer ${expected}`) return true;
+  return false;
+}
+
+function mcpRpcResult(id: unknown, result: unknown, status = 200, session?: string): Response {
+  const headers: Record<string, string> = {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "no-store, max-age=0",
+  };
+  if (session) headers["mcp-session-id"] = session;
+  return new Response(JSON.stringify({ jsonrpc: "2.0", id: id ?? null, result }), {
+    status,
+    headers,
+  });
+}
+
+function mcpRpcError(id: unknown, code: number, message: string, status = 400): Response {
+  return new Response(
+    JSON.stringify({ jsonrpc: "2.0", id: id ?? null, error: { code, message } }),
+    {
+      status,
+      headers: {
+        "content-type": "application/json; charset=utf-8",
+        "cache-control": "no-store, max-age=0",
+      },
+    },
+  );
+}
+
+function mcpToolSuccess(data: unknown): Record<string, unknown> {
+  const text = typeof data === "string" ? data : JSON.stringify(data);
+  return {
+    content: [{ type: "text", text }],
+    structuredContent: data,
+    isError: false,
+  };
+}
+
+function mcpToolFailure(message: string): Record<string, unknown> {
+  return {
+    content: [{ type: "text", text: message }],
+    isError: true,
+  };
+}
+
+function listResourceRows(table: string): unknown[] {
+  const rows = db.query(`SELECT id, data FROM ${table} ORDER BY created_at DESC`).all() as any[];
+  return rows.map((r) => ({ id: r.id, ...JSON.parse(r.data) }));
+}
+
+function getResourceRow(table: string, id: string): unknown | null {
+  const row = db.query(`SELECT id, data FROM ${table} WHERE id = ?`).get(id) as any;
+  if (!row) return null;
+  return { id: row.id, ...JSON.parse(row.data) };
+}
+
+function callMcpTool(tool: (typeof MCP_TOOLS)[number], args: Record<string, unknown>): Record<string, unknown> {
+  if (tool.kind === "query") {
+    const table = tool.table;
+    if (!table) return mcpToolFailure("tool is missing table");
+    if (tool.method === "get" || (tool.path || "").includes(":id")) {
+      const id = String(args.id || "");
+      if (!id) return mcpToolFailure("id is required");
+      const row = getResourceRow(table, id);
+      if (!row) return mcpToolFailure("not found");
+      return mcpToolSuccess(row);
+    }
+    return mcpToolSuccess(listResourceRows(table));
+  }
+  if (tool.kind === "mutation") {
+    const table = tool.table;
+    if (!table) return mcpToolFailure("tool is missing table");
+    if (tool.method === "delete" || tool.method === "remove") {
+      const id = String(args.id || "");
+      if (!id) return mcpToolFailure("id is required");
+      db.query(`DELETE FROM ${table} WHERE id = ?`).run(id);
+      return mcpToolSuccess({ ok: true, id });
+    }
+    if (tool.method === "update") {
+      const id = String(args.id || "");
+      if (!id) return mcpToolFailure("id is required");
+      const { id: _drop, ...body } = args;
+      const subsetErr = validateSubsetFields(table, body);
+      if (subsetErr) return mcpToolFailure(subsetErr);
+      db.query(`UPDATE ${table} SET data = ?, updated_at = datetime('now') WHERE id = ?`).run(
+        JSON.stringify(body),
+        id,
+      );
+      return mcpToolSuccess({ id, ...body });
+    }
+    const id = String(args.id || crypto.randomUUID());
+    const { id: _drop, ...rest } = args;
+    const subsetErr = validateSubsetFields(table, rest);
+    if (subsetErr) return mcpToolFailure(subsetErr);
+    db.query(`INSERT INTO ${table} (id, data) VALUES (?, ?)`).run(id, JSON.stringify(rest));
+    return mcpToolSuccess({ id, ...rest });
+  }
+  if (tool.kind === "run_now") {
+    const loopName = tool.loop;
+    if (!loopName) return mcpToolFailure("tool is missing loop");
+    const active = db
+      .query(
+        `SELECT id, data FROM loop_runs
+         WHERE json_extract(data, '$.loop') = ?
+           AND json_extract(data, '$.status') IN ('running', 'waiting')
+         ORDER BY created_at DESC LIMIT 1`,
+      )
+      .get(loopName) as any;
+    if (active) {
+      return mcpToolSuccess({
+        id: active.id,
+        ...JSON.parse(active.data),
+        note: "in-flight run; no new run started",
+      });
+    }
+    const pending = db
+      .query(
+        `SELECT id, data FROM loop_requests
+         WHERE json_extract(data, '$.loop') = ?
+           AND json_extract(data, '$.status') = 'pending'
+         ORDER BY created_at ASC LIMIT 1`,
+      )
+      .get(loopName) as any;
+    if (pending) {
+      return mcpToolSuccess({
+        id: pending.id,
+        ...JSON.parse(pending.data),
+        note: "request already pending; no new run started",
+      });
+    }
+    const id = crypto.randomUUID();
+    const row = {
+      loop: loopName,
+      requested_by: String(args.requested_by || "mcp"),
+      status: "pending",
+      run_id: "",
+    };
+    db.query(`INSERT INTO loop_requests (id, data) VALUES (?, ?)`).run(id, JSON.stringify(row));
+    return mcpToolSuccess({ id, ...row });
+  }
+  if (tool.kind === "loop_recent") {
+    const loopName = tool.loop;
+    if (!loopName) return mcpToolFailure("tool is missing loop");
+    const limit = Math.max(1, Math.min(100, Number(args.limit) || 20));
+    const runs = (
+      db
+        .query(
+          `SELECT id, data FROM loop_runs
+           WHERE json_extract(data, '$.loop') = ?
+           ORDER BY created_at DESC LIMIT ?`,
+        )
+        .all(loopName, limit) as any[]
+    ).map((r) => ({ id: r.id, ...JSON.parse(r.data) }));
+    const notices = (
+      db
+        .query(
+          `SELECT id, data FROM loop_notices
+           WHERE json_extract(data, '$.loop') = ?
+           ORDER BY created_at DESC LIMIT ?`,
+        )
+        .all(loopName, limit) as any[]
+    ).map((r) => ({ id: r.id, ...JSON.parse(r.data) }));
+    return mcpToolSuccess({ loop: loopName, runs, notices });
+  }
+  return mcpToolFailure(`unknown tool kind ${tool.kind}`);
+}
+
+async function handleMcp(req: Request, pathname: string): Promise<Response | null> {
+  if (!MCP_ENABLED || pathname !== MCP_PATH) return null;
+  if (req.method !== "POST") {
+    return json({ error: "method not allowed" }, 405);
+  }
+  if (!mcpExpectBearer(req)) return mcpUnauthorized();
+
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return mcpRpcError(null, -32700, "parse error");
+  }
+  const id = body?.id;
+  const method = body?.method;
+  if (typeof method !== "string") {
+    return mcpRpcError(id, -32600, "invalid request");
+  }
+
+  if (method === "initialize") {
+    const session = crypto.randomUUID();
+    return mcpRpcResult(
+      id,
+      {
+        protocolVersion: "2025-03-26",
+        capabilities: { tools: { listChanged: false } },
+        serverInfo: { name: "silc", version: "__COMPILER_VERSION__" },
+      },
+      200,
+      session,
+    );
+  }
+  if (method === "notifications/initialized") {
+    return new Response(null, { status: 204 });
+  }
+  if (method === "tools/list") {
+    return mcpRpcResult(id, {
+      tools: MCP_TOOLS.map((t) => ({
+        name: t.name,
+        description: t.description,
+        inputSchema: t.inputSchema || { type: "object", properties: {} },
+      })),
+    });
+  }
+  if (method === "tools/call") {
+    const params = body?.params || {};
+    const name = params.name;
+    const args = (params.arguments && typeof params.arguments === "object")
+      ? params.arguments
+      : {};
+    if (typeof name !== "string" || !name) {
+      return mcpRpcError(id, -32602, "tools/call requires params.name");
+    }
+    const tool = MCP_TOOLS.find((t) => t.name === name);
+    if (!tool) {
+      return mcpRpcError(id, -32601, `unknown tool: ${name}`, 404);
+    }
+    try {
+      const result = callMcpTool(tool, args as Record<string, unknown>);
+      return mcpRpcResult(id, result);
+    } catch (error) {
+      return mcpRpcResult(id, mcpToolFailure(error instanceof Error ? error.message : String(error)));
+    }
+  }
+  return mcpRpcError(id, -32601, `method not found: ${method}`, 404);
 }
 
 function decodeEntities(text: string): string {
@@ -770,6 +1027,8 @@ const server = Bun.serve({
     let pathname = url.pathname;
     if (pathname === "/health") return json({ ok: true, processor: PROCESSOR, llm: HAS_LLM });
 
+    const mcpResp = await handleMcp(req, pathname);
+    if (mcpResp) return mcpResp;
     const resourceResp = await handleResource(req, pathname);
     if (resourceResp) return resourceResp;
     const actionResp = await handleAction(req, pathname);
