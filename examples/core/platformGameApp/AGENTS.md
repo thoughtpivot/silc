@@ -370,7 +370,10 @@ resource Products for Product {
 ```
 
 Derived HTTP (compiler-owned): `GET/POST /api/{table}`,
-`GET/PUT/DELETE /api/{table}/:id`.
+`GET/PUT/DELETE /api/{table}/:id`. Programs with an `app` (or a loop that
+gets a web surface) also synthesize `POST /mcp`: one MCP tool per resource
+query/mutation, plus `*_run` / `*_recent` for each `schedule` or `manual`
+loop. Auth is the bearer token in `SILC_MCP_TOKEN` (never in source).
 
 ### Resource seeds (idempotent)
 
@@ -532,6 +535,7 @@ Compiler-owned (do not invent alternatives):
 - `POST /upload` — multipart file upload when `doc::extract` is present
 - `POST /complete` — chat / `*.complete()` processors
 - `GET|POST|PUT|DELETE /api/{table}` — resource queries/mutations
+- `POST /mcp` — streamable-HTTP MCP server (`tools/list`, `tools/call`); bearer token from `SILC_MCP_TOKEN`
 - Web: React app served by Bun (`silc main.silc`)
 - Terminal: OpenTUI + telnet CLI when run with `--terminal` / `SILC_TERMINAL=1`
 
@@ -566,6 +570,7 @@ Compiler-owned (do not invent alternatives):
 7. Stay inside the UI catalog and runnable operation set above.
 8. Validate with `silc build`; report errors instead of patching `.runtime/`.
 <!-- END SILC_AGENTS_TEMPLATE -->
+
 
 <!-- BEGIN ARENA_GAME_NOTE -->
 ## This project: WebGPU platformer game

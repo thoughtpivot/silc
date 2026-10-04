@@ -264,6 +264,9 @@ fn build_only(entry: &Path) -> Result<(), String> {
     if let Some(report) = &output.loop_report {
         print!("{report}");
     }
+    if let Some(report) = &output.mcp_report {
+        print!("{report}");
+    }
     if is_loop_command(&output) {
         println!("command: `silc {}` runs each loop once, prints its notices, and exits (no web or terminal surface)", entry.display());
     }
@@ -279,6 +282,13 @@ fn compile_and_maybe_run(entry: &Path, attach_terminal: bool) -> Result<(), Stri
     status_line(quiet, &format!("manifest: {}", output.manifest.display()));
     status_line(quiet, &format!("mode:     {}", output.execution_mode));
     if let Some(report) = &output.loop_report {
+        if quiet {
+            eprint!("{report}");
+        } else {
+            print!("{report}");
+        }
+    }
+    if let Some(report) = &output.mcp_report {
         if quiet {
             eprint!("{report}");
         } else {
