@@ -58,7 +58,10 @@ jobs:
 
       - name: Concurrent scored_form correctness
         run: |
-          ./target/debug/silc crates/silc/tests/fixtures/scored_form.silc > /tmp/silc-run.log 2>&1 &
+          # The e2e step above SIGKILLs its supervisor; its Bun worker can
+          # outlive it on 18080 and answer /health with no supervisor behind it.
+          lsof -ti:18080 | xargs kill -9 2>/dev/null || true
+          SILC_HTTP_PORT=18080 ./target/debug/silc crates/silc/tests/fixtures/scored_form.silc > /tmp/silc-run.log 2>&1 &
           PID=$!
           for i in $(seq 1 90); do
             if curl -sf http://127.0.0.1:18080/health >/dev/null; then break; fi

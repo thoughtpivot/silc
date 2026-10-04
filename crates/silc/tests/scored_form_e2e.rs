@@ -198,6 +198,12 @@ fn scored_form_web_and_terminal_e2e() {
         body.contains("\"ok\":true") || body.contains("\"ok\": true"),
         "{body}"
     );
+    // The Python worker must recognise `text::score` and fill the summary; a
+    // pass-through leaves it empty.
+    assert!(
+        body.contains("\"summary\":\"silc scored form works\""),
+        "text::score did not run: {body}"
+    );
 
     unsafe {
         libc::kill(child.id() as libc::pid_t, libc::SIGKILL);
