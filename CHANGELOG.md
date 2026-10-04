@@ -8,6 +8,13 @@ Entries before 0.5.0 are reconstructed from the commit history.
 
 ### Changed
 
+- Silc 0.6.0. `@version("0.5.0")` sources are rejected. When a 0.5.0 program still writes a kernel node as `game::`, the diagnostic lists exactly those renames (`game::mesh` → `scene::mesh`).
+- The real-time root is `scene`. Kernel nodes are `scene::`; gameplay nodes stay `game::`. `game Name` remains a one-release alias of `scene Name` (ADR-016).
+- `task` is removed. The compiler routes by operation.
+- `{$binding.path}` placeholders use one checker in `loop::` and `ui::` string options.
+- README title is generic. VDC is a domain document ([docs/domains/vdc.md](docs/domains/vdc.md)), not the language identity (ADR-015, ADR-016).
+- Examples live under `examples/core/` and `examples/domains/aec/`. The three Moz-specific loop apps are one generic MCP loop example.
+
 - Author-facing vocabulary uses full words: **operation** (was "op") and
   **option** (was "prop" / "adverb" / "colon-pair"). Compiler diagnostics,
   editor hovers, the AGENTS template, and the catalog formatters now say
@@ -20,7 +27,7 @@ Entries before 0.5.0 are reconstructed from the commit history.
   `docs_conformance.rs`.
 - Editor grammar scopes `class` and `sink` as `invalid.deprecated`; `loop` is a
   hover keyword and a lexer keyword. Inside an expression or a field name
-  (`$.loop`, `game::audio(:kind(loop))`) it is still an identifier.
+  (`$.loop`, `scene::audio(:kind(loop))`) it is still an identifier.
 - `ui::`, `game::`, and `loop::` catalogs share one `NodeSpec`. Closed-enum
   values are bare identifiers; a quoted string is a compile error with a fix-it.
 - Executable operations live in `OPERATION_CATALOG`. The router reads each
@@ -37,7 +44,7 @@ Entries before 0.5.0 are reconstructed from the commit history.
   surface, including the list of known irregularities scheduled for 0.6.0.
 - [docs/GLOSSARY.md](docs/GLOSSARY.md): one meaning per term and the retired
   vocabulary.
-- `examples/hotelSignupApp` README and index rows.
+- `examples/core/hotelSignupApp` README and index rows.
 - `mcp::call` is a registered operation. `loop::read` accepts a nested
   operation (`loop::read(:as(x), scrape::page(:url(...)))`); the string
   `:op("scrape::page")` remains valid for one release.
@@ -69,7 +76,7 @@ Entries before 0.5.0 are reconstructed from the commit history.
 - `scrape::*` namespace (ADR-006), `doc::extract` (ADR-011), MiniLM tensor
   pipeline and `silc run --input-json` (ADR-010).
 - `game` declaration with the WebGPU `game::*` catalog, procedural asset
-  generation (`game::generate`), FPS and platformer kernels — ADR-012, ADR-013.
+  generation (`scene::generate`), FPS and platformer kernels — ADR-012, ADR-013.
 - `silc assist` recursive authoring with silclm (ADR-008); silclm upgraded to
   Llama 3.2 3B.
 - `sil-lsp` language server and the VS Code / Cursor extension.

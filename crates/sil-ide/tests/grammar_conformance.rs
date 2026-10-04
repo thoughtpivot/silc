@@ -81,7 +81,7 @@ fn textmate_grammar_lists_game_as_declaration() {
 fn textmate_grammar_lists_loop_as_declaration() {
     let grammar = grammar_text();
     assert!(
-        grammar.contains("|game|loop|"),
-        "TextMate declaration keyword list must include `loop`"
+        grammar.contains("|game|scene|loop|"),
+        "TextMate declaration keyword list must include `scene` and `loop`"
     );
 }

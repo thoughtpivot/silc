@@ -250,7 +250,7 @@ pub fn run_assist(
 
                         if meta.contains("draft_set: rejected") {
                             history.push_str(&format!(
-                                "\n# Next\nDraft rejected as too short (need ≥{MIN_DRAFT_CHARS} chars). Reply with the FULL program in a <silc>…</silc> block — shebang, @version(\"0.5.0\"), contract, component with the task fields, app route, optional processor. No more corpus_read.\n",
+                                "\n# Next\nDraft rejected as too short (need ≥{MIN_DRAFT_CHARS} chars). Reply with the FULL program in a <silc>…</silc> block — shebang, @version(\"0.6.0\"), contract, component with the task fields, app route, optional processor. No more corpus_read.\n",
                             ));
                         } else if exploring_too_long || repeated || greps_blocked {
                             history.push_str(

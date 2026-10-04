@@ -2,7 +2,7 @@
   <img src="assets/brand/thoughtpivot.svg" alt="ThoughtPivot" width="280" />
 </p>
 
-# Silc — Build Software with Intent
+# Silc: an intent language and compiler for applications, real-time scenes, pipelines, and loops
 
 **Silc** (pronounced *silk*) is a generic intent language and compiler.
 Its lead use cases, in order, are **games**, **data pipelines**, **loops**,
@@ -45,17 +45,17 @@ Babylon.js WebGPU runtime without making Babylon, Unity, or Unreal the authoring
 surface.
 
 Examples include a cinematic first-person arena
-([`examples/arenaGameApp`](examples/arenaGameApp/)) and a 2D platformer
-([`examples/platformGameApp`](examples/platformGameApp/)).
+([`examples/core/arenaGameApp`](examples/core/arenaGameApp/)) and a 2D platformer
+([`examples/core/platformGameApp`](examples/core/platformGameApp/)).
 
 **Inspired by the big three:**
 
 | Pattern | Inspiration | Silc surface |
 | --- | --- | --- |
-| Entity hierarchy | Godot node tree | Nested `game::entity` with parent/child transforms |
-| Signals and groups | Godot signals | `game::signal`, `game::group` |
-| Prefabs and data assets | Unity prefabs + ScriptableObjects | `game::prefab`, `game::spawn`, `game::data` + `:ref` |
-| Mode / Pawn / Controller | Unreal gameplay framework | `game::mode`, `game::pawn`, `game::controller` |
+| Entity hierarchy | Godot node tree | Nested `scene::entity` with parent/child transforms |
+| Signals and groups | Godot signals | `scene::signal`, `scene::group` |
+| Prefabs and data assets | Unity prefabs + ScriptableObjects | `scene::prefab`, `scene::spawn`, `scene::data` + `:ref` |
+| Mode / Pawn / Controller | Unreal gameplay framework | `game::mode`, `game::pawn`, `scene::controller` |
 | Abilities | Unreal GAS | `game::ability` with cooldowns, costs, and cue children |
 | Asset bake | Unity import pipeline | CPython → `public/baked/` (PBR textures, collision hulls) |
 
@@ -70,10 +70,10 @@ Use `scrape::page`, `scrape::site`, `doc::extract`, `tensor::tokenize`,
 without naming the implementation framework. Silc routes work to its
 compiler-owned engines and synthesizes persistence where supported.
 
-[`examples/pipelineApp`](examples/pipelineApp/) is pipeline-only: scrape →
-MiniLM/ONNX → SQLite. [`examples/scraperApp`](examples/scraperApp/) is a URL +
+[`examples/core/pipelineApp`](examples/core/pipelineApp/) is pipeline-only: scrape →
+MiniLM/ONNX → SQLite. [`examples/core/scraperApp`](examples/core/scraperApp/) is a URL +
 depth crawl with a results table and summaries.
-[`examples/dataExtractorApp`](examples/dataExtractorApp/) uploads a file, runs
+[`examples/core/dataExtractorApp`](examples/core/dataExtractorApp/) uploads a file, runs
 `doc::extract`, and writes a documents ledger.
 
 The pitch is simple: **fewer tokens per working system**. Engine choice,
@@ -94,10 +94,11 @@ A loop can sit beside an `app`, and the compiler adds a `/loops` inbox. With
 no `app` and only `loop::manual` triggers, it is a command: `silc main.silc`
 runs each loop once, prints the notices, and exits.
 
-Examples: [`examples/oneThingApp`](examples/oneThingApp/),
-[`examples/oneThingCliApp`](examples/oneThingCliApp/), and
-[`examples/whatToDoTodayApp`](examples/whatToDoTodayApp/). The full subject,
-including a complete program, is under [Scheduled loops](#scheduled-loops).
+[`examples/core/mcpLoopApp`](examples/core/mcpLoopApp/) is the generic MCP loop
+command. Its README also shows the scheduled inbox-only service and the form
+that sits beside an `app`. The weekday RFI chase is
+[`examples/domains/aec/rfiChaseApp`](examples/domains/aec/rfiChaseApp/). The full
+subject, including a complete program, is under [Scheduled loops](#scheduled-loops).
 
 ### 4. Dual-surface UI
 
@@ -114,18 +115,16 @@ scorer. Dual-surface web/terminal serving and SQLite persistence are
 
 ## Real-time 3D
 
-The namespace is currently named `game::` because the runtime uses proven game
-engine patterns. It is the generic real-time 3D subject for entertainment
-games, simulations, training tools, digital-twin foundations, and VDC
-experiences. WebGPU scenes with entities, assets, physics, cameras, and AI
-are declared with `game::*` nodes. Babylon.js is the WebGPU adapter, not the
-authoring surface, and the namespace does not limit the kernel to
-entertainment games.
+The real-time kernel is `scene::`: entities, assets, physics, cameras, lights,
+and environment, with no gameplay vocabulary. Gameplay (pawns, weapons,
+encounters) is the `game::` layer on that kernel. The root keyword is `scene`;
+`game Name` remains a one-release alias. Babylon.js is the WebGPU adapter, not
+the authoring surface. The same kernel carries entertainment, simulation,
+training, and project-environment scenes.
 
-Real-time `game` programs and dual-surface `app` programs are distinct roots
-today. Silc does not yet embed a `ui::` application inside a `game::` scene.
-They share the language, compiler, runtime ownership model, and generic
-primitives.
+A `scene` program and a dual-surface `app` program are distinct roots today.
+Silc does not yet embed a `ui::` application inside a `scene::` world. They
+share the language, compiler, runtime ownership model, and generic primitives.
 
 The 0.5.0 node list is in What ships today, under Real-time 3D. See
 [ADR-012](docs/ADR-012-webgpu-game-subject.md).
@@ -143,70 +142,22 @@ context and a persona. The compiler provisions **silclm** and connects it to
 the application's resources.
 
 The same model covers internal tools and assistants.
-[`examples/inventoryApp`](examples/inventoryApp/) is CRUD plus a grounded
-assistant. [`examples/chatApp`](examples/chatApp/) is multi-session local chat
-via silclm. [`examples/blogApp`](examples/blogApp/) is a seeded blog with
+[`examples/core/inventoryApp`](examples/core/inventoryApp/) is CRUD plus a grounded
+assistant. [`examples/core/chatApp`](examples/core/chatApp/) is multi-session local chat
+via silclm. [`examples/core/blogApp`](examples/core/blogApp/) is a seeded blog with
 filters, admin modal CRUD, and grounded search.
 
 ---
 
-## VDC and AEC
+## Domains
 
-Architecture, engineering, and construction (AEC) is a strong domain Silc
-already speaks to. In this repository that is Virtual Design and Construction
-(VDC): software that connects interactive project environments with the
-dashboards, data, and automation around them, including RFIs via
-[`examples/rfiChaseApp`](examples/rfiChaseApp/). Silc stays a generic intent
-language and compiler. The same primitives carry this domain.
+The compiler ships generic kernels: `ui::`, `scene::`, `loop::`, and pipeline
+operations. Vocabulary for a vertical is a domain layer or a package, never a
+compiler default. Gameplay is the first such layer (`game::` on the `scene::`
+kernel). Architecture, engineering, and construction is the lead go-to-market,
+documented separately so it does not become the language's identity.
 
-### Why VDC
-
-VDC software rarely fits inside one framework. A useful construction workflow
-may combine an interactive project model, a field dashboard, persistent project
-records, document extraction, and automation. Teams commonly bridge dedicated
-3D engines, web stacks, scripts, services, and databases to deliver one
-experience.
-
-Silc is designed around that full shape:
-
-- `game::` declares browser-native real-time 3D scenes and simulations.
-- `ui::` declares operational interfaces synthesized for web and terminal.
-- Pipeline operations declare ingestion, extraction, local AI, and persistence.
-- One compiler owns the generated Bun, CPython, and Go runtime beneath them.
-
-`game` programs and dual-surface `app` programs remain distinct roots, as
-described under [Real-time 3D](#real-time-3d).
-
-Today, Silc ships the generic primitives behind these workflows. Interactive
-GLTF scenes, physics, cameras, dual-surface applications, CRUD resources,
-document extraction, scraping, and local AI pipelines are available now.
-Native BIM semantics, construction-platform connectors, multi-user
-coordination, live sensor ingestion, and complete production digital twins are
-directional use cases—not claims about current functionality.
-
-### VDC and construction
-
-VDC foundations here are browser-native model walkthroughs, site visualization,
-and digital-twin building blocks.
-
-- **Model walkthroughs and coordination environments:** Load GLTF project
-  assets into browser-native WebGPU scenes with cameras, lighting, collision,
-  navigation, and overlays.
-- **Digital-twin foundations:** Combine interactive spatial context with
-  application state, persistence, telemetry, and compiler-owned runtime
-  services.
-- **Site logistics and sequencing:** Compose reusable entities and prefabs for
-  equipment, access paths, temporary works, alternatives, and phases.
-- **Field and project operations:** Build dashboards, inspection tools, issue
-  lists, document ledgers, and local assistants on the same intent model.
-- **Safety and training simulations:** Use the real-time kernel for interactive
-  orientation, scenario rehearsal, and spatial communication.
-- **RFI chase:** [`examples/rfiChaseApp`](examples/rfiChaseApp/) is a weekday
-  `loop`: overdue RFIs → silclm draft → PM approval → keyed reminder.
-
-These are target workflows built from generic primitives. Silc does not encode
-construction-specific behavior into the compiler; construction vocabulary and
-integrations belong in authored programs and reusable domain packages.
+- [Virtual Design and Construction](docs/domains/vdc.md) — project walkthroughs, field tools, and the RFI loop in [`examples/domains/aec/`](examples/domains/aec/).
 
 ---
 
@@ -230,7 +181,7 @@ workflows, records, simulations, and decisions—while Silc handles the rest.
 
 ## How it looks in practice
 
-Examples below are Silc 0.5.0 source. GitHub fences use `raku` for highlighting
+Examples below are Silc 0.6.0 source. GitHub fences use `raku` for highlighting
 only. The surface is **Raku-inspired**, not Raku-compatible. Source files are
 `.silc` only.
 
@@ -240,32 +191,32 @@ those four.
 
 ### 1. Real-time 3D game: first-person shooter
 
-From [`examples/arenaGameApp`](examples/arenaGameApp/) — a cinematic FPS with
+From [`examples/core/arenaGameApp`](examples/core/arenaGameApp/) — a cinematic FPS with
 weapons, hostile AI, and modular level geometry. It exercises the same reusable
 scene, asset, physics, camera, and entity kernel available to VDC and simulation
 programs.
 
 ```raku
-@version("0.5.0")
+@version("0.6.0")
 
-game Arena {
-    game::scene(:title("MEGASTRUCTURE"), :renderer(webgpu), :target_fps(90),
-        game::data(:name("WalkDefault"), :speed(5.5)),
-        game::data(:name("VanguardData"), :damage(16), :fire_rate(9), :magazine(30)),
+scene Arena {
+    scene::scene(:title("MEGASTRUCTURE"), :renderer(webgpu), :target_fps(90),
+        scene::data(:name("WalkDefault"), :speed(5.5)),
+        scene::data(:name("VanguardData"), :damage(16), :fire_rate(9), :magazine(30)),
 
-        game::prefab(:name("Player"),
-            game::mesh(:shape(capsule), :size(1.8)),
-            game::collider(:shape(capsule), :size(1.8)),
-            game::movement(:style(first_person), :ref("WalkDefault")),
+        scene::prefab(:name("Player"),
+            scene::mesh(:shape(capsule), :size(1.8)),
+            scene::collider(:shape(capsule), :size(1.8)),
+            scene::movement(:style(first_person), :ref("WalkDefault")),
             game::attribute(:name("health"), :value(100), :max(100)),
             game::pawn()
         ),
 
-        game::spawn(:prefab("Player"), :x(0), :y(1), :z(0), :as_pawn),
+        scene::spawn(:prefab("Player"), :x(0), :y(1), :z(0), :as_pawn),
         game::weapon(:name("VanguardAR"), :slot(1), :fire_mode(hitscan), :ref("VanguardData")),
         game::mode(:id("arena"), :possess("Player")),
-        game::controller(:scheme(wasd_mouse)),
-        game::camera(:mode(first_person), :follow(pawn))
+        scene::controller(:scheme(wasd_mouse)),
+        scene::camera(:mode(first_person), :follow(pawn))
     )
 }
 ```
@@ -276,11 +227,11 @@ HUD, and Go/SQLite persistence for saves and analytics.
 
 ### 2. Pipeline-only: scrape → embed → store
 
-From [`examples/pipelineApp`](examples/pipelineApp/) — no UI app required. One
+From [`examples/core/pipelineApp`](examples/core/pipelineApp/) — no UI app required. One
 intent file becomes a Bun/CPython/Go ingestion graph.
 
 ```raku
-@version("0.5.0")
+@version("0.6.0")
 
 subset Uri of Str where { .starts-with("http") }
 subset Emb384 of Vec[num32; 384];
@@ -322,9 +273,8 @@ approval-gated, model-assisted work
 ([ADR-014](docs/ADR-014-loop-subject.md)). A complete program is under
 [Scheduled loops](#scheduled-loops).
 
-- [`examples/oneThingApp`](examples/oneThingApp/) — daily `loop`: Moz MCP reads → silclm brief → one sentence for today
-- [`examples/oneThingCliApp`](examples/oneThingCliApp/) — the same brief, run once by `silc main.silc`; sentence on stdout, then exit
-- [`examples/whatToDoTodayApp`](examples/whatToDoTodayApp/) — scheduled daily `loop`, no authored UI; the synthesized `/loops` inbox is the interface
+- [`examples/core/mcpLoopApp`](examples/core/mcpLoopApp/) — MCP loop command: one `mcp::call`, a silclm brief, one keyed note. The same file's README shows the scheduled inbox and the `app` form
+- [`examples/domains/aec/rfiChaseApp`](examples/domains/aec/rfiChaseApp/) — weekday `loop` beside an app: overdue RFIs, a silclm draft, a PM approval, a keyed reminder
 
 ### 4. A dual-surface notes app
 
@@ -333,7 +283,7 @@ scorer. Dual-surface web/terminal serving and SQLite persistence are
 **synthesized**.
 
 ```raku
-@version("0.5.0")
+@version("0.6.0")
 
 contract Note {
     has Str $.author;
@@ -385,7 +335,7 @@ sink, Bun ingress, and mmap staging between workers.
 
 ### 5. Resource CRUD + grounded local chat
 
-From [`examples/inventoryApp`](examples/inventoryApp/) — capability-style
+From [`examples/core/inventoryApp`](examples/core/inventoryApp/) — capability-style
 resources become HTTP CRUD; chat is grounded on a live inventory snapshot.
 
 ```raku
@@ -484,81 +434,12 @@ routes, and a local completion processor.
 **Silc synthesizes:** `/api/inventory_items` CRUD, dual-surface UI, silclm
 provisioning, and persistence for chat/processor results.
 
-### 6. A VDC project walkthrough
+### 6. A project walkthrough
 
-This compact scene uses the same generic real-time 3D primitives as a game, but
-applies them to a browser-native project environment. Replace the GLTF path
-with an exported project model; domain-specific BIM semantics remain outside
-the compiler.
-
-```raku
-#!/usr/bin/env silc
-@version("0.5.0")
-
-game ProjectWalkthrough {
-    game::scene(
-        :title("Project Walkthrough"),
-        :renderer(webgpu),
-        game::asset(
-            :name("project_model"),
-            :path("public/assets/project.glb"),
-            :kind(gltf)
-        ),
-        game::entity(
-            :name("ProjectModel"),
-            game::mesh(:asset("project_model"))
-        ),
-        game::entity(
-            :name("Ground"),
-            :y(0),
-            game::mesh(:shape(plane), :size(80), :color("#aeb8ae")),
-            game::collider(:shape(plane), :size(80))
-        ),
-        game::entity(
-            :name("Sun"),
-            game::light(:kind(directional), :intensity(1.1))
-        ),
-        game::prefab(
-            :name("Viewer"),
-            game::mesh(:shape(capsule), :size(1.8)),
-            game::collider(:shape(capsule), :size(1.8)),
-            game::movement(:style(first_person), :speed(4.5)),
-            game::pawn()
-        ),
-        game::spawn(
-            :prefab("Viewer"),
-            :x(0),
-            :y(1),
-            :z(6),
-            :as_pawn
-        ),
-        game::mode(
-            :id("walkthrough"),
-            :possess("Viewer")
-        ),
-        game::controller(
-            :scheme(wasd_mouse)
-        ),
-        game::camera(
-            :mode(first_person),
-            :follow(pawn)
-        ),
-        game::environment(
-            :fog_density(0.002),
-            :fog_color("#d8dde2"),
-            :sky_color("#9fb6cc"),
-            :exposure(1.0)
-        )
-    )
-}
-```
-
-**You declared:** project asset, environment, viewer, collision, controls, and
-camera intent.
-**Silc synthesizes:** asset loading and baking, Babylon WebGPU scene setup,
-first-person movement, input, physics, and the browser host.
-
----
+A browser-native project environment uses the same `scene::` kernel as a game.
+The worked example, including why this is a domain and not a language default,
+lives in [docs/domains/vdc.md](docs/domains/vdc.md) and
+[`examples/domains/aec/vdcWalkthrough`](examples/domains/aec/vdcWalkthrough/).
 
 ## Design principles
 
@@ -601,25 +482,24 @@ then provisions pinned engines on first use.
 
 | App | Purpose | Web | Terminal |
 | --- | --- | --- | --- |
-| [`examples/arenaGameApp/`](examples/arenaGameApp/) | Real-time WebGPU kernel: assets, environments, physics, AI, and modular scenes | 18140 | — |
-| [`examples/platformGameApp/`](examples/platformGameApp/) | 2D platformer built from reusable sprite, tilemap, interaction, and movement primitives | 18140 | — |
-| [`examples/pipelineApp/`](examples/pipelineApp/) | Scrape → MiniLM/ONNX → SQLite | — | — |
-| [`examples/scraperApp/`](examples/scraperApp/) | URL + depth crawl; results table + summaries | 18110 | 18111 |
-| [`examples/dataExtractorApp/`](examples/dataExtractorApp/) | File upload + `doc::extract` → documents ledger | 18130 | 18131 |
-| [`examples/oneThingApp/`](examples/oneThingApp/) | Daily `loop`: Moz MCP reads → silclm brief → one sentence for today | 18088 | — |
-| [`examples/oneThingCliApp/`](examples/oneThingCliApp/) | Loop command: the same brief run once by `silc main.silc`; sentence on stdout, then exit. No UI | — | — |
-| [`examples/whatToDoTodayApp/`](examples/whatToDoTodayApp/) | Scheduled daily `loop`, no authored UI: Moz MCP reads → silclm brief → 3 to 5 item to-do list; the synthesized `/loops` inbox is the whole interface | 18088 | 18023 |
-| [`examples/chatApp/`](examples/chatApp/) | Multi-session local chat via silclm | 18090 | 18091 |
-| [`examples/inventoryApp/`](examples/inventoryApp/) | CRUD + browse/admin + grounded assistant | 18096 | 18097 |
-| [`examples/hotelSignupApp/`](examples/hotelSignupApp/) | Smallest two-route app: sign-up form + ledger table | 18088 | 18023 |
-| [`examples/blogApp/`](examples/blogApp/) | Seeded blog; year/month filters; admin modal CRUD; grounded search | 18120 | 18121 |
-| [`examples/rfiChaseApp/`](examples/rfiChaseApp/) | Weekday `loop`: overdue RFIs → silclm draft → PM approval → keyed reminder | 18088 | — |
+| [`examples/core/arenaGameApp/`](examples/core/arenaGameApp/) | Real-time WebGPU kernel plus gameplay: assets, environments, physics, and modular scenes | 18140 | — |
+| [`examples/core/platformGameApp/`](examples/core/platformGameApp/) | 2D platformer: sprites, collectibles, patrols, and a level end | 18140 | — |
+| [`examples/core/pipelineApp/`](examples/core/pipelineApp/) | Scrape → MiniLM/ONNX → SQLite | — | — |
+| [`examples/core/scraperApp/`](examples/core/scraperApp/) | URL crawl at depth 2; results table + summaries | 18110 | 18111 |
+| [`examples/core/dataExtractorApp/`](examples/core/dataExtractorApp/) | File upload + `doc::extract` → documents ledger | 18130 | 18131 |
+| [`examples/core/mcpLoopApp/`](examples/core/mcpLoopApp/) | MCP loop command: one `mcp::call`, a silclm brief, one keyed note | — | — |
+| [`examples/core/chatApp/`](examples/core/chatApp/) | Multi-session local chat via silclm | 18090 | 18091 |
+| [`examples/core/inventoryApp/`](examples/core/inventoryApp/) | CRUD + browse/admin + grounded assistant | 18096 | 18097 |
+| [`examples/core/hotelSignupApp/`](examples/core/hotelSignupApp/) | Smallest two-route app: sign-up form + ledger table | 18088 | 18023 |
+| [`examples/core/blogApp/`](examples/core/blogApp/) | Seeded blog; year/month filters; admin modal CRUD; grounded search | 18120 | 18121 |
+| [`examples/domains/aec/rfiChaseApp/`](examples/domains/aec/rfiChaseApp/) | Weekday `loop`: overdue RFIs → silclm draft → PM approval → keyed reminder | 18088 | — |
+| [`examples/domains/aec/vdcWalkthrough/`](examples/domains/aec/vdcWalkthrough/) | Project-environment scene on the `scene::` kernel | 18140 | — |
 
 See [`examples/README.md`](examples/README.md).
 
 ---
 
-## What ships today (0.5.0)
+## What ships today (0.6.0)
 
 Silc is **pre-1.0**. Release 0.4.0 made the product rule explicit: authors
 declare intent; the compiler synthesizes runtime mechanics
@@ -652,13 +532,13 @@ runtime. Babylon is the WebGPU adapter, not the authoring surface, and the
 namespace does not limit the kernel to entertainment games.
 
 **What you can declare:**
-- `game::scene` — root with title, renderer, target FPS
-- `game::entity` — transform node with mesh, collider, light children
-- `game::prefab` / `game::spawn` — reusable templates with override options
+- `scene::scene` — root with title, renderer, target FPS
+- `scene::entity` — transform node with mesh, collider, light children
+- `scene::prefab` / `scene::spawn` — reusable templates with override options
 - `game::weapon` — hitscan, pellet, projectile, or beam fire modes
 - `game::npc` / `game::perception` / `game::nav_agent` — hostile AI with nav mesh
 - `game::ability` — cooldowns, attribute costs, particle/light/impulse cues
-- `game::camera`, `game::controller`, `game::hud`, `game::post_process`
+- `scene::camera`, `scene::controller`, `scene::hud`, `scene::post_process`
 
 **Polyglot spine:** Real-time 3D programs use the full stack. CPython bakes
 assets at compile time. Go persists saves, runs, and analytics to SQLite. Bun
@@ -904,8 +784,11 @@ Pre-1.0 SemVer 0.x: breaking language/compiler changes bump the minor.
 | [docs/ADR-010-tensor-minilm-pipeline.md](docs/ADR-010-tensor-minilm-pipeline.md) | MiniLM embedding pipeline |
 | [docs/ADR-011-document-extract.md](docs/ADR-011-document-extract.md) | `doc::*` upload + extract |
 | [docs/ADR-012-webgpu-game-subject.md](docs/ADR-012-webgpu-game-subject.md) | WebGPU game kernel |
-| [docs/ADR-013-procedural-asset-generation.md](docs/ADR-013-procedural-asset-generation.md) | Procedural asset generation (`game::generate`) |
-| [docs/ADR-014-loop-subject.md](docs/ADR-014-loop-subject.md) | Loop subject: scheduled, approval-gated, model-assisted work |
+| [docs/ADR-013-procedural-asset-generation.md](docs/ADR-013-procedural-asset-generation.md) | Procedural asset generation (`scene::generate`) |
+| [docs/ADR-014-loop-subject.md](docs/ADR-014-loop-subject.md) | Loop declaration: scheduled, approval-gated, model-assisted work |
+| [docs/ADR-015-silc-loop-and-vran.md](docs/ADR-015-silc-loop-and-vran.md) | Silc `loop` and Vran |
+| [docs/ADR-016-generic-kernel-domain-layers.md](docs/ADR-016-generic-kernel-domain-layers.md) | Generic kernels and domain layers |
+| [docs/domains/vdc.md](docs/domains/vdc.md) | VDC / AEC domain (go-to-market, not language identity) |
 | [docs/SILC-IPC-ABI-v1.md](docs/SILC-IPC-ABI-v1.md) | Shared buffer ABI |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
 

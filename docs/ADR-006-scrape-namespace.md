@@ -18,7 +18,7 @@ Silc needs first-class web scraping without exposing Bun, Go/Colly, or
 CPython/Playwright on the authoring surface. Authors express scrape intent;
 the compiler chooses substrates from the ADR-004 strength catalog.
 
-The north-star product is **`examples/scraperApp`**: a dual-surface UI where
+The north-star product is **`examples/core/scraperApp`**: a dual-surface UI where
 users enter a URL and crawl depth, Silc crawls the site, and results appear
 in a resource-backed table.
 

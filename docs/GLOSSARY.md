@@ -27,7 +27,7 @@ the owning code is next touched; they are not author-facing.
   declarations" (as opposed to the removed `class X is …` spelling); plain
   **declaration** is the current word.
 - **root** — a declaration that owns a tree of nodes: `app` (routes to
-  components, whose `render()` holds `ui::` nodes), `game` (`game::scene`),
+  components, whose `render()` holds `ui::` nodes), `game` (`scene::scene`),
   `loop` (`loop::flow`).
 - **namespace** — the prefix before `::`. Namespaces are closed: `ui`, `game`,
   `loop`, `scrape`, `doc`, `tensor`, `llm`, `text`, `service`, and the
@@ -79,7 +79,7 @@ the owning code is next touched; they are not author-facing.
 - **step** — any `loop::` node after the trigger.
 - **gate** — a `loop::gate`; conditions fail closed.
 - **effect** — a `loop::write` or `loop::notify`; keyed and receipted.
-- **version pragma** — `@version("0.5.0")`; must equal the compiler version.
+- **version pragma** — `@version("0.6.0")`; must equal the compiler version.
 
 ## Compiler and runtime vocabulary
 

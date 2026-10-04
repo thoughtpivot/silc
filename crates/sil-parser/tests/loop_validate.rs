@@ -4,7 +4,7 @@
 use sil_parser::parse;
 
 const PRELUDE: &str = r#"
-@version("0.5.0")
+@version("0.6.0")
 contract Rfi {
     has Str $.id;
     has Str $.status;
@@ -78,7 +78,10 @@ fn cost_report_multiplies_through_each() {
 
 #[test]
 fn rfi_chase_cost_report() {
-    let program = parse(include_str!("../../../examples/rfiChaseApp/main.silc")).unwrap();
+    let program = parse(include_str!(
+        "../../../examples/domains/aec/rfiChaseApp/main.silc"
+    ))
+    .unwrap();
     let report = sil_core::format_loop_cost_report(&program).unwrap();
     assert!(
         report.contains("model calls 600 · effects 600 (writes 400, notices 200) · approvals 200"),
@@ -362,7 +365,7 @@ loop::flow(
 #[test]
 fn loops_cannot_mix_with_games() {
     let src = format!(
-        "{PRELUDE}\nloop Chase {{ loop::flow(loop::manual(), loop::stop()) }}\ngame G {{ game::scene(:title(\"T\")) }}\n"
+        "{PRELUDE}\nloop Chase {{ loop::flow(loop::manual(), loop::stop()) }}\ngame G {{ scene::scene(:title(\"T\")) }}\n"
     );
     let err = parse(&src).unwrap().validate().unwrap_err();
     assert!(err.contains("cannot mix") && err.contains("game"), "{err}");
@@ -399,7 +402,10 @@ loop Chase {{
 "#
     );
     let err = parse(&src).unwrap().validate().unwrap_err();
-    assert!(err.contains("text::score and loop::ask"), "{err}");
+    assert!(
+        err.contains("cannot mix") && err.contains("text::score") && err.contains("loop::ask"),
+        "{err}"
+    );
 }
 
 const MCP_PRELUDE: &str = r#"

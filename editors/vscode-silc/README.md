@@ -63,11 +63,11 @@ Point the editor at a local binary without reinstalling:
 | Control | `when`, `else`, `for`, `await`, `route` | `keyword.control.silc` |
 | Modifiers | `is`, `of`, `where` | `storage.modifier.silc` |
 | Builtin types | `Str`, `UUID`, `Bool`, `Int`, `num32`, `num64`, `int32`, `int64`, `Vec` | `support.type.builtin.silc` |
-| Namespaced calls | `ui::stack`, `llm::complete`, `scrape::site`, `game::scene` | `support.class.namespace.silc` + `support.function.builtin.silc` |
+| Namespaced calls | `ui::stack`, `llm::complete`, `scrape::site`, `scene::scene` | `support.class.namespace.silc` + `support.function.builtin.silc` |
 | Options (colon pairs) | `:label("Save")`, `:sortable` | `entity.other.attribute-name.silc` |
 | Attributes | `$.title`, `$record` | `variable.other.member.silc` |
 | Feed / arrows | `==>`, `=>`, `->` | `keyword.operator.feed.silc`, `keyword.operator.arrow.silc` |
-| Annotations | `@version("0.5.0")` | `entity.name.function.decorator.silc` |
+| Annotations | `@version("0.6.0")` | `entity.name.function.decorator.silc` |
 | Unit literals | `250ms`, `512MB`, `90fps`, `8cm`, `14deg` | `constant.numeric.unit.silc` |
 
 ## Maintaining

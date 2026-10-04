@@ -122,7 +122,7 @@ pub fn extract_program(completion: &str) -> String {
 mod tests {
     use super::*;
 
-    const VALID: &str = r#"@version("0.5.0")
+    const VALID: &str = r#"@version("0.6.0")
 contract Note { has Str $.text; }
 component NotePage {
     has state Str $.text = "";
@@ -150,13 +150,34 @@ app NoteApp {
 
     #[test]
     fn extracts_fenced_silc() {
-        let raw = "Here you go:\n```silc\n@version(\"0.5.0\")\ncontract X {}\n```\n";
-        assert_eq!(extract_program(raw), "@version(\"0.5.0\")\ncontract X {}");
+        let raw = "Here you go:\n```silc\n@version(\"0.6.0\")\ncontract X {}\n```\n";
+        assert_eq!(extract_program(raw), "@version(\"0.6.0\")\ncontract X {}");
     }
 
     #[test]
     fn extracts_sentinel_silc() {
-        let raw = "Here:\n<silc>\n@version(\"0.5.0\")\ncontract X {}\n</silc>\n";
-        assert_eq!(extract_program(raw), "@version(\"0.5.0\")\ncontract X {}");
+        let raw = "Here:\n<silc>\n@version(\"0.6.0\")\ncontract X {}\n</silc>\n";
+        assert_eq!(extract_program(raw), "@version(\"0.6.0\")\ncontract X {}");
+    }
+
+    #[test]
+    fn every_example_validates_without_provisioning() {
+        const EXAMPLES: &[&str] = &[
+            include_str!("../../../examples/core/arenaGameApp/main.silc"),
+            include_str!("../../../examples/core/blogApp/main.silc"),
+            include_str!("../../../examples/core/chatApp/main.silc"),
+            include_str!("../../../examples/core/dataExtractorApp/main.silc"),
+            include_str!("../../../examples/core/hotelSignupApp/main.silc"),
+            include_str!("../../../examples/core/inventoryApp/main.silc"),
+            include_str!("../../../examples/core/mcpLoopApp/main.silc"),
+            include_str!("../../../examples/core/pipelineApp/main.silc"),
+            include_str!("../../../examples/core/platformGameApp/main.silc"),
+            include_str!("../../../examples/core/scraperApp/main.silc"),
+            include_str!("../../../examples/domains/aec/rfiChaseApp/main.silc"),
+            include_str!("../../../examples/domains/aec/vdcWalkthrough/main.silc"),
+        ];
+        for src in EXAMPLES {
+            check_source(src, None).unwrap_or_else(|err| panic!("{err}"));
+        }
     }
 }

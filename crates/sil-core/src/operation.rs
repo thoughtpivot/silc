@@ -1,4 +1,4 @@
-//! Executable operation registry for Silc 0.5.0 runnable programs.
+//! Executable operation registry for Silc 0.6.0 runnable programs.
 
 use crate::app::App;
 use crate::component::Component;
@@ -28,7 +28,7 @@ const SUPPORTED_OPS_HELP: &str =
     "`app` routes (dual-surface UI synthesized), `game` (WebGPU scene synthesized), `resource Name for Contract` capabilities, optional text::score or llm::complete, scrape::*, doc::extract, tensor::tokenize/infer pipeline, or service::http API-only";
 
 const TENSOR_CPU_ONLY: &str =
-    "tensor::infer is CPU-only in Silc 0.5.0; remove :prefer(CUDA) (default/CPU accepted)";
+    "tensor::infer is CPU-only in Silc 0.6.0; remove :prefer(CUDA) (default/CPU accepted)";
 
 const SCRAPE_MIGRATE_HINT: &str =
     "use scrape::page / scrape::site / scrape::select instead of http::get / html::* (see ADR-006)";
@@ -200,7 +200,7 @@ pub struct ExecutableGraph {
     pub model_ref: Option<String>,
     /// Closed embedding output dimension when `processor_op` is `TensorInfer`.
     pub embedding_dim: Option<u32>,
-    /// Tensor runtime device (`CPU` only in Silc 0.5.0).
+    /// Tensor runtime device (`CPU` only in Silc 0.6.0).
     pub tensor_device: Option<String>,
     /// Contract field read by the tensor pipeline (default `raw_content`).
     pub tensor_input_field: Option<String>,
@@ -399,7 +399,7 @@ pub fn classify_program(program: &Program) -> Result<ExecutionMode, String> {
                     {
                         if is_v1_exec_namespace(ns) && !is_executable_op(ns, name) {
                             return Err(format!(
-                                "operation `{ns}::{name}` is not executable in Silc 0.5.0"
+                                "operation `{ns}::{name}` is not executable in Silc 0.6.0"
                             ));
                         }
                     }
@@ -579,7 +579,7 @@ fn infer_game_graph(program: &Program) -> Result<Option<ExecutableGraph>, String
     }
     if !program.modules.is_empty() {
         return Err(
-            "game programs cannot declare service/processor/sink modules; scene intent lives under `game::scene`"
+            "game programs cannot declare service/processor/sink modules; scene intent lives under `scene::scene`"
                 .into(),
         );
     }
@@ -591,7 +591,7 @@ fn infer_game_graph(program: &Program) -> Result<Option<ExecutableGraph>, String
 
     let game = program.games[0].clone();
     if game.root.name != "scene" {
-        return Err("game root must be `game::scene(...)`".into());
+        return Err("game root must be `scene::scene(...)`".into());
     }
 
     let title = game
@@ -1063,7 +1063,7 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
         }
         if !prefer.eq_ignore_ascii_case("CPU") {
             return Err(format!(
-                "unsupported tensor::infer :prefer({prefer}); Silc 0.5.0 accepts CPU only"
+                "unsupported tensor::infer :prefer({prefer}); Silc 0.6.0 accepts CPU only"
             ));
         }
     }

@@ -218,7 +218,7 @@ compiler ([ADR-009](ADR-009-compiler-synthesized-runtime.md)). Authors do not
 write `method serve()`, `ui::web`, or `ui::terminal` as program operations.
 
 **Game subject (web-only surface, polyglot spine).** Real-time WebGPU programs
-declare `game Name { game::scene(...) }` with the closed `game::*` catalog
+declare `game Name { scene::scene(...) }` with the closed `game::*` catalog
 ([ADR-012](ADR-012-webgpu-game-subject.md)). The catalog synthesizes Godot-style
 trees/signals, Unity prefabs/data, and Unreal mode/pawn/controller on a Silc
 kernel with Babylon as the WebGPU adapter. They synthesize a browser WebGPU

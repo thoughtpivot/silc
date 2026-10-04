@@ -1,4 +1,4 @@
-//! Semantic core of ThoughtPivot Silc 0.5.0.
+//! Semantic core of ThoughtPivot Silc 0.6.0.
 //!
 //! Author surface is intent-oriented and declaration-based (`contract`,
 //! `component`, `resource`, `app`, `service`, `processor`, `task`). Internally,
@@ -36,9 +36,10 @@ pub use expr::{BinOp, Expr, InterpPart, SpannedExpr, UnaryOp};
 pub use game::{
     catalog_game_node_names, format_game_catalog_line, format_game_catalog_md,
     format_game_catalog_platformer_md, format_game_closed_enums_line, game_closed_value_doc,
-    game_closed_value_owners, game_prop_doc, lookup_game_node, validate_game, validate_game_node,
-    Game, GameCapabilities, GameChildPolicy, GameNode, GameNodeSpec, GamePropKind, GamePropSpec,
-    GameSurface, DEFAULT_GAME_FPS, DEFAULT_GAME_PORT, GAME_NODE_CATALOG,
+    game_closed_value_owners, game_prop_doc, lookup_game_node, node_namespace, validate_game,
+    validate_game_node, Game, GameCapabilities, GameChildPolicy, GameNode, GameNodeSpec,
+    GamePropKind, GamePropSpec, GameSurface, DEFAULT_GAME_FPS, DEFAULT_GAME_PORT,
+    GAME_NODE_CATALOG,
 };
 pub use loops::{
     catalog_loop_node_names, describe_loop_trigger, format_loop_catalog_line,

@@ -1,4 +1,4 @@
-//! Silc 0.5.0 code generation: inspectable stubs and runnable dual-surface apps.
+//! Silc 0.6.0 code generation: inspectable stubs and runnable dual-surface apps.
 //!
 //! Pipeline vocabulary: **codegen** renders target source from the validated
 //! semantic model; **emit** writes those artifacts into `.runtime/`. Dual-surface
@@ -353,7 +353,7 @@ pub fn emit(
                     "python/bake_plan.json",
                     "go/worker.go",
                 ],
-                "provenance": "compiler-owned game::scene → Bun WebGPU + CPython bake + Go SQLite (ADR-012)",
+                "provenance": "compiler-owned scene::scene → Bun WebGPU + CPython bake + Go SQLite (ADR-012)",
                 "catalog": sil_core::catalog_game_node_names(),
             });
             if let Some(graph_obj) = manifest.get_mut("graph") {
@@ -1687,7 +1687,7 @@ fn render_stub(module: &Module, decision: &RouteDecision) -> String {
                 .iter()
                 .map(|name| {
                     format!(
-                        "  async {name}(): Promise<void> {{\n    // TODO: operation is not executable in Silc 0.5.0\n  }}"
+                        "  async {name}(): Promise<void> {{\n    // TODO: operation is not executable in Silc 0.6.0\n  }}"
                     )
                 })
                 .collect::<Vec<_>>()
@@ -1702,7 +1702,7 @@ fn render_stub(module: &Module, decision: &RouteDecision) -> String {
                 .iter()
                 .map(|name| {
                     format!(
-                        "    def {name}(self):\n        # TODO: operation is not executable in Silc 0.5.0\n        pass"
+                        "    def {name}(self):\n        # TODO: operation is not executable in Silc 0.6.0\n        pass"
                     )
                 })
                 .collect::<Vec<_>>()
@@ -1717,7 +1717,7 @@ fn render_stub(module: &Module, decision: &RouteDecision) -> String {
                 .iter()
                 .map(|name| {
                     format!(
-                        "func (m *{}) {}() {{\n\t// TODO: operation is not executable in Silc 0.5.0\n}}",
+                        "func (m *{}) {}() {{\n\t// TODO: operation is not executable in Silc 0.6.0\n}}",
                         module.name,
                         pascal_case(name)
                     )
@@ -1836,7 +1836,7 @@ mod tests {
     }
 
     const STUB_SOURCE: &str = r#"
-@version("0.5.0")
+@version("0.6.0")
 contract Payload { has Str $.text; }
 service Ingress {
     method fetch() { $url ==> http::get() ==> html::extract_body() }
@@ -1847,7 +1847,7 @@ processor Engine {
 "#;
 
     const PIPELINE_SOURCE: &str = r#"
-@version("0.5.0")
+@version("0.6.0")
 subset Uri of Str where { .contains("://") }
 subset Emb384 of Vec[num32; 384];
 contract ArticlePayload {
@@ -1899,7 +1899,7 @@ processor EmbeddingEngine {
     }
 
     const FEEDBACK_SOURCE: &str = r#"
-@version("0.5.0")
+@version("0.6.0")
 contract FeedbackRecord {
     has Str $.author;
     has Str $.text;
@@ -1933,7 +1933,7 @@ processor TextAnalyzer {
 "#;
 
     const CHAT_SOURCE: &str = r#"
-@version("0.5.0")
+@version("0.6.0")
 contract ChatRecord {
     has Str $.prompt;
     has Str $.reply;
@@ -1975,7 +1975,7 @@ processor Assistant {
 "#;
 
     const RESOURCE_SOURCE: &str = r#"
-@version("0.5.0")
+@version("0.6.0")
 contract Product {
     has Str $.name;
     has num64 $.price;
@@ -2004,7 +2004,7 @@ app ShopApp {
 "#;
 
     const API_SOURCE: &str = r#"
-@version("0.5.0")
+@version("0.6.0")
 contract FeedbackRecord {
     has UUID $.id;
     has Str $.author;
@@ -2443,7 +2443,7 @@ service FeedbackApi {
     }
 
     const SCRAPE_SOURCE: &str = r#"
-@version("0.5.0")
+@version("0.6.0")
 contract ScrapedPage {
     has Str $.id;
     has Str $.scrape_id;
@@ -2544,7 +2544,7 @@ processor Summarizer {
     }
 
     const DOC_SOURCE: &str = r#"
-@version("0.5.0")
+@version("0.6.0")
 
 contract Document {
     has Str $.title;
@@ -2639,7 +2639,7 @@ service Extractor {
     #[test]
     fn rejects_legacy_class_declarators() {
         let source = r#"
-@version("0.5.0")
+@version("0.6.0")
 class BadView is view {
     method render() { ui::page() }
 }
@@ -2707,7 +2707,7 @@ class BadView is view {
 
     #[test]
     fn emits_game_program_without_cdn_or_title_branching() {
-        const GAME_SOURCE: &str = include_str!("../../../examples/arenaGameApp/main.silc");
+        const GAME_SOURCE: &str = include_str!("../../../examples/core/arenaGameApp/main.silc");
         let (_program, _result, output) = parse_emit(GAME_SOURCE, "arena_game");
 
         let pkg = fs::read_to_string(output.join("typescript/package.json")).unwrap();

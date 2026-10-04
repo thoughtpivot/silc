@@ -11,7 +11,7 @@
 - **Canonical:** [`model_catalog.rs`](../crates/sil-core/src/model_catalog.rs)
   (`MINILM_*`, `EMBEDDING_MODEL_CATALOG`),
   [`EXECUTABLE_OPS`](../crates/sil-core/src/operation.rs) (`tensor::*`),
-  [`examples/pipelineApp/`](../examples/pipelineApp/),
+  [`examples/core/pipelineApp/`](../examples/core/pipelineApp/),
   `crates/sil-codegen/templates/processor_worker.py`,
   `tensor_requirements.txt`, `pipeline_worker.ts`
 
@@ -63,7 +63,7 @@ protocol v1; the general default remains 512 × 16 KiB (ADR-001 /
 
 ### Reference program
 
-[`examples/pipelineApp/main.silc`](../examples/pipelineApp/main.silc) is the
+[`examples/core/pipelineApp/main.silc`](../examples/core/pipelineApp/main.silc) is the
 integration target: scrape → extract → tokenize → infer → synthesized SQLite.
 
 ## Consequences

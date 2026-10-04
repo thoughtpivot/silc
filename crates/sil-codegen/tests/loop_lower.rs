@@ -9,8 +9,8 @@ fn repo_root() -> PathBuf {
 }
 
 fn example_source() -> String {
-    std::fs::read_to_string(repo_root().join("examples/rfiChaseApp/main.silc"))
-        .expect("read examples/rfiChaseApp/main.silc")
+    std::fs::read_to_string(repo_root().join("examples/domains/aec/rfiChaseApp/main.silc"))
+        .expect("read examples/domains/aec/rfiChaseApp/main.silc")
 }
 
 fn example_program() -> sil_core::Program {

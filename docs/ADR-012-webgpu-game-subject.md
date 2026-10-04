@@ -26,7 +26,7 @@ spine (ADR-001 / ADR-004).
 ## Decision
 
 1. **First-class `game` subject.** Authors declare
-   `game Name { game::scene(...) }` with a closed `GAME_NODE_CATALOG`.
+   `game Name { scene::scene(...) }` with a closed `GAME_NODE_CATALOG`.
 2. **Web-only surface exemption.** Game programs synthesize a browser WebGPU
    surface only. ADR-009 dual-surface parity remains mandatory for `app`; it
    does **not** apply to `game` (no OpenTUI / terminal chrome).
@@ -60,10 +60,10 @@ Babylon as the WebGPU adapter only:
 
 | Layer | Pattern | Silc surface |
 |---|---|---|
-| Hierarchy | Godot node tree | Nested `game::entity`; parent/child transforms |
-| Messaging | Godot signals / groups | `game::signal`, `game::group`, manifest edges |
-| Reuse | Unity prefabs + ScriptableObjects | `game::prefab`, `game::spawn` overrides, `game::data` + `:ref` |
-| Ownership | Unreal Mode / Pawn / Controller | `game::mode`, `game::pawn`, `game::controller` |
+| Hierarchy | Godot node tree | Nested `scene::entity`; parent/child transforms |
+| Messaging | Godot signals / groups | `scene::signal`, `scene::group`, manifest edges |
+| Reuse | Unity prefabs + ScriptableObjects | `scene::prefab`, `scene::spawn` overrides, `scene::data` + `:ref` |
+| Ownership | Unreal Mode / Pawn / Controller | `game::mode`, `game::pawn`, `scene::controller` |
 | Abilities | GAS-lite | `game::ability` + cue children; cost/cooldown/attributes |
 | Bake | Unity-style import | CPython → `public/baked/game_bake.json` |
 | Persist | Unreal save / analytics | Go SQLite + Bun HTTP edge |

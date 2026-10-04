@@ -6,7 +6,7 @@ use sil_ide::{hover_at_lsp, resolve_hover, Document};
 fn blog_source() -> String {
     let path = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../examples/blogApp/main.silc"
+        "/../../examples/core/blogApp/main.silc"
     );
     std::fs::read_to_string(path).expect("read blogApp/main.silc")
 }

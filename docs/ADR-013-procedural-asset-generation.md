@@ -13,7 +13,7 @@
 
 Game authors need sprite assets (character animations, enemies, items, tiles) but
 creating pixel art requires specialized skills and external tools. The existing
-`game::asset` node imports external files (GLTF, textures, audio) but cannot
+`scene::asset` node imports external files (GLTF, textures, audio) but cannot
 generate assets procedurally.
 
 ADR-012 established the bake pipeline (`game_bake_worker.py`) for compile-time
@@ -21,9 +21,9 @@ asset processing. This ADR extends that pipeline with procedural generation.
 
 ## Decision
 
-1. **New `game::generate` node.** Authors declare procedurally generated assets
+1. **New `scene::generate` node.** Authors declare procedurally generated assets
    with `:type`, `:preset`, `:style`, `:palette`, and `:animations` props.
-   Distinct from `game::asset` which imports external files.
+   Distinct from `scene::asset` which imports external files.
 
 2. **Archetype + style separation.** Presets define *what* to generate
    (`character`, `enemy`, `item`, `tile`, `effect`). Styles define *how* it
@@ -49,7 +49,7 @@ asset processing. This ADR extends that pipeline with procedural generation.
 
 ```silc
 // Platformer character
-game::generate(:type(sprite), :name("hero"),
+scene::generate(:type(sprite), :name("hero"),
     :preset(character),
     :style(pixel_16),
     :palette(primary: "#E52521", secondary: "#0000AA", skin: "#FFCC99"),
@@ -57,7 +57,7 @@ game::generate(:type(sprite), :name("hero"),
 )
 
 // Top-down RPG character
-game::generate(:type(sprite), :name("wizard"),
+scene::generate(:type(sprite), :name("wizard"),
     :preset(character),
     :style(pixel_16),
     :palette(robe: "#4B0082", skin: "#FFCC99"),
@@ -65,7 +65,7 @@ game::generate(:type(sprite), :name("wizard"),
 )
 
 // Collectible item
-game::generate(:type(sprite), :name("coin"),
+scene::generate(:type(sprite), :name("coin"),
     :preset(item),
     :style(pixel_16),
     :palette(gold: "#FFD700"),
@@ -98,7 +98,7 @@ GameNodeSpec {
 main.silc
     ↓ (parse)
 game_lower.rs
-    ↓ (collect game::generate nodes)
+    ↓ (collect scene::generate nodes)
 bake_plan.json { "generatedAssets": [...] }
     ↓ (CPython bake)
 game_bake_worker.py
@@ -116,7 +116,7 @@ The runtime sprite loader checks paths in this order:
 
 If a manually edited file exists in `public/assets/`, it is copied to `baked/sprites/`
 and used instead of regenerating. This allows artists to refine generated sprites
-while keeping the declarative `game::generate` node in the source.
+while keeping the declarative `scene::generate` node in the source.
 
 ## Presets (Phase 1)
 
@@ -144,7 +144,7 @@ while keeping the declarative `game::generate` node in the source.
 - Palette customization enables visual variety from the same preset.
 - The generator architecture supports future expansion (procedural textures,
   shader-based generation, pixel-level control) without API changes.
-- `game::asset` continues to work unchanged for external file imports.
+- `scene::asset` continues to work unchanged for external file imports.
 
 ## Future Expansion
 

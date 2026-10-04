@@ -70,9 +70,9 @@ pub fn select_context(task: &str, corpus: &Corpus, seed: Option<&str>) -> Author
         if is_example {
             score += 1;
         }
-        if game_shaped && body.contains("game::scene") {
+        if game_shaped && body.contains("scene::scene") {
             score += 20;
-        } else if game_shaped && !body.contains("game::scene") {
+        } else if game_shaped && !body.contains("scene::scene") {
             score -= 10;
         }
         scored.push((score, id, body));
@@ -115,7 +115,7 @@ pub fn select_context(task: &str, corpus: &Corpus, seed: Option<&str>) -> Author
         if examples.len() >= 2 || remaining < 400 {
             break;
         }
-        if game_shaped && !body.contains("game::scene") {
+        if game_shaped && !body.contains("scene::scene") {
             continue;
         }
         let slice = truncate_chars(&body, example_slice.min(remaining));
@@ -165,13 +165,13 @@ pub fn select_context(task: &str, corpus: &Corpus, seed: Option<&str>) -> Author
 fn is_game_shaped(task: &str, seed: Option<&str>) -> bool {
     let lower = task.to_ascii_lowercase();
     seed.is_some_and(|s| {
-        s.contains("game::scene")
+        s.contains("scene::scene")
             || s.contains("\ngame ")
-            || s.contains("game::prefab")
+            || s.contains("scene::prefab")
             || s.contains("game::mode")
             || s.contains("game::weapon")
-            || s.contains("game::zone")
-            || s.contains("game::controller")
+            || s.contains("scene::zone")
+            || s.contains("scene::controller")
             || s.contains("game::encounter")
             || s.contains("game::npc")
     }) || lower.contains("game::")
@@ -321,10 +321,10 @@ pub fn repair_guidance(error: &str) -> Option<String> {
         || (lower.contains("expected `game`") && lower.contains("parse"))
     {
         return Some(
-            "GAME SCENE ENCLOSURE RULE: the entire program is ONE `game Name { game::scene( ... ) }`. \
-             Never close `game::scene` before `game::spawn`, `game::mode`, `game::controller`, \
-             `game::camera`, `game::weapon`, `game::hud`, `game::environment`, `game::shadow`, \
-             `game::post_process`, `game::overlay`, `game::zone`, or `game::encounter`. \
+            "GAME SCENE ENCLOSURE RULE: the entire program is ONE `game Name { scene::scene( ... ) }`. \
+             Never close `scene::scene` before `scene::spawn`, `game::mode`, `scene::controller`, \
+             `scene::camera`, `game::weapon`, `scene::hud`, `scene::environment`, `scene::shadow`, \
+             `scene::post_process`, `scene::overlay`, `scene::zone`, or `game::encounter`. \
              Do not emit trailing `game::*` siblings after the final `}` of the game block. \
              FPS guns are scene-level `game::weapon(:name(...), :slot(1), :fire_mode(hitscan), ...)` \
              nodes — not `game::ability` keys. Keep projectile cues as children of `game::weapon`."
@@ -332,21 +332,25 @@ pub fn repair_guidance(error: &str) -> Option<String> {
         );
     }
     if lower.contains("unknown game node")
+        || lower.contains("unknown scene node")
         || ((lower.contains("unknown option") || lower.contains("unknown prop"))
-            && lower.contains("game::"))
+            && (lower.contains("game::") || lower.contains("scene::")))
     {
         return Some(format!(
-            "GAME CATALOG RULE: use only closed `game::*` nodes/options.\n{}\nFix: replace the unknown node/option with a catalog entry above.",
+            "GAME CATALOG RULE: use only closed `scene::*` kernel nodes and `game::*` gameplay nodes/options.\n{}\nFix: replace the unknown node/option with a catalog entry above.",
             sil_core::format_game_catalog_md()
         ));
     }
-    if lower.contains("cannot contain game::") || lower.contains("does not accept children") {
+    if lower.contains("cannot contain game::")
+        || lower.contains("cannot contain scene::")
+        || lower.contains("does not accept children")
+    {
         return Some(
             "GAME CHILD RULE: each `game::*` node only accepts the children listed in the catalog. \
-             Move disallowed children under `game::scene`, `game::entity`, `game::prefab`, \
-             `game::zone`, `game::weapon`, `game::mode`, or `game::encounter` as appropriate. \
+             Move disallowed children under `scene::scene`, `scene::entity`, `scene::prefab`, \
+             `scene::zone`, `game::weapon`, `game::mode`, or `game::encounter` as appropriate. \
              NPC AI stacks (`npc`, `perception`, `behavior`, `mind`, `nav_agent`) belong under \
-             `game::entity` or `game::prefab`; weapon cues (`projectile`, `particle_emitter`, \
+             `scene::entity` or `scene::prefab`; weapon cues (`projectile`, `particle_emitter`, \
              `audio`) belong under `game::weapon`."
                 .into(),
         );
@@ -366,28 +370,28 @@ pub fn repair_guidance(error: &str) -> Option<String> {
 Weapon `:name` and `:ref` remain quoted strings.\n\
 WEAPON FIRE MODE RULE: `game::weapon :fire_mode` must be one of \
              `hitscan`, `pellet`, `projectile`, or `beam`. Bind tuneables with `:ref(\"DataName\")` \
-             on a matching `game::data` asset when possible."
+             on a matching `scene::data` asset when possible."
                 .into(),
         );
     }
     if lower.contains("must be one of") && lower.contains("movement") && lower.contains(":style") {
         return Some(
-            "MOVEMENT STYLE RULE: player locomotion uses `game::movement :style(first_person)` \
+            "MOVEMENT STYLE RULE: player locomotion uses `scene::movement :style(first_person)` \
              (or `walk` / `sprint` / `jump`) on the possessed pawn prefab. Pair with \
-             `game::camera :mode(first_person)` and `game::controller :scheme(wasd_mouse)`."
+             `scene::camera :mode(first_person)` and `scene::controller :scheme(wasd_mouse)`."
                 .into(),
         );
     }
     if lower.contains("cannot mix") && lower.contains("game") {
         return Some(
-            "GAME SUBJECT RULE: a game program is only `game Name { game::scene(...) }`. \
+            "GAME SUBJECT RULE: a game program is only `game Name { scene::scene(...) }`. \
              Remove every `app`, `component`, `contract`, `resource`, `service`, and `processor`."
                 .into(),
         );
     }
-    if lower.contains("root must be") && lower.contains("game::scene") {
+    if lower.contains("root must be") && lower.contains("scene::scene") {
         return Some(
-            "GAME ROOT RULE: the declaration must be `game Name { game::scene(:title(\"…\"), …) }`."
+            "GAME ROOT RULE: the declaration must be `game Name { scene::scene(:title(\"…\"), …) }`."
                 .into(),
         );
     }
@@ -557,7 +561,7 @@ pub fn autofix(program: &str, error: &str) -> Option<(String, String)> {
         if let Some(fixed) = reenclose_orphaned_game_nodes(program) {
             return Some((
                 fixed,
-                "moved orphaned game::* siblings back inside game::scene".into(),
+                "moved orphaned game::* siblings back inside scene::scene".into(),
             ));
         }
     }
@@ -585,7 +589,7 @@ pub fn inject_fps_task(task: &str, seed: &str) -> Option<(String, String)> {
         let stripped = strip_game_nodes(seed, "zone");
         let stripped = strip_game_nodes(&stripped, "encounter");
         let mut nodes = crate::fps_inject::megastructure_zone_nodes();
-        nodes.push(crate::fps_inject::hostile_encounter_wave());
+        nodes.push(crate::fps_inject::gameplay::hostile_encounter_wave());
         let fixed = insert_scene_children(&stripped, &nodes)?;
         return Some((
             fixed,
@@ -606,7 +610,7 @@ pub fn inject_fps_task(task: &str, seed: &str) -> Option<(String, String)> {
         ));
     }
     if crate::fps_inject::wants_hostiles(task) && !seed.contains(":name(\"Suppressor\")") {
-        let nodes = crate::fps_inject::hostile_encounter_nodes();
+        let nodes = crate::fps_inject::gameplay::hostile_encounter_nodes();
         let fixed = insert_scene_children(seed, &nodes)?;
         return Some((
             fixed,
@@ -674,8 +678,8 @@ fn strip_neon_entities(program: &str) -> String {
             let Some(name_at) = out.find(&needle) else {
                 break;
             };
-            // Walk back to the owning `game::entity(` start.
-            let Some(ent_at) = out[..name_at].rfind("game::entity(") else {
+            // Walk back to the owning `scene::entity(` start.
+            let Some(ent_at) = out[..name_at].rfind("scene::entity(") else {
                 break;
             };
             let mut depth = 0i32;
@@ -719,7 +723,7 @@ pub fn inject_named_fps_weapons(task: &str, seed: &str) -> Option<String> {
         && lower.contains("breach")
         && (lower.contains("arc") || lower.contains("carbine"))
         && (lower.contains("rail") || lower.contains("longshot"));
-    if !wants || !seed.contains("game::scene(") {
+    if !wants || !seed.contains("scene::scene(") {
         return None;
     }
     if seed.contains("game::weapon(:name(\"VanguardAR\")") || seed.contains(":name(\"VanguardAR\")")
@@ -727,10 +731,10 @@ pub fn inject_named_fps_weapons(task: &str, seed: &str) -> Option<String> {
         return None;
     }
     let nodes = [
-        r#"game::data(:name("VanguardData"), :damage(16), :fire_rate(9), :magazine(30), :reload(1.7), :spread(0.018))"#,
-        r#"game::data(:name("BreachData"), :damage(12), :fire_rate(1.2), :magazine(6), :reload(2.4), :spread(0.08), :pellet_count(10))"#,
-        r#"game::data(:name("ArcData"), :damage(28), :fire_rate(3.5), :magazine(18), :reload(2.0), :spread(0.01))"#,
-        r#"game::data(:name("RailData"), :damage(95), :fire_rate(0.7), :magazine(4), :reload(2.8), :spread(0.002))"#,
+        r#"scene::data(:name("VanguardData"), :damage(16), :fire_rate(9), :magazine(30), :reload(1.7), :spread(0.018))"#,
+        r#"scene::data(:name("BreachData"), :damage(12), :fire_rate(1.2), :magazine(6), :reload(2.4), :spread(0.08), :pellet_count(10))"#,
+        r#"scene::data(:name("ArcData"), :damage(28), :fire_rate(3.5), :magazine(18), :reload(2.0), :spread(0.01))"#,
+        r#"scene::data(:name("RailData"), :damage(95), :fire_rate(0.7), :magazine(4), :reload(2.8), :spread(0.002))"#,
         r#"game::weapon(:name("VanguardAR"), :slot(1), :fire_mode(hitscan), :ref("VanguardData"))"#,
         r#"game::weapon(:name("Breach12"), :slot(2), :fire_mode(pellet), :ref("BreachData"))"#,
         r##"game::weapon(
@@ -776,11 +780,11 @@ pub fn inject_named_fps_weapons(task: &str, seed: &str) -> Option<String> {
 /// Merge additive scene-level nodes from a broken draft into a known-good seed.
 ///
 /// Used when the model truncates while inventing duplicate entities: keep the
-/// seed tree and graft any new `game::data` / `game::weapon` / `game::zone` /
-/// `game::hud` / `game::environment` / `game::shadow` / `game::prefab` /
+/// seed tree and graft any new `scene::data` / `game::weapon` / `scene::zone` /
+/// `scene::hud` / `scene::environment` / `scene::shadow` / `scene::prefab` /
 /// `game::encounter` declarations that are absent from the seed.
 pub fn merge_additive_game_draft(seed: &str, draft: &str) -> Option<String> {
-    if !seed.contains("game::scene(") || !draft.contains("game::scene(") {
+    if !seed.contains("scene::scene(") || !draft.contains("scene::scene(") {
         return None;
     }
     let kinds = [
@@ -861,7 +865,7 @@ fn node_identity(node: &str, kind: &str) -> String {
 }
 
 fn insert_scene_children(seed: &str, children: &[String]) -> Option<String> {
-    let scene_at = seed.find("game::scene(")?;
+    let scene_at = seed.find("scene::scene(")?;
     // Insert before the final scene closer: last line that is just `    )` before `}`.
     let mut lines: Vec<String> = seed.lines().map(str::to_string).collect();
     let mut close_idx = None;
@@ -901,7 +905,7 @@ fn insert_scene_children(seed: &str, children: &[String]) -> Option<String> {
 }
 
 /// Hoist scene-only nodes (`material`, `asset`, `weapon`, …) that the model
-/// nested under `game::entity` / `game::prefab` / `game::zone`.
+/// nested under `scene::entity` / `scene::prefab` / `scene::zone`.
 fn hoist_scene_only_nodes(program: &str, error: &str) -> Option<(String, String)> {
     let kind = [
         "material",
@@ -956,9 +960,9 @@ fn hoist_scene_only_nodes(program: &str, error: &str) -> Option<(String, String)
     without.push_str(&program[..start]);
     without.push_str(&program[after..]);
 
-    // Insert just after `game::scene(` opener.
-    let scene_at = without.find("game::scene(")?;
-    let insert_at = scene_at + "game::scene(".len();
+    // Insert just after `scene::scene(` opener.
+    let scene_at = without.find("scene::scene(")?;
+    let insert_at = scene_at + "scene::scene(".len();
     let mut fixed = String::new();
     fixed.push_str(&without[..insert_at]);
     fixed.push('\n');
@@ -969,8 +973,8 @@ fn hoist_scene_only_nodes(program: &str, error: &str) -> Option<(String, String)
     Some((fixed, kind.to_string()))
 }
 
-/// When the model closes `game::scene` / `game Name` too early, trailing
-/// `game::spawn` / `game::weapon` / etc. siblings sit at file scope and parse as
+/// When the model closes `scene::scene` / `game Name` too early, trailing
+/// `scene::spawn` / `game::weapon` / etc. siblings sit at file scope and parse as
 /// a second top-level `game` declaration. Re-open the scene and append them.
 fn reenclose_orphaned_game_nodes(program: &str) -> Option<String> {
     let lines: Vec<&str> = program.lines().collect();
@@ -1007,7 +1011,7 @@ fn reenclose_orphaned_game_nodes(program: &str) -> Option<String> {
         if t.is_empty() || t == "}" {
             continue;
         }
-        // Preserve multi-line game::entity / weapon blocks; only normalize
+        // Preserve multi-line scene::entity / weapon blocks; only normalize
         // indentation for top-level orphaned nodes.
         if t.starts_with("game::") {
             orphans.push(format!("        {t}"));
@@ -1366,7 +1370,7 @@ Rules: `ui::alert` / `when` must live inside `method render()`; clearing a file 
     );
     let game_part = if wants_game && !target.contains("game ") {
         Some(format!(
-            "WebGPU game programs declare ONE `game Name {{ game::scene(...) }}` tree — closed `game::*` catalog only (ADR-012). \
+            "WebGPU game programs declare ONE `game Name {{ scene::scene(...) }}` tree — closed `game::*` catalog only (ADR-012). \
 No `app`, `component`, `resource`, `service`, or `processor`. No hand-written JavaScript/TypeScript in `.silc`. \
 The compiler synthesizes Bun (host) + CPython bake + Go SQLite.\n\n\
 Author with the three-engine synthesis: Godot nested `entity`/`signal`/`group`/`zone` trees; \
@@ -1374,9 +1378,9 @@ Unity `prefab` + `data` + `asset`/`material` + `spawn` overrides; Unreal `mode`/
 ownership with FPS weapons and encounters.\n\
 Copy structure from the highest-scoring game example in context and tune props for the task.\n\
 Required systems for a playable FPS scene: prefab(+mesh/collider/movement/pawn/weapon/ammo), \
-`game::data` weapon/locomotion profiles, `game::asset`/`game::material` when GLTF/PBR is needed, \
-entity world tree with `game::zone` volumes, spawn, mode, controller, \
-`game::camera :mode(first_person)`, `game::hud`, weapons with cue children, optional \
+`scene::data` weapon/locomotion profiles, `scene::asset`/`scene::material` when GLTF/PBR is needed, \
+entity world tree with `scene::zone` volumes, spawn, mode, controller, \
+`scene::camera :mode(first_person)`, `scene::hud`, weapons with cue children, optional \
 `game::encounter` waves and NPC stacks (`npc`/`perception`/`behavior`/`mind`), post_process, overlay.\n\n\
 {}\n\
 Rules: use ONLY catalog nodes/options; `:title` is manifest data — never invent title-named compiler branches; \
@@ -1411,7 +1415,7 @@ fn draft_token_budget(target: Option<&str>, ceiling: usize) -> usize {
     // full on every edit. Form-oriented scaling truncates realistic games and
     // then wastes repair attempts trying to reconstruct a missing tail.
     // Prefer at least 8k tokens for games even when the global ceiling is lower.
-    if target.is_some_and(|source| source.contains("game::scene")) {
+    if target.is_some_and(|source| source.contains("scene::scene")) {
         return ceiling.max(8192);
     }
     let target_chars = target.map_or(0, str::len);
@@ -1430,13 +1434,15 @@ pub fn ensure_version(program: &str) -> Option<String> {
     let looks_silc = program.contains("component ")
         || program.contains("contract ")
         || program.contains("app ")
-        || program.contains("game ");
+        || program.contains("game ")
+        || program.contains("scene ")
+        || program.contains("loop ");
     if !looks_silc {
         return None;
     }
     let mut lines: Vec<&str> = program.lines().collect();
     let insert_at = usize::from(lines.first().is_some_and(|l| l.starts_with("#!")));
-    lines.insert(insert_at, "@version(\"0.5.0\")");
+    lines.insert(insert_at, "@version(\"0.6.0\")");
     Some(lines.join("\n"))
 }
 
@@ -1451,10 +1457,10 @@ pub fn ensure_version(program: &str) -> Option<String> {
 
 /// Reject mixed UI/resource programs when the task is game-shaped.
 fn game_subject_purity(program: &str) -> Option<String> {
-    let has_game = program.contains("game ") && program.contains("game::scene");
+    let has_game = program.contains("game ") && program.contains("scene::scene");
     if !has_game {
         return Some(
-            "game-shaped tasks must declare a single `game Name { game::scene(...) }` root".into(),
+            "game-shaped tasks must declare a single `game Name { scene::scene(...) }` root".into(),
         );
     }
     for banned in [
@@ -1468,7 +1474,7 @@ fn game_subject_purity(program: &str) -> Option<String> {
     ] {
         if program.contains(banned) || program.starts_with(banned.trim_start()) {
             return Some(format!(
-                "game programs must not mix `{}` declarations with `game::scene`",
+                "game programs must not mix `{}` declarations with `scene::scene`",
                 banned.trim()
             ));
         }
@@ -1477,7 +1483,7 @@ fn game_subject_purity(program: &str) -> Option<String> {
 }
 
 fn game_intent_regression(seed: &str, candidate: &str, task: &str) -> Option<String> {
-    if !seed.contains("game ") || !seed.contains("game::scene") {
+    if !(seed.contains("game ") || seed.contains("scene ")) || !seed.contains("scene::scene") {
         return None;
     }
     let task = task.to_ascii_lowercase();
@@ -1488,12 +1494,13 @@ fn game_intent_regression(seed: &str, candidate: &str, task: &str) -> Option<Str
         return None;
     }
 
-    let node_re =
-        regex::Regex::new(r"game::([a-z_][a-z0-9_]*)\s*\(").expect("valid game node regex");
+    let node_re = regex::Regex::new(r"(scene|game)::([a-z_][a-z0-9_]*)\s*\(")
+        .expect("valid scene/game node regex");
     let counts = |source: &str| {
         let mut out = std::collections::BTreeMap::<String, usize>::new();
         for caps in node_re.captures_iter(source) {
-            *out.entry(caps[1].to_string()).or_default() += 1;
+            *out.entry(format!("{}::{}", &caps[1], &caps[2]))
+                .or_default() += 1;
         }
         out
     };
@@ -1503,7 +1510,7 @@ fn game_intent_regression(seed: &str, candidate: &str, task: &str) -> Option<Str
         .iter()
         .filter_map(|(node, expected)| {
             let actual = after.get(node).copied().unwrap_or(0);
-            (actual < *expected).then(|| format!("game::{node} ({actual}/{expected})"))
+            (actual < *expected).then(|| format!("{node} ({actual}/{expected})"))
         })
         .collect();
     if missing.is_empty() {
@@ -2050,7 +2057,7 @@ pub fn run_author_with_failure(
                     max_turns: attempts,
                     elapsed_secs: 0.0,
                     kind: ActionKind::AutoFixed {
-                        what: "added missing @version(\"0.5.0\")".into(),
+                        what: "added missing @version(\"0.6.0\")".into(),
                     },
                 },
             );
@@ -2232,7 +2239,7 @@ pub fn run_author_with_failure(
                 last_program_error = Some(error.clone());
                 repair_note = Some(format!(
                     "{error}\nGAME SUBJECT RULE: emit only `#!/usr/bin/env silc`, `@version(...)`, \
-                     and one `game Name {{ game::scene(...) }}` tree. No resource/contract/component/\
+                     and one `game Name {{ scene::scene(...) }}` tree. No resource/contract/component/\
                      app/method blocks. Output the FULL corrected game program ending with # END."
                 ));
                 emit(
@@ -2421,7 +2428,7 @@ pub fn run_author_with_failure(
                 // Truncated additive FPS drafts: graft new data/weapon/zone nodes
                 // from the broken draft onto the known-good seed scene tree, or
                 // inject the closed four-weapon loadout named by the task.
-                if let Some(seed_src) = ctx.target.as_deref().filter(|s| s.contains("game::scene"))
+                if let Some(seed_src) = ctx.target.as_deref().filter(|s| s.contains("scene::scene"))
                 {
                     let merged = inject_fps_task(task, seed_src)
                         .map(|(p, _)| p)
@@ -2486,12 +2493,12 @@ pub fn run_author_with_failure(
                 // corpus grep when no rule matches, since generic hits do not
                 // teach the model which declaration to change.
                 if ctx.game_catalog.is_some()
-                    || seed.is_some_and(|source| source.contains("game::scene"))
+                    || seed.is_some_and(|source| source.contains("scene::scene"))
                 {
                     evidence.clear();
                     repair_note = Some(format!(
                         "compiler rejected the previous GAME program (stage={stage}): {error}{site}\n\n\
-                         GAME REPAIR RULE: keep a single `game Name {{ game::scene(...) }}` \
+                         GAME REPAIR RULE: keep a single `game Name {{ scene::scene(...) }}` \
                          structure. Do not invent contracts, components, resources, apps, services, or \
                          processors. Repair only the game syntax reported by the compiler and preserve \
                          every existing `game::*` node when modifying.\n\n\
@@ -2566,10 +2573,10 @@ fn build_user_prompt(
         if ctx
             .target
             .as_deref()
-            .is_some_and(|target| target.contains("game::scene"))
+            .is_some_and(|target| target.contains("scene::scene"))
         {
             out.push_str(
-                "\n# Modify guidance\nPrefer the SMALLEST edit that fulfills the task inside the existing `game::scene` tree. Keep the same `game Name`, `:title`, and every system the task did not name.\nGAME PRESERVATION RULE: a game edit is additive unless the task explicitly says to remove a system. Preserve every existing `game::*` node, repeated post stage, prefab, data asset, asset/material declaration, zone, weapon, spawn, signal, encounter, NPC/mind stack, HUD, and weapon/ability cue. Never trade away camera (especially `:mode(first_person)`), controller, mode, pawn, prefab, entity/zone tree, weapons, overlay, post-processing, or encounters merely to shorten the output. Prefer Godot-style nested `entity`/`zone` trees, Unity-style `prefab`/`data`/`asset`/`material`/`spawn`, and Unreal-style `mode`/`pawn`/`controller` with FPS weapons and encounter waves.\nDo not invent `app` / `component` / `resource` / `processor`. Use only closed `game::*` catalog nodes and options.\n",
+                "\n# Modify guidance\nPrefer the SMALLEST edit that fulfills the task inside the existing `scene::scene` tree. Keep the same `game Name`, `:title`, and every system the task did not name.\nGAME PRESERVATION RULE: a game edit is additive unless the task explicitly says to remove a system. Preserve every existing `game::*` node, repeated post stage, prefab, data asset, asset/material declaration, zone, weapon, spawn, signal, encounter, NPC/mind stack, HUD, and weapon/ability cue. Never trade away camera (especially `:mode(first_person)`), controller, mode, pawn, prefab, entity/zone tree, weapons, overlay, post-processing, or encounters merely to shorten the output. Prefer Godot-style nested `entity`/`zone` trees, Unity-style `prefab`/`data`/`asset`/`material`/`spawn`, and Unreal-style `mode`/`pawn`/`controller` with FPS weapons and encounter waves.\nDo not invent `app` / `component` / `resource` / `processor`. Use only closed `game::*` catalog nodes and options.\n",
             );
         } else {
             out.push_str(
@@ -2580,10 +2587,10 @@ fn build_user_prompt(
         if ctx
             .target
             .as_deref()
-            .is_some_and(|target| target.contains("game::scene"))
+            .is_some_and(|target| target.contains("scene::scene"))
         {
             out.push_str(
-                "\n# Build guidance\nStart from the arena/FPS game skeleton above and adapt it for the task: rename the `game`, tune `:title`, and adjust prefabs / zones / weapons / world entities / encounters / post stages as needed.\nKeep a single `game Name { game::scene(...) }` root. Required playable systems: prefab(+mesh/collider/movement/pawn/weapon), data weapon/locomotion profiles, optional asset/material, world entity/zone tree, spawn, mode, controller, first_person camera, hud, weapons with cues, post_process, overlay; add encounters and NPC/mind stacks when the task needs combat AI.\nDo not add `app`, `component`, `resource`, or `processor`.\n",
+                "\n# Build guidance\nStart from the arena/FPS game skeleton above and adapt it for the task: rename the `game`, tune `:title`, and adjust prefabs / zones / weapons / world entities / encounters / post stages as needed.\nKeep a single `game Name { scene::scene(...) }` root. Required playable systems: prefab(+mesh/collider/movement/pawn/weapon), data weapon/locomotion profiles, optional asset/material, world entity/zone tree, spawn, mode, controller, first_person camera, hud, weapons with cues, post_process, overlay; add encounters and NPC/mind stacks when the task needs combat AI.\nDo not add `app`, `component`, `resource`, or `processor`.\n",
             );
         } else {
             out.push_str(
@@ -2607,7 +2614,7 @@ fn build_user_prompt(
             let bounded = if ctx
                 .target
                 .as_deref()
-                .is_some_and(|target| target.contains("game::scene"))
+                .is_some_and(|target| target.contains("scene::scene"))
             {
                 prev.to_string()
             } else if prev.lines().count() > 120 {
@@ -2647,7 +2654,7 @@ pub fn strip_end_marker(source: &str) -> String {
 
 /// True when a (possibly truncated) draft still has the structural end of an app.
 pub fn looks_complete(program: &str) -> bool {
-    if program.contains("game ") && program.contains("game::scene") {
+    if program.contains("game ") && program.contains("scene::scene") {
         return program.contains("@version(");
     }
     program.contains("@version(")
@@ -2860,7 +2867,7 @@ mod tests {
         let ctx = select_context(
             "hotel sign up form with name phone room comment",
             &corpus,
-            Some("#!/usr/bin/env silc\n@version(\"0.5.0\")\n"),
+            Some("#!/usr/bin/env silc\n@version(\"0.6.0\")\n"),
         );
         assert!(!ctx.examples.is_empty());
         assert!(ctx.target.is_some());
@@ -2874,7 +2881,7 @@ mod tests {
 
     #[test]
     fn strip_end_marker_removes_trailing_marker() {
-        let src = "#!/usr/bin/env silc\n@version(\"0.5.0\")\napp X { route \"/\" => Y; }\n# END\n";
+        let src = "#!/usr/bin/env silc\n@version(\"0.6.0\")\napp X { route \"/\" => Y; }\n# END\n";
         let out = strip_end_marker(src);
         assert!(!out.contains("# END"));
         assert!(out.contains("@version"));
@@ -2882,12 +2889,12 @@ mod tests {
 
     #[test]
     fn looks_complete_requires_app_route() {
-        assert!(!looks_complete("@version(\"0.5.0\")\ncomponent X {}"));
+        assert!(!looks_complete("@version(\"0.6.0\")\ncomponent X {}"));
         assert!(looks_complete(
-            "@version(\"0.5.0\")\ncomponent Home {}\napp App { route \"/\" => Home; }\n"
+            "@version(\"0.6.0\")\ncomponent Home {}\napp App { route \"/\" => Home; }\n"
         ));
         assert!(looks_complete(
-            "@version(\"0.5.0\")\ngame Demo { game::scene(:title(\"T\"), game::overlay(:toggle(\"F1\"))) }\n"
+            "@version(\"0.6.0\")\ngame Demo { scene::scene(:title(\"T\"), scene::overlay(:toggle(\"F1\"))) }\n"
         ));
     }
 
@@ -2927,7 +2934,7 @@ mod tests {
     #[test]
     fn autofix_renames_resource_colliding_with_component() {
         let program = concat!(
-            "#!/usr/bin/env silc\n@version(\"0.5.0\")\n",
+            "#!/usr/bin/env silc\n@version(\"0.6.0\")\n",
             "contract Guest { has Str $.name; }\n",
             "component GuestForm { method render() { ui::stack() } }\n",
             "resource GuestForm for Guest {\n    query list;\n    mutation create;\n}\n",
@@ -2944,7 +2951,7 @@ mod tests {
     #[test]
     fn autofix_drops_seeds_without_stable_id() {
         let program = concat!(
-            "#!/usr/bin/env silc\n@version(\"0.5.0\")\n",
+            "#!/usr/bin/env silc\n@version(\"0.6.0\")\n",
             "resource Guests for Guest {\n",
             "    query list;\n",
             "    seed Guest.new(:name(\"Ada\"), :room(\"101\"));\n",
@@ -2985,7 +2992,7 @@ mod tests {
     #[test]
     fn autofix_hoists_method_nested_in_render() {
         let program = concat!(
-            "#!/usr/bin/env silc\n@version(\"0.5.0\")\n",
+            "#!/usr/bin/env silc\n@version(\"0.6.0\")\n",
             "contract Visitor {\n    has Str $.name;\n}\n\n",
             "component HelloForm {\n",
             "    has state Str $.name = \"\";\n\n",
@@ -3026,7 +3033,7 @@ mod tests {
     #[test]
     fn select_context_keeps_real_target_over_starter() {
         let corpus = Corpus::builtin();
-        let seed = "#!/usr/bin/env silc\n@version(\"0.5.0\")\n# mine\n";
+        let seed = "#!/usr/bin/env silc\n@version(\"0.6.0\")\n# mine\n";
         let ctx = select_context("edit it", &corpus, Some(seed));
         assert!(!ctx.target_is_starter);
         assert_eq!(ctx.target.as_deref(), Some(seed));
@@ -3059,7 +3066,7 @@ mod tests {
     #[test]
     fn autofix_removes_a_repeated_resource_block() {
         let program = concat!(
-            "#!/usr/bin/env silc\n@version(\"0.5.0\")\n",
+            "#!/usr/bin/env silc\n@version(\"0.6.0\")\n",
             "contract Guest {\n    has Str $.name;\n}\n\n",
             "resource Guests for Guest {\n    query list;\n    mutation create;\n}\n\n",
             "component GuestForm {\n    has state Str $.name = \"\";\n\n",
@@ -3090,7 +3097,7 @@ mod tests {
     #[test]
     fn autofix_drops_contract_that_collides_with_component() {
         let program = concat!(
-            "#!/usr/bin/env silc\n@version(\"0.5.0\")\n\n",
+            "#!/usr/bin/env silc\n@version(\"0.6.0\")\n\n",
             "contract Guest {\n    has Str $.name;\n    has Str $.phone;\n}\n\n",
             "contract GuestForm {\n    has Str $.name;\n    has Str $.phone;\n}\n\n",
             "resource Guests for Guest {\n    query list;\n    mutation create;\n}\n\n",
@@ -3122,7 +3129,7 @@ mod tests {
     #[test]
     fn autofix_renames_non_component_collider_it_cannot_delete() {
         let program = concat!(
-            "#!/usr/bin/env silc\n@version(\"0.5.0\")\n\n",
+            "#!/usr/bin/env silc\n@version(\"0.6.0\")\n\n",
             "contract Guest {\n    has Str $.name;\n}\n\n",
             "processor GuestForm {\n    method score(Guest $g) {\n",
             "        $g.name ==> text::score()\n    }\n}\n\n",
@@ -3194,15 +3201,16 @@ mod tests {
             "build a webgpu fps arena with prefabs weapons and zones",
             None,
         )
-        .expect("game task needs the game::scene pattern");
-        assert!(pattern.contains("game::scene"));
-        assert!(pattern.contains("game::* catalog"));
-        assert!(pattern.contains("game::prefab") || pattern.contains("prefab"));
+        .expect("game task needs the scene::scene pattern");
+        assert!(pattern.contains("scene::scene"));
+        assert!(pattern.contains("scene:: kernel"));
+        assert!(pattern.contains("game::"));
+        assert!(pattern.contains("scene::prefab") || pattern.contains("prefab"));
         assert!(pattern.contains("weapon") || pattern.contains("game::weapon"));
-        assert!(pattern.contains("zone") || pattern.contains("game::zone"));
+        assert!(pattern.contains("zone") || pattern.contains("scene::zone"));
         assert!(pattern.contains("mode") && pattern.contains("pawn"));
         assert!(pattern.contains("first_person") || pattern.contains("controller"));
-        assert!(pattern.contains("game::overlay") || pattern.contains("overlay"));
+        assert!(pattern.contains("scene::overlay") || pattern.contains("overlay"));
         assert!(!pattern.contains("app HotelApp"));
     }
 
@@ -3212,12 +3220,12 @@ mod tests {
         let ctx = select_context(
             "improve this webgpu fps arena with weapons",
             &corpus,
-            Some("game Demo { game::scene(:title(\"Demo\"), game::overlay(:toggle(\"F1\"))) }"),
+            Some("game Demo { scene::scene(:title(\"Demo\"), scene::overlay(:toggle(\"F1\"))) }"),
         );
         let catalog = ctx.game_catalog.expect("game task needs catalog");
-        assert!(catalog.contains("game::prefab"));
+        assert!(catalog.contains("scene::prefab"));
         assert!(catalog.contains("game::weapon"));
-        assert!(catalog.contains("game::zone"));
+        assert!(catalog.contains("scene::zone"));
         assert!(catalog.contains("game::mind") || catalog.contains("game::npc"));
         assert!(
             catalog.chars().count() <= 6_002,
@@ -3226,56 +3234,57 @@ mod tests {
         assert!(
             ctx.examples
                 .iter()
-                .any(|(_, body)| body.contains("game::scene")),
+                .any(|(_, body)| body.contains("scene::scene")),
             "should prefer a game example"
         );
     }
 
     #[test]
     fn repair_guidance_covers_unknown_game_prop() {
-        let guidance = repair_guidance("validate: unknown option `:foo` on game::prefab")
+        let guidance = repair_guidance("validate: unknown option `:foo` on scene::prefab")
             .expect("game prop errors need catalog guidance");
         assert!(guidance.contains("GAME CATALOG RULE"));
-        assert!(guidance.contains("game::prefab"));
+        assert!(guidance.contains("scene::prefab"));
     }
 
     #[test]
     fn game_modify_rejects_silent_intent_removal() {
         let seed = concat!(
-            "game Demo { game::scene(:title(\"Demo\"), ",
-            "game::zone(:name(\"Arena\"), :kind(room)), ",
-            "game::camera(:mode(first_person)), ",
-            "game::controller(:scheme(wasd_mouse)), ",
+            "game Demo { scene::scene(:title(\"Demo\"), ",
+            "scene::zone(:name(\"Arena\"), :kind(room)), ",
+            "scene::camera(:mode(first_person)), ",
+            "scene::controller(:scheme(wasd_mouse)), ",
             "game::weapon(:name(\"Rifle\"), :fire_mode(hitscan), :damage(25)), ",
-            "game::post_process(:stage(taa)), ",
-            "game::post_process(:stage(sharpen))",
+            "scene::post_process(:stage(taa)), ",
+            "scene::post_process(:stage(sharpen))",
             ") }"
         );
         let candidate = concat!(
-            "game Demo { game::scene(:title(\"Demo\"), ",
-            "game::post_process(:stage(taa)), ",
+            "game Demo { scene::scene(:title(\"Demo\"), ",
+            "scene::post_process(:stage(taa)), ",
             "game::weapon(:name(\"Rifle\"), :fire_mode(hitscan), :damage(25))",
             ") }"
         );
         let error = game_intent_regression(seed, candidate, "make the scene more beautiful")
             .expect("silent node removal must be rejected");
-        assert!(error.contains("game::zone (0/1)"), "{error}");
-        assert!(error.contains("game::camera (0/1)"), "{error}");
-        assert!(error.contains("game::controller (0/1)"), "{error}");
-        assert!(error.contains("game::post_process (1/2)"), "{error}");
+        assert!(error.contains("scene::zone (0/1)"), "{error}");
+        assert!(error.contains("scene::camera (0/1)"), "{error}");
+        assert!(error.contains("scene::controller (0/1)"), "{error}");
+        assert!(error.contains("scene::post_process (1/2)"), "{error}");
     }
 
     #[test]
     fn game_modify_allows_additive_and_explicit_destructive_edits() {
-        let seed = "game Demo { game::scene(:title(\"Demo\"), game::camera(:mode(first_person))) }";
+        let seed =
+            "game Demo { scene::scene(:title(\"Demo\"), scene::camera(:mode(first_person))) }";
         let additive = concat!(
-            "game Demo { game::scene(:title(\"Demo\"), ",
-            "game::camera(:mode(first_person)), game::controller(:scheme(wasd_mouse)), ",
+            "game Demo { scene::scene(:title(\"Demo\"), ",
+            "scene::camera(:mode(first_person)), scene::controller(:scheme(wasd_mouse)), ",
             "game::weapon(:name(\"Sidearm\"), :fire_mode(hitscan), :damage(15))) }"
         );
         assert!(game_intent_regression(seed, additive, "add controller and sidearm").is_none());
 
-        let destructive = "game Demo { game::scene(:title(\"Demo\")) }";
+        let destructive = "game Demo { scene::scene(:title(\"Demo\")) }";
         assert!(
             game_intent_regression(seed, destructive, "remove the camera").is_none(),
             "explicit destructive task should be allowed"
@@ -3285,7 +3294,7 @@ mod tests {
     #[test]
     fn autofix_drops_any_contract_colliding_with_a_component() {
         let program = concat!(
-            "#!/usr/bin/env silc\n@version(\"0.5.0\")\n\n",
+            "#!/usr/bin/env silc\n@version(\"0.6.0\")\n\n",
             "contract Guest {\n    has Str $.name;\n}\n\n",
             "contract GuestLedger {\n    has Guest $.guest;\n}\n\n",
             "resource Guests for Guest {\n    query list;\n    mutation create;\n}\n\n",
@@ -3356,7 +3365,7 @@ mod tests {
 
     #[test]
     fn draft_token_budget_uses_ceiling_for_game_trees() {
-        let game = "@version(\"0.5.0\")\ngame Demo { game::scene(:title(\"Demo\")) }\n";
+        let game = "@version(\"0.6.0\")\ngame Demo { scene::scene(:title(\"Demo\")) }\n";
         assert_eq!(draft_token_budget(Some(game), 4_096), 8_192);
         assert_eq!(draft_token_budget(Some(game), 16_384), 16_384);
     }
@@ -3364,16 +3373,16 @@ mod tests {
     #[test]
     fn inject_named_fps_weapons_adds_closed_loadout() {
         let seed = r##"#!/usr/bin/env silc
-@version("0.5.0")
+@version("0.6.0")
 game Arena {
-    game::scene(
+    scene::scene(
         :title("ARENA"),
         :renderer(webgpu),
-        game::prefab(:name("Player"), game::mesh(:shape(capsule), :size(1.8), :color("#fff")), game::collider(:shape(capsule), :size(1.8)), game::movement(:style(first_person), :speed(5)), game::pawn()),
-        game::spawn(:prefab("Player"), :x(0), :y(1), :z(0), :as_pawn),
+        scene::prefab(:name("Player"), scene::mesh(:shape(capsule), :size(1.8), :color("#fff")), scene::collider(:shape(capsule), :size(1.8)), scene::movement(:style(first_person), :speed(5)), game::pawn()),
+        scene::spawn(:prefab("Player"), :x(0), :y(1), :z(0), :as_pawn),
         game::mode(:id("arena"), :possess("Player")),
-        game::controller(:scheme(wasd_mouse)),
-        game::camera(:mode(first_person), :follow(pawn))
+        scene::controller(:scheme(wasd_mouse)),
+        scene::camera(:mode(first_person), :follow(pawn))
     )
 }
 "##;
@@ -3393,19 +3402,19 @@ game Arena {
         let fixed = ensure_version(program).expect("missing pragma should be inserted");
         let lines: Vec<&str> = fixed.lines().collect();
         assert_eq!(lines[0], "#!/usr/bin/env silc");
-        assert_eq!(lines[1], "@version(\"0.5.0\")");
+        assert_eq!(lines[1], "@version(\"0.6.0\")");
     }
 
     #[test]
     fn ensure_version_leaves_valid_and_non_silc_input_alone() {
-        assert!(ensure_version("@version(\"0.5.0\")\ncomponent A {}").is_none());
+        assert!(ensure_version("@version(\"0.6.0\")\ncomponent A {}").is_none());
         assert!(ensure_version("Sure! Here is how you do it:").is_none());
     }
 
     #[test]
     fn autofix_avoids_double_plural_names() {
         let program = concat!(
-            "#!/usr/bin/env silc\n@version(\"0.5.0\")\n",
+            "#!/usr/bin/env silc\n@version(\"0.6.0\")\n",
             "contract Guest { has Str $.name; }\n",
             "component Visitors { method render() { ui::stack() } }\n",
             "resource Visitors for Guest {\n    query list;\n}\n"
@@ -3441,7 +3450,7 @@ game Arena {
 
     #[test]
     fn autofix_declines_unrelated_errors() {
-        let program = "#!/usr/bin/env silc\n@version(\"0.5.0\")\n";
+        let program = "#!/usr/bin/env silc\n@version(\"0.6.0\")\n";
         assert!(autofix(program, "parse: unexpected token `}`").is_none());
     }
 
@@ -3537,7 +3546,7 @@ game Arena {
         let ctx = AuthorContext {
             rules: String::new(),
             examples: vec![],
-            target: Some("@version(\"0.5.0\")\n".into()),
+            target: Some("@version(\"0.6.0\")\n".into()),
             target_is_starter: false,
             game_catalog: None,
         };
@@ -3553,15 +3562,15 @@ game Arena {
             rules: String::new(),
             examples: vec![],
             target: Some(
-                "game Arena { game::scene(:title(\"ARENA\"), game::overlay(:toggle(\"F1\"))) }"
+                "game Arena { scene::scene(:title(\"ARENA\"), scene::overlay(:toggle(\"F1\"))) }"
                     .into(),
             ),
             target_is_starter: false,
-            game_catalog: Some("game::prefab".into()),
+            game_catalog: Some("scene::prefab".into()),
         };
         let prompt = build_user_prompt("brighten the ground", &ctx, None, None, &[], true);
         assert!(prompt.contains("GAME PRESERVATION RULE"));
-        assert!(prompt.contains("game::scene"));
+        assert!(prompt.contains("scene::scene"));
         assert!(!prompt.contains("Prefer extending the existing target structure (contract"));
         assert!(!prompt.contains("ui::app_bar"));
     }
@@ -3572,11 +3581,11 @@ game Arena {
             rules: String::new(),
             examples: vec![],
             target: Some(
-                "game Arena { game::scene(:title(\"ARENA\"), game::prefab(:name(\"Player\"))) }"
+                "game Arena { scene::scene(:title(\"ARENA\"), scene::prefab(:name(\"Player\"))) }"
                     .into(),
             ),
             target_is_starter: true,
-            game_catalog: Some("game::prefab".into()),
+            game_catalog: Some("scene::prefab".into()),
         };
         let prompt = build_user_prompt("arena duel", &ctx, None, None, &[], false);
         assert!(prompt.contains("arena game skeleton") || prompt.contains("FPS game skeleton"));
@@ -3590,7 +3599,7 @@ game Arena {
         let ctx = AuthorContext {
             rules: String::new(),
             examples: vec![],
-            target: Some("@version(\"0.5.0\")\n".into()),
+            target: Some("@version(\"0.6.0\")\n".into()),
             target_is_starter: true,
             game_catalog: None,
         };
@@ -3604,25 +3613,25 @@ game Arena {
     #[test]
     fn autofix_reencloses_orphaned_game_siblings() {
         let broken = r##"#!/usr/bin/env silc
-@version("0.5.0")
+@version("0.6.0")
 game Mega {
-    game::scene(
+    scene::scene(
         :title("MEGA"),
         :renderer(webgpu),
-        game::entity(:name("Ground"), game::mesh(:shape(plane), :size(10), :color("#333")))
+        scene::entity(:name("Ground"), scene::mesh(:shape(plane), :size(10), :color("#333")))
     )
 }
-game::spawn(:prefab("Player"), :x(0), :y(1), :z(0), :as_pawn),
+scene::spawn(:prefab("Player"), :x(0), :y(1), :z(0), :as_pawn),
 game::mode(:id("m"), :possess("Player")),
-game::camera(:mode(first_person), :follow(pawn))
+scene::camera(:mode(first_person), :follow(pawn))
 "##;
         let (fixed, note) = autofix(broken, "parse: 10:1: expected game name").expect("autofix");
         assert!(note.contains("orphaned"), "{note}");
-        assert!(fixed.contains("game::spawn"));
+        assert!(fixed.contains("scene::spawn"));
         assert!(fixed.contains("game::mode"));
-        assert!(fixed.contains("game::camera"));
+        assert!(fixed.contains("scene::camera"));
         assert!(fixed.contains("game Mega {"));
         assert!(fixed.trim_end().ends_with('}'));
-        assert!(fixed.contains("game::scene("));
+        assert!(fixed.contains("scene::scene("));
     }
 }

@@ -1,4 +1,4 @@
-//! Recursive-descent parser for Silc 0.5.0 grammar.
+//! Recursive-descent parser for Silc 0.6.0 grammar.
 
 use sil_core::{
     App, CompField, Component, Contract, EmitDecl, EventBinding, Expr, Field, Game, GameNode,
@@ -89,6 +89,9 @@ impl Parser {
                 Some(Token::Game) => {
                     self.parse_subject_into(&mut program, ClassKind::Game, "game")?
                 }
+                Some(Token::Scene) => {
+                    self.parse_subject_into(&mut program, ClassKind::Game, "scene")?
+                }
                 Some(Token::Loop) => {
                     let lp = self.parse_loop_decl()?;
                     program.loops.push(lp);
@@ -105,18 +108,18 @@ impl Parser {
                 )?,
                 Some(Token::Sink) => {
                     return Err(self.error_here(
-                        "author `sink` declarations are not supported in Silc 0.5.0; remove the sink — persistence is synthesized from the processor",
+                        "author `sink` declarations are not supported in Silc 0.6.0; remove the sink — persistence is synthesized from the processor",
                     ))
                 }
-                Some(Token::Task) => self.parse_subject_into(
-                    &mut program,
-                    ClassKind::Module(ModuleKind::Task),
-                    "task",
-                )?,
+                Some(Token::Task) => {
+                    return Err(self.error_here(
+                        "`task` was removed in Silc 0.6.0; declare a `service` and route by the operation",
+                    ))
+                }
                 Some(Token::Class) => return Err(self.legacy_class_error()),
                 _ => {
                     return Err(self.error_here(
-                        "unsupported construct; expected `subset`, `contract`, `component`, `resource`, `app`, `game`, `loop`, `service`, `processor`, or `task`",
+                        "unsupported construct; expected `subset`, `contract`, `component`, `resource`, `app`, `game`, `scene`, `loop`, `service`, or `processor`",
                     ))
                 }
             }
@@ -183,9 +186,14 @@ impl Parser {
                 _ => None,
             })
             .unwrap_or("contract");
+        if kind == "task" {
+            return self.error_here(
+                "legacy `class` declarator is not supported in Silc 0.6.0; `task` was removed — declare a `service` and route by the operation",
+            );
+        }
         let replacement = format!("{kind} {name} {{ ... }}");
         self.error_here(&format!(
-            "legacy `class` declarator is not supported in Silc 0.5.0; use `{replacement}`"
+            "legacy `class` declarator is not supported in Silc 0.6.0; use `{replacement}`"
         ))
     }
 
@@ -250,7 +258,7 @@ impl Parser {
             }
             ClassKind::Game => {
                 let root = self.parse_game_node()?;
-                self.expect_simple(Token::RBrace, "`}` after game")?;
+                self.expect_simple(Token::RBrace, &format!("`}}` after {keyword}"))?;
                 program.games.push(Game {
                     name,
                     root,
@@ -823,7 +831,7 @@ impl Parser {
                 }
                 Some(Token::Has) => {
                     return Err(self.error_here(
-                        "resource metadata fields are not supported in Silc 0.5.0; use `resource Name for Contract` and capability declarations (`query list;`)",
+                        "resource metadata fields are not supported in Silc 0.6.0; use `resource Name for Contract` and capability declarations (`query list;`)",
                     ));
                 }
                 _ => return Err(self.error_here("expected `query`, `mutation`, `seed`, or `}`")),
@@ -899,7 +907,7 @@ impl Parser {
         if matches!(self.peek(), Some(Token::LParen)) || matches!(self.peek(), Some(Token::LBrace))
         {
             return Err(self.error_here(
-                "resource method bodies are not supported in Silc 0.5.0; declare capabilities only (e.g. `query list;` / `mutation create;`)",
+                "resource method bodies are not supported in Silc 0.6.0; declare capabilities only (e.g. `query list;` / `mutation create;`)",
             ));
         }
         Err(self.error_here("expected `;` after resource capability name"))
@@ -929,7 +937,7 @@ impl Parser {
                 }
                 Some(Token::Method) => {
                     return Err(self.error_here(
-                        "app `method serve()` is not supported in Silc 0.5.0; declare routes only — dual-surface web/terminal serving is synthesized by the compiler",
+                        "app `method serve()` is not supported in Silc 0.6.0; declare routes only — dual-surface web/terminal serving is synthesized by the compiler",
                     ));
                 }
                 _ => return Err(self.error_here("expected `route` or `}`")),
@@ -943,21 +951,34 @@ impl Parser {
     }
 
     fn at_game_node(&self) -> bool {
-        matches!(self.peek(), Some(Token::Ident(n)) if n == "game")
-            || matches!(self.peek(), Some(Token::Game))
+        match self.peek() {
+            Some(Token::Game) | Some(Token::Scene) => true,
+            Some(Token::Ident(n)) => n == "game" || n == "scene",
+            _ => false,
+        }
     }
 
     fn parse_game_node(&mut self) -> Result<GameNode, ParseError> {
         let start = self.current_span();
-        match self.peek() {
+        let namespace = match self.peek() {
             Some(Token::Ident(n)) if n == "game" => {
                 self.advance();
+                "game"
             }
             Some(Token::Game) => {
                 self.advance();
+                "game"
             }
-            _ => return Err(self.error_here("expected `game` namespace")),
-        }
+            Some(Token::Ident(n)) if n == "scene" => {
+                self.advance();
+                "scene"
+            }
+            Some(Token::Scene) => {
+                self.advance();
+                "scene"
+            }
+            _ => return Err(self.error_here("expected `scene::` or `game::`")),
+        };
         self.expect_simple(Token::DoubleColon, "`::` after game")?;
         let (name, name_span) = self.expect_ident_spanned("game node name")?;
         self.expect_simple(Token::LParen, "`(` after game node")?;
@@ -1002,6 +1023,7 @@ impl Parser {
         self.expect_simple(Token::RParen, "`)` after game node")?;
         Ok(GameNode {
             name,
+            namespace: namespace.into(),
             name_span,
             props,
             prop_spans,
@@ -1307,6 +1329,10 @@ impl Parser {
                 self.advance();
                 Ok(Expr::Ident("loop".into()))
             }
+            Some(Token::Scene) => {
+                self.advance();
+                Ok(Expr::Ident("scene".into()))
+            }
             Some(Token::Ident(_)) => {
                 let name = self.expect_ident("identifier")?;
                 if name == "navigate" && matches!(self.peek(), Some(Token::LParen)) {
@@ -1521,7 +1547,7 @@ impl Parser {
                 Ok((s, span))
             }
             // `loop` is a root keyword and also a field name (`$.loop`) and a
-            // closed value (`game::audio(:kind(loop))`).
+            // closed value (`scene::audio(:kind(loop))`).
             Token::Loop => {
                 let span = self
                     .tokens
@@ -1529,6 +1555,15 @@ impl Parser {
                     .map(|t| Span::new(t.start, t.end, t.line, t.col))
                     .unwrap_or(span);
                 Ok(("loop".into(), span))
+            }
+            // `scene` is a root keyword and the root node name (`scene::scene`).
+            Token::Scene => {
+                let span = self
+                    .tokens
+                    .get(self.pos.saturating_sub(1))
+                    .map(|t| Span::new(t.start, t.end, t.line, t.col))
+                    .unwrap_or(span);
+                Ok(("scene".into(), span))
             }
             _ => Err(self.error_here(&format!("expected {what}"))),
         }
@@ -1915,6 +1950,7 @@ fn ident_like_name(token: &Token) -> Option<String> {
         Token::App => Some("app".into()),
         Token::Game => Some("game".into()),
         Token::Loop => Some("loop".into()),
+        Token::Scene => Some("scene".into()),
         Token::Service => Some("service".into()),
         Token::Processor => Some("processor".into()),
         Token::Sink => Some("sink".into()),
@@ -2037,7 +2073,7 @@ mod tests {
     #[test]
     fn parses_component_and_app() {
         let src = r#"
-@version("0.5.0")
+@version("0.6.0")
 contract Product {
     has Str $.name;
     has num64 $.price;
@@ -2080,7 +2116,7 @@ app ShopApp {
     #[test]
     fn parses_intent_declarations() {
         let src = r#"
-@version("0.5.0")
+@version("0.6.0")
 contract Record { has Str $.id; }
 component Page { method render() { ui::page() } }
 resource Records for Record {
@@ -2092,7 +2128,6 @@ app Demo {
 }
 service Api {}
 processor Worker {}
-task Cleanup {}
 "#;
         let program = parse(src).expect("parse intent declarations");
         assert_eq!(program.contracts.len(), 1);
@@ -2101,13 +2136,20 @@ task Cleanup {}
         assert_eq!(program.resources[0].contract.as_deref(), Some("Record"));
         assert_eq!(program.resources[0].methods.len(), 2);
         assert_eq!(program.apps.len(), 1);
-        assert_eq!(program.modules.len(), 3);
+        assert_eq!(program.modules.len(), 2);
+    }
+
+    #[test]
+    fn rejects_removed_task_declarator() {
+        let src = "@version(\"0.6.0\")\ntask Cleanup {}\n";
+        let err = parse(src).expect_err("task removed");
+        assert!(err.message.contains("removed"), "{err}");
     }
 
     #[test]
     fn parses_resource_seeds() {
         let src = r#"
-@version("0.5.0")
+@version("0.6.0")
 contract Article {
     has Str $.id;
     has Str $.title;
@@ -2129,7 +2171,7 @@ resource Articles for Article {
     #[test]
     fn rejects_seed_wrong_contract() {
         let src = r#"
-@version("0.5.0")
+@version("0.6.0")
 contract Article { has Str $.id; }
 contract Other { has Str $.id; }
 resource Articles for Article {
@@ -2144,7 +2186,7 @@ resource Articles for Article {
     #[test]
     fn validate_rejects_seed_without_id() {
         let src = r#"
-@version("0.5.0")
+@version("0.6.0")
 contract Article {
     has Str $.id;
     has Str $.title;
@@ -2165,7 +2207,7 @@ app Demo { route "/" => Page; }
     fn rejects_author_sink_with_migration_diagnostic() {
         let err = parse("sink Db is storage(SQLite) {}").unwrap_err();
         assert!(err.message.contains("sink"), "error: {err}");
-        assert!(err.message.contains("0.5.0"), "error: {err}");
+        assert!(err.message.contains("0.6.0"), "error: {err}");
     }
 
     #[test]
@@ -2177,13 +2219,14 @@ app Demo { route "/" => Page; }
             ("class Demo is app {}", "app Demo { ... }"),
             ("class Api is service {}", "service Api { ... }"),
             ("class Worker is processor {}", "processor Worker { ... }"),
-            ("class Cleanup is task {}", "task Cleanup { ... }"),
         ];
         for (source, replacement) in cases {
             let err = parse(source).unwrap_err();
             assert!(err.message.contains("legacy `class`"), "error: {err}");
             assert!(err.message.contains(replacement), "error: {err}");
         }
+        let task_err = parse("class Cleanup is task {}").unwrap_err();
+        assert!(task_err.message.contains("removed"), "{task_err}");
         let sink_err = parse("class Db is sink is storage(SQLite) {}").unwrap_err();
         assert!(sink_err.message.contains("legacy `class`"), "{sink_err}");
     }
@@ -2191,7 +2234,7 @@ app Demo { route "/" => Page; }
     #[test]
     fn parses_subset_where_contains() {
         let src = r#"
-@version("0.5.0")
+@version("0.6.0")
 subset Uri of Str where { .contains("://") }
 contract Item {
     has Uri $.url;
@@ -2218,7 +2261,7 @@ subset Uri of Str where { .len > 0 }
     #[test]
     fn validate_rejects_bad_subset_literal() {
         let src = r#"
-@version("0.5.0")
+@version("0.6.0")
 subset Uri of Str where { .contains("://") }
 contract Product {
     has Uri $.url;
@@ -2243,11 +2286,11 @@ app App {
     #[test]
     fn parses_minimal_game_scene() {
         let src = r#"
-@version("0.5.0")
+@version("0.6.0")
 game Foo {
-    game::scene(
+    scene::scene(
         :title("T"),
-        game::overlay(:toggle("F1"))
+        scene::overlay(:toggle("F1"))
     )
 }
 "#;
@@ -2338,7 +2381,7 @@ game Foo {
 
     #[test]
     fn parses_rfi_chase_loops() {
-        let src = include_str!("../../../examples/rfiChaseApp/main.silc");
+        let src = include_str!("../../../examples/domains/aec/rfiChaseApp/main.silc");
         let program = parse(src).expect("parse");
         assert_eq!(program.loops.len(), 2);
         let chase = &program.loops[0];
@@ -2358,11 +2401,11 @@ game Foo {
     #[test]
     fn loop_stays_an_identifier_outside_top_level() {
         let src = r#"
-@version("0.5.0")
+@version("0.6.0")
 game Foo {
-    game::scene(
+    scene::scene(
         :title("T"),
-        game::entity(:name("a"), game::audio(:asset("x"), :kind(loop)))
+        scene::entity(:name("a"), scene::audio(:asset("x"), :kind(loop)))
     )
 }
 "#;
@@ -2372,7 +2415,7 @@ game Foo {
 
     #[test]
     fn rejects_loop_without_namespace_root() {
-        let err = parse("@version(\"0.5.0\")\nloop Foo { flow() }").unwrap_err();
+        let err = parse("@version(\"0.6.0\")\nloop Foo { flow() }").unwrap_err();
         assert!(err.message.contains("loop::"), "{}", err.message);
     }
 }

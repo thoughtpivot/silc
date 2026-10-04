@@ -4,7 +4,7 @@
 //! 3B Instruct Q4_K_M weights under that catalog id; future fine-tunes keep
 //! the same authoring surface.
 //!
-//! **minilm-l6-v2** is the closed Silc 0.5.0 embedding model for
+//! **minilm-l6-v2** is the closed Silc 0.6.0 embedding model for
 //! `tensor::infer` (384-d, CPU / ONNX). Its model and tokenizer artifacts are
 //! pinned to one upstream sentence-transformers commit.
 
@@ -17,7 +17,7 @@ pub const LEGACY_MODEL_ID: &str = "llama3.2-1b";
 /// Default llama.cpp context window for generated silclm workers.
 pub const DEFAULT_LLM_N_CTX: u32 = 8192;
 
-/// Closed Silc 0.5.0 embedding model id for `tensor::infer`.
+/// Closed Silc 0.6.0 embedding model id for `tensor::infer`.
 pub const MINILM_MODEL_ID: &str = "minilm-l6-v2";
 
 /// Default embedding catalog id when `:model` is omitted on `tensor::infer`.
@@ -88,7 +88,7 @@ pub const MINILM_ARTIFACTS: &[ModelArtifact] = &[
     },
 ];
 
-/// Closed Silc 0.5.0 embedding catalog.
+/// Closed Silc 0.6.0 embedding catalog.
 pub const EMBEDDING_MODEL_CATALOG: &[EmbeddingModelCatalogEntry] = &[EmbeddingModelCatalogEntry {
     id: MINILM_MODEL_ID,
     dimension: MINILM_EMBEDDING_DIM,

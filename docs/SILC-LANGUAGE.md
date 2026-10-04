@@ -1,4 +1,4 @@
-# Silc language surface (0.5.0)
+# Silc language surface (0.6.0)
 
 This is the normative description of what a `.silc` program may contain. ADRs
 record *why*; this page records *what*. The compiler catalogs in `sil-core`
@@ -24,15 +24,16 @@ are generated into
   `::` (namespace), `&&`, `||`, `==`, `!=`, `<`, `<=`, `>`, `>=`, `+`, `-`,
   `*`, `/`, unary `!` and `-`.
 - Keywords: `subset`, `contract`, `component`, `resource`, `app`, `game`,
-  `loop`, `service`, `processor`, `task`, `has`, `state`, `method`, `query`,
+  `scene`, `loop`, `service`, `processor`, `has`, `state`, `method`, `query`,
   `mutation`, `seed`, `slot`, `emit`, `route`, `when`, `else`, `for`, `await`,
-  `is`, `of`, `where`. `class` and `sink` are recognised only to produce a
-  migration diagnostic.
+  `is`, `of`, `where`. `class`, `sink`, and `task` are recognised only to
+  produce a migration diagnostic. `scene` and `game` are the same root;
+  `game` remains an alias for one release.
 
 ## 2. Program structure
 
 ```silc
-@version("0.5.0")
+@version("0.6.0")
 
 <declaration>*
 ```
@@ -171,19 +172,21 @@ An `app` is only a route table. Serving both surfaces, the HTTP routes, the
 `/submit`, `/complete`, `/upload`, and `/scrape` endpoints, and the `/loops`
 inbox are synthesized.
 
-## 7. Game (real-time WebGPU scene)
+## 7. Scene (real-time WebGPU world)
 
 ```silc
-game Arena {
-    game::scene(:title("Arena"), :renderer(webgpu), children…)
+scene Arena {
+    scene::scene(:title("Arena"), :renderer(webgpu), children…)
 }
 ```
 
-- Exactly one `game::scene` root per `game` declaration.
+- The root keyword is `scene`. `game Name` is a one-release alias of the same root.
+- Exactly one `scene::scene` node per scene declaration.
+- Kernel nodes are `scene::` (entity, mesh, light, camera, zone, asset, and the rest). Gameplay nodes are `game::` (pawn, weapon, encounter, and the rest). Writing a kernel node as `game::` is a compile error that names the `scene::` spelling.
 - Nodes follow section 5. References to declared names inside the scene use
   string options today (`:ref("WalkDefault")`, `:prefab("Player")`,
   `:possess("Player")`); see section 12.
-- A `game` program may not contain `app`, `component`, `resource`, `loop`, or
+- A scene program may not contain `app`, `component`, `resource`, `loop`, or
   pipeline modules.
 
 ## 8. Loop (scheduled, approval-gated work)
@@ -216,12 +219,12 @@ loop RfiChase {
   placeholder; the kernel performs each key once.
 - Reserved bindings: `$today`, `$now`, `$event`, `$calendar`
   (`today`, `weekday`, `last7_start`, `last7_end`, `next7_end`).
-- Outside data: `loop::read(:as(x), :op("scrape::page"), :url(...))` or
-  `loop::read(:as(x), :op("mcp::call"), :server(...), :tool(...),
-  :args(Contract.new(...)), :auth_env("VAR"), :select("path"))`. The result
-  binds `$x.text` and `$x.data`. The string-valued `:op` option is a known
-  irregularity (section 12).
-- A program with no `app`, no `game`, and only `loop::manual` triggers is a
+- Outside data: `loop::read(:as(x), scrape::page(:url(...)))` or
+  `loop::read(:as(x), mcp::call(:server(...), :tool(...),
+  :args(Contract.new(...)), :auth_env("VAR"), :select("path")))`. The result
+  binds `$x.text` and `$x.data`. The string form `:op("scrape::page")` remains
+  a one-release alias.
+- A program with no `app`, no `scene` (and no `game` alias), and only `loop::manual` triggers is a
   **loop command**: no surfaces are built; `silc main.silc` runs each loop
   once, prints notices to stdout, and exits. `loop::approve` is a compile
   error in a command.
@@ -229,8 +232,9 @@ loop RfiChase {
 ## 9. String templates
 
 Inside `loop::` string options (`:prompt`, `:text`, `:message`, `:key`,
-`:reason`) the form `{$binding.path}` interpolates a bound value. No other
-namespace interpolates today (section 12).
+`:reason`) and inside `ui::` string options, the form `{$binding.path}`
+interpolates a bound value. Both namespaces use the same placeholder checker.
+A string that contains `{$` and is not a legal placeholder list is a compile error.
 
 ## 10. Pipelines and operations
 
@@ -250,13 +254,14 @@ processor Embedder {
 }
 ```
 
-- `service`, `processor`, and `task` hold `method` bodies that are feed chains.
+- `service` and `processor` hold `method` bodies that are feed chains.
+  `task` was removed in 0.6.0; the compiler routes by operation.
   A chain starts from a parameter, a field, a bare name, or a contract name and
   threads left to right through operations.
 - `is trait(value)` after the declaration name is accepted on these three
   keywords only, for compiler-consumed hints; authors do not declare storage
   or sinks.
-- **Executable operations (0.5.0):** `service::http`, `text::score`,
+- **Executable operations (0.6.0):** `service::http`, `text::score`,
   `llm::complete`, `scrape::page`, `scrape::site`, `scrape::select`,
   `scrape::render`, `scrape::extract`, `doc::extract`, `tensor::tokenize`,
   `tensor::infer`.
@@ -266,8 +271,7 @@ processor Embedder {
   into a runnable graph is a compile error.
 - **Synthesized (never authored):** `ui::web`, `ui::terminal`, `resource::*`,
   `ipc::*`, `store::*`, `sink`, `method serve()`.
-- Engine assignment is a compiler decision from declaration kind and
-  namespaces (ADR-004); authors never name Bun, CPython, or Go.
+- Engine assignment comes from the operation registry (ADR-004); authors never name Bun, CPython, or Go.
 
 ## 11. Program shapes and compatibility
 
@@ -275,11 +279,11 @@ The compiler currently enforces these exclusions. They are listed here so the
 rule set is visible in one place; the refinement plan replaces the scattered
 checks with one declared matrix that generates this section.
 
-- `game` may not coexist with `app`, `component`, `resource`, `loop`, or
+- A `scene` (or the `game` alias) may not coexist with `app`, `component`, `resource`, `loop`, or
   pipeline modules.
-- `text::score` may not coexist with `llm::complete`, `loop::ask`,
+- `text::score` may not coexist with the local model (`llm::complete` or `loop::ask`),
   `scrape::*`, or `doc::*`.
-- `text::score` / `llm::complete` may not coexist with `tensor::infer`.
+- `text::score` and the local model may not coexist with `tensor::infer`.
 - `loop` declarations may not coexist with `scrape::*` or `tensor::*`
   pipelines (use `loop::read` for pages).
 - `doc::extract` requires `:into(Contract)` and a matching `resource`.
@@ -287,30 +291,27 @@ checks with one declared matrix that generates this section.
 - UI programs require an `app` with at least one `route`.
 - At most one processor operation family per program.
 
-## 12. Known irregularities scheduled for 0.6.0
+## 12. Resolved in 0.6.0, and what remains
 
-Recorded so that the spec is honest rather than aspirational. Each item has a
-corresponding task in the language refinement plan.
+Resolved in 0.6.0:
 
-1. `loop` is parsed as a contextual identifier while every other root keyword
-   is a lexer token.
-2. `loop::read` selects its operation with a string option (`:op("mcp::call")`)
-   instead of nesting the operation node; `mcp` is not yet a registered
-   namespace.
-3. Closed-enum values are bare identifiers in every namespace (done). `loop::read`
-   still accepts the string `:op("mcp::call")` as a one-release alias of the
-   nested operation.
-4. References to declared names are strings in `game::` (`:ref("X")`) and
+1. `loop` and `scene` are lexer keywords, like the other roots. `loop` is still
+   a legal closed value in `scene::audio(:kind(loop))`.
+2. `loop::read` nests the operation (`scrape::page(...)` or `mcp::call(...)`).
+   The string `:op("…")` remains a one-release alias. `mcp` is a registered namespace.
+3. Closed-enum values are bare identifiers. A string form is a fix-it diagnostic.
+4. `{$binding.path}` uses one checker in `loop::` and `ui::` string options.
+5. `task` is removed. Routing follows the operation.
+6. `llm::complete` and `loop::ask` are one local-model capability in the compatibility matrix.
+7. Kernel nodes are `scene::`. Gameplay nodes are `game::`. The root is `scene`; `game` is a one-release alias.
+8. Author `sink`, `App.serve`, and discarded component pipelines are gone.
+
+Still irregular:
+
+1. References to declared names are strings in scene nodes (`:ref("X")`) and
    identifiers in `loop::` (`:from(Rfis.list)`) and `ui::` (`:on(click(h))`).
-5. `{$x}` interpolation exists only in `loop::`.
-6. `task` and `service` route the same `scrape::site` chain to different
-   engines; `task` is unused by any example.
-7. `llm::complete` and `loop::ask` are two spellings of one local-model
-   capability with separate validation.
-8. The `game` namespace mixes a generic real-time kernel with gameplay
-   vocabulary (weapons, encounters, objectives); a `scene::` kernel and a
-   `game::` layer are proposed.
-9. `ModuleKind::Sink`, `App.serve`, and the `ui::web`/`store` scans survive
-   internally although the parser rejects the author forms.
-10. `$.field` means "the component's own field" in components but "the current
-    row" inside `loop::find(:where(…))`; one sigil, two scopes.
+2. `$.field` means "the component's own field" in components and "the current
+   row" inside `loop::find(:where(…))`.
+3. A source that still says `@version("0.5.0")` is rejected with a migration
+   diagnostic that lists each kernel node in that program written `game::`
+   instead of `scene::`.

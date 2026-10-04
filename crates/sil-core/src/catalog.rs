@@ -4,7 +4,7 @@
 //! spec family. They now share [`NodeSpec`]: a name, options (with a kind and
 //! an optional closed value set), a child policy, surfaces, and doc. Namespace
 //! validators keep the rules that are genuinely theirs (loop taint, the
-//! `game::mesh` asset/shape exclusion) and call the helpers here for required
+//! `scene::mesh` asset/shape exclusion) and call the helpers here for required
 //! options, unknown options, closed enums, child policy, and catalog lines.
 
 use crate::expr::Expr;

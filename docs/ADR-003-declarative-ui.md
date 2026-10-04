@@ -49,6 +49,8 @@ catalog primitives and author-defined app components, not compiler modes.
 
 ### Historical (0.2.0–0.3.0)
 
+> **Superseded.** This block records an authoring mechanic that Silc no longer accepts. Do not write `method serve()`, `ui::web`, or `ui::terminal`. [ADR-009](ADR-009-compiler-synthesized-runtime.md) is the current rule: authors declare routes, and the compiler synthesizes both surfaces.
+
 Earlier releases required authors to write:
 
 ```silc

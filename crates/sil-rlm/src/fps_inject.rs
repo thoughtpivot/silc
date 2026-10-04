@@ -1,6 +1,6 @@
 //! Deterministic additive injectors for closed FPS megastructure authorship.
 //!
-//! Small local models truncate large `game::zone` trees. When a task names the
+//! Small local models truncate large `scene::zone` trees. When a task names the
 //! closed megastructure / hostile loadout, Assist grafts catalog-valid nodes
 //! into the seed scene so `main.silc` remains assist-authored (not hand-edited).
 
@@ -12,25 +12,25 @@ const FLOOR_TOP: f64 = 0.2;
 fn kit_ent(name: &str, asset: &str, x: f64, y: f64, z: f64, yaw: f64) -> String {
     if yaw.abs() > 0.01 {
         format!(
-            r##"game::entity(
+            r##"scene::entity(
             :name("{name}"),
             :x({x}),
             :y({y}),
             :z({z}),
             :yaw({yaw}),
-            game::mesh(:asset("{asset}"), :size(1), :color("#808080")),
-            game::collider(:shape(box), :size(1))
+            scene::mesh(:asset("{asset}"), :size(1), :color("#808080")),
+            scene::collider(:shape(box), :size(1))
         )"##
         )
     } else {
         format!(
-            r##"game::entity(
+            r##"scene::entity(
             :name("{name}"),
             :x({x}),
             :y({y}),
             :z({z}),
-            game::mesh(:asset("{asset}"), :size(1), :color("#808080")),
-            game::collider(:shape(box), :size(1))
+            scene::mesh(:asset("{asset}"), :size(1), :color("#808080")),
+            scene::collider(:shape(box), :size(1))
         )"##
         )
     }
@@ -118,7 +118,7 @@ fn zone(name: &str, kind: &str, children: &[String]) -> String {
         body.push_str(comma);
         body.push('\n');
     }
-    format!("game::zone(\n        :name(\"{name}\"),\n        :kind({kind}),\n{body}        )")
+    format!("scene::zone(\n        :name(\"{name}\"),\n        :kind({kind}),\n{body}        )")
 }
 
 /// Build the five-room / four-walkway / outdoor megastructure zones.
@@ -156,12 +156,12 @@ pub fn megastructure_zone_nodes() -> Vec<String> {
             0.0,
         ));
         c.push(
-            r##"game::entity(
+            r##"scene::entity(
             :name("LobbyLamp"),
             :x(-14),
             :y(2.6),
             :z(0),
-            game::light(:kind(spot), :intensity(1.4), :color("#cfe8ff"), :radius_m(10), :cast_shadows(true))
+            scene::light(:kind(spot), :intensity(1.4), :color("#cfe8ff"), :radius_m(10), :cast_shadows(true))
         )"##
             .into(),
         );
@@ -192,12 +192,12 @@ pub fn megastructure_zone_nodes() -> Vec<String> {
         ));
         c.push(kit_ent("OpsCrate", "crate_1", 2.0, FLOOR_TOP, -2.0, 0.0));
         c.push(
-            r##"game::entity(
+            r##"scene::entity(
             :name("OpsLamp"),
             :x(0),
             :y(2.8),
             :z(0),
-            game::light(:kind(point), :intensity(1.2), :color("#a8d4ff"), :radius_m(12))
+            scene::light(:kind(point), :intensity(1.2), :color("#a8d4ff"), :radius_m(12))
         )"##
             .into(),
         );
@@ -242,12 +242,12 @@ pub fn megastructure_zone_nodes() -> Vec<String> {
             90.0,
         ));
         c.push(
-            r##"game::entity(
+            r##"scene::entity(
             :name("LabLamp"),
             :x(16),
             :y(2.6),
             :z(0),
-            game::light(:kind(spot), :intensity(1.3), :color("#d0ffe8"), :radius_m(10), :cast_shadows(true))
+            scene::light(:kind(spot), :intensity(1.3), :color("#d0ffe8"), :radius_m(10), :cast_shadows(true))
         )"##
             .into(),
         );
@@ -318,12 +318,12 @@ pub fn megastructure_zone_nodes() -> Vec<String> {
             0.0,
         ));
         c.push(
-            r##"game::entity(
+            r##"scene::entity(
             :name("ReactorLamp"),
             :x(0),
             :y(3.0),
             :z(16),
-            game::light(:kind(point), :intensity(1.6), :color("#ffd0a0"), :radius_m(14))
+            scene::light(:kind(point), :intensity(1.6), :color("#ffd0a0"), :radius_m(14))
         )"##
             .into(),
         );
@@ -421,12 +421,12 @@ pub fn megastructure_zone_nodes() -> Vec<String> {
             90.0,
         ));
         c.push(
-            r##"game::entity(
+            r##"scene::entity(
             :name("CourtSunFill"),
             :x(0),
             :y(8),
             :z(24),
-            game::light(:kind(directional), :intensity(0.35), :color("#fff4e0"))
+            scene::light(:kind(directional), :intensity(0.35), :color("#fff4e0"))
         )"##
             .into(),
         );
@@ -436,75 +436,78 @@ pub fn megastructure_zone_nodes() -> Vec<String> {
     zones
 }
 
-/// The opening hostile wave on its own, for rebuilds that keep the prefabs.
-pub fn hostile_encounter_wave() -> String {
-    r##"game::encounter(
+/// Gameplay-layer fragments. Kernel geometry stays in the parent module.
+pub mod gameplay {
+    /// The opening hostile wave on its own, for rebuilds that keep the prefabs.
+    pub fn hostile_encounter_wave() -> String {
+        r##"game::encounter(
             :id("wave_alpha"),
             :wave(1),
-            game::spawn(:prefab("Suppressor"), :x(-17), :y(1), :z(2)),
-            game::spawn(:prefab("Flanker"), :x(13), :y(1), :z(-2)),
-            game::spawn(:prefab("Breacher"), :x(-2), :y(1), :z(18)),
-            game::spawn(:prefab("Suppressor"), :x(0), :y(1), :z(22))
+            scene::spawn(:prefab("Suppressor"), :x(-17), :y(1), :z(2)),
+            scene::spawn(:prefab("Flanker"), :x(13), :y(1), :z(-2)),
+            scene::spawn(:prefab("Breacher"), :x(-2), :y(1), :z(18)),
+            scene::spawn(:prefab("Suppressor"), :x(0), :y(1), :z(22))
         )"##
-    .into()
-}
+        .into()
+    }
 
-/// Hostile archetype prefabs + mind data + encounter wave.
-pub fn hostile_encounter_nodes() -> Vec<String> {
-    vec![
-        r##"game::data(:name("SuppressorMind"), :persona("Suppressor — hold angles, controlled bursts."), :aggression(0.65), :morale(0.7), :cadence_s(4))"##.into(),
-        r##"game::data(:name("FlankerMind"), :persona("Flanker — cut left, keep moving."), :aggression(0.75), :morale(0.6), :cadence_s(3.5))"##.into(),
-        r##"game::data(:name("BreacherMind"), :persona("Breacher — push hard, close distance."), :aggression(0.9), :morale(0.55), :cadence_s(3))"##.into(),
-        r##"game::data(:name("HostileWalk"), :speed(3.4))"##.into(),
-        r##"game::prefab(
+    /// Hostile archetype prefabs + mind data + encounter wave.
+    pub fn hostile_encounter_nodes() -> Vec<String> {
+        vec![
+        r##"scene::data(:name("SuppressorMind"), :persona("Suppressor — hold angles, controlled bursts."), :aggression(0.65), :morale(0.7), :cadence_s(4))"##.into(),
+        r##"scene::data(:name("FlankerMind"), :persona("Flanker — cut left, keep moving."), :aggression(0.75), :morale(0.6), :cadence_s(3.5))"##.into(),
+        r##"scene::data(:name("BreacherMind"), :persona("Breacher — push hard, close distance."), :aggression(0.9), :morale(0.55), :cadence_s(3))"##.into(),
+        r##"scene::data(:name("HostileWalk"), :speed(3.4))"##.into(),
+        r##"scene::prefab(
             :name("Suppressor"),
-            game::mesh(:shape(capsule), :size(1.8), :color("#c45c5c")),
-            game::collider(:shape(capsule), :size(1.8)),
-            game::movement(:style(walk), :ref("HostileWalk")),
+            scene::mesh(:shape(capsule), :size(1.8), :color("#c45c5c")),
+            scene::collider(:shape(capsule), :size(1.8)),
+            scene::movement(:style(walk), :ref("HostileWalk")),
             game::attribute(:name("health"), :value(100), :max(100)),
             game::npc(:archetype(suppressor), :faction(hostile)),
             game::perception(:sight_m(28), :hear_m(14), :fov_deg(110)),
             game::behavior(:tree(patrol_combat), :default_tactic(suppress)),
             game::mind(:ref("SuppressorMind"), :cadence_s(4)),
             game::nav_agent(:radius(0.35), :height(1.8), :max_speed(3.4)),
-            game::group(:name("hostiles"))
+            scene::group(:name("hostiles"))
         )"##.into(),
-        r##"game::prefab(
+        r##"scene::prefab(
             :name("Flanker"),
-            game::mesh(:shape(capsule), :size(1.75), :color("#d4a24c")),
-            game::collider(:shape(capsule), :size(1.75)),
-            game::movement(:style(walk), :ref("HostileWalk")),
+            scene::mesh(:shape(capsule), :size(1.75), :color("#d4a24c")),
+            scene::collider(:shape(capsule), :size(1.75)),
+            scene::movement(:style(walk), :ref("HostileWalk")),
             game::attribute(:name("health"), :value(90), :max(90)),
             game::npc(:archetype(flanker), :faction(hostile)),
             game::perception(:sight_m(30), :hear_m(16), :fov_deg(120)),
             game::behavior(:tree(patrol_combat), :default_tactic(flank)),
             game::mind(:ref("FlankerMind"), :cadence_s(3.5)),
             game::nav_agent(:radius(0.32), :height(1.75), :max_speed(3.8)),
-            game::group(:name("hostiles"))
+            scene::group(:name("hostiles"))
         )"##.into(),
-        r##"game::prefab(
+        r##"scene::prefab(
             :name("Breacher"),
-            game::mesh(:shape(capsule), :size(1.9), :color("#7a4cc4")),
-            game::collider(:shape(capsule), :size(1.9)),
-            game::movement(:style(walk), :ref("HostileWalk")),
+            scene::mesh(:shape(capsule), :size(1.9), :color("#7a4cc4")),
+            scene::collider(:shape(capsule), :size(1.9)),
+            scene::movement(:style(walk), :ref("HostileWalk")),
             game::attribute(:name("health"), :value(120), :max(120)),
             game::npc(:archetype(breacher), :faction(hostile)),
             game::perception(:sight_m(24), :hear_m(12), :fov_deg(100)),
             game::behavior(:tree(patrol_combat), :default_tactic(push)),
             game::mind(:ref("BreacherMind"), :cadence_s(3)),
             game::nav_agent(:radius(0.4), :height(1.9), :max_speed(3.2)),
-            game::group(:name("hostiles"))
+            scene::group(:name("hostiles"))
         )"##.into(),
         r##"game::encounter(
             :id("wave_alpha"),
             :wave(1),
-            game::spawn(:prefab("Suppressor"), :x(-17), :y(1), :z(2)),
-            game::spawn(:prefab("Flanker"), :x(13), :y(1), :z(-2)),
-            game::spawn(:prefab("Breacher"), :x(-2), :y(1), :z(18)),
-            game::spawn(:prefab("Suppressor"), :x(0), :y(1), :z(22))
+            scene::spawn(:prefab("Suppressor"), :x(-17), :y(1), :z(2)),
+            scene::spawn(:prefab("Flanker"), :x(13), :y(1), :z(-2)),
+            scene::spawn(:prefab("Breacher"), :x(-2), :y(1), :z(18)),
+            scene::spawn(:prefab("Suppressor"), :x(0), :y(1), :z(22))
         )"##.into(),
         r##"game::objective(:id("clear_hostiles"), :kind(clear_hostiles), :target("hostiles"))"##.into(),
     ]
+    }
 }
 
 pub fn wants_megastructure(task: &str) -> bool {

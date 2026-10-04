@@ -161,7 +161,7 @@ mod tests {
         let accepted = dir.join("accepted.jsonl");
         let rejected = dir.join("rejected.jsonl");
 
-        let valid = r#"@version("0.5.0")
+        let valid = r#"@version("0.6.0")
 contract Note { has Str $.text; }
 component NotePage {
     has state Str $.text = "";

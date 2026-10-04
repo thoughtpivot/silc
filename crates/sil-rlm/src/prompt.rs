@@ -29,7 +29,7 @@ To store your draft program, reply with the COMPLETE program for the task in a <
 
 <silc>
 #!/usr/bin/env silc
-@version("0.5.0")
+@version("0.6.0")
 ... the full program you wrote for the task, adapted from corpus examples ...
 </silc>
 
@@ -53,9 +53,9 @@ Never call the same corpus_read twice. Never finalize a fragment.
 "#;
 
 /// Authoring system prompt for the draft-first path (no tool protocol).
-pub const AUTHOR_SYSTEM_PROMPT: &str = r#"You are silclm, a Silc 0.5.0 program author.
+pub const AUTHOR_SYSTEM_PROMPT: &str = r#"You are silclm, a Silc 0.6.0 program author.
 Silc is a single-language app language: contracts are typed records, components hold state and render ui:: trees, app blocks declare routes, processors do pipelines.
-WebGPU games are a separate subject: one `game Name { game::scene(...) }` tree from the closed `game::*` catalog (Godot entity/zone/signal trees, Unity prefab/data/asset/material/spawn, Unreal mode/pawn/controller, weapons, encounters, NPC/mind AI). Use `game::movement :style(first_person)` with `game::camera :mode(first_person)` and `game::controller :scheme(wasd_mouse)` for FPS pawns; declare weapons, zones, assets, materials, hud, and encounter waves at scene scope. Never mix `game` with `app` / `component` / `resource`.
+Real-time scenes are a separate root: one `scene Name { scene::scene(...) }` tree. Kernel nodes (`scene::`: entity, mesh, camera, light, zone, asset, and the rest) carry no gameplay vocabulary. Gameplay nodes stay `game::` (pawn, weapon, encounter, and the rest). `game Name` is a one-release alias of `scene Name`. Use `scene::movement :style(first_person)` with `scene::camera :mode(first_person)` and `scene::controller :scheme(wasd_mouse)` for a first-person controller; declare weapons, zones, assets, materials, hud, and encounter waves at scene scope. Never mix `scene` or `game` with `app` / `component` / `resource`.
 Never emit React, HTML, SQL, package.json, or hand-edited `.runtime/` files.
 Methods are siblings inside a component: close each `method` with `}` before the next one begins — never declare a method inside another method's body.
 A contract holds ONLY `has Type $.field;` lines — no methods, no `has state`, no defaults. Methods and state belong to a component; pipelines belong to a processor.

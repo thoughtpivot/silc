@@ -1,4 +1,4 @@
-//! Lower `game::scene` trees to a deterministic JSON runtime manifest.
+//! Lower `scene::scene` trees to a deterministic JSON runtime manifest.
 //!
 //! Encodes Godot-style scene trees, Unity prefabs/data, and Unreal mode/pawn
 //! ownership for the compiler-owned Babylon/WebGPU kernel under `templates/game/`.
@@ -9,7 +9,7 @@ use sil_core::{Expr, Game, GameNode, UnaryOp};
 /// Lower a validated `game` declaration to a JSON manifest object.
 pub fn lower_game(game: &Game) -> Result<Value, String> {
     if game.root.name != "scene" {
-        return Err("game root must be `game::scene(...)`".into());
+        return Err("game root must be `scene::scene(...)`".into());
     }
     let root = &game.root;
     let title = string_prop(root, "title").unwrap_or_else(|| game.name.clone());
@@ -17,7 +17,7 @@ pub fn lower_game(game: &Game) -> Result<Value, String> {
     let renderer = ident_prop(root, "renderer").unwrap_or_else(|| "webgpu".into());
     if renderer != "webgpu" {
         return Err(format!(
-            "game::scene :renderer({renderer}) is unsupported; only webgpu is allowed"
+            "scene::scene :renderer({renderer}) is unsupported; only webgpu is allowed"
         ));
     }
 
@@ -53,19 +53,19 @@ pub fn lower_game(game: &Game) -> Result<Value, String> {
     for child in &root.children {
         match child.name.as_str() {
             "data" => {
-                let name = string_prop(child, "name").ok_or("game::data requires :name")?;
+                let name = string_prop(child, "name").ok_or("scene::data requires :name")?;
                 data.insert(name, lower_data_props(child));
             }
             "asset" => {
-                let name = string_prop(child, "name").ok_or("game::asset requires :name")?;
+                let name = string_prop(child, "name").ok_or("scene::asset requires :name")?;
                 assets.insert(name, lower_asset(child));
             }
             "material" => {
-                let name = string_prop(child, "name").ok_or("game::material requires :name")?;
+                let name = string_prop(child, "name").ok_or("scene::material requires :name")?;
                 materials.insert(name, lower_material(child));
             }
             "prefab" => {
-                let name = string_prop(child, "name").ok_or("game::prefab requires :name")?;
+                let name = string_prop(child, "name").ok_or("scene::prefab requires :name")?;
                 prefabs.insert(name.clone(), lower_entity_like(child, Some(&name))?);
             }
             "entity" => {
@@ -186,7 +186,7 @@ pub fn lower_game(game: &Game) -> Result<Value, String> {
             }
             other => {
                 return Err(format!(
-                    "game::scene cannot contain top-level `game::{other}`"
+                    "scene::scene cannot contain top-level `game::{other}`"
                 ));
             }
         }
@@ -630,13 +630,13 @@ fn lower_zone(node: &GameNode) -> Result<Value, String> {
                 groups.push(string_prop(child, "name").unwrap_or_else(|| "default".into()));
             }
             other => {
-                return Err(format!("game::zone cannot contain game::{other}"));
+                return Err(format!("scene::zone cannot contain game::{other}"));
             }
         }
     }
 
     Ok(json!({
-        "name": string_prop(node, "name").ok_or("game::zone requires :name")?,
+        "name": string_prop(node, "name").ok_or("scene::zone requires :name")?,
         "kind": ident_prop(node, "kind").unwrap_or_else(|| "room".into()),
         "children": children,
         "spawns": spawns,
@@ -710,7 +710,7 @@ fn lower_mode(node: &GameNode) -> Result<Value, String> {
 
 fn lower_spawn(node: &GameNode) -> Result<Value, String> {
     Ok(json!({
-        "spawn": string_prop(node, "prefab").ok_or("game::spawn requires :prefab")?,
+        "spawn": string_prop(node, "prefab").ok_or("scene::spawn requires :prefab")?,
         "overrides": {
             "transform": lower_transform(node),
         },
@@ -1256,6 +1256,7 @@ mod tests {
     fn node(name: &str, props: Vec<(&str, Expr)>, children: Vec<GameNode>) -> GameNode {
         GameNode {
             name: name.into(),
+            namespace: sil_core::node_namespace(name).into(),
             name_span: span(),
             props: props.into_iter().map(|(k, v)| (k.to_string(), v)).collect(),
             prop_spans: Vec::new(),

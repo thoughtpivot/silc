@@ -24,6 +24,8 @@ root [README](../README.md).
 | [012](ADR-012-webgpu-game-subject.md) | WebGPU game subject (`game::*`) | Accepted | Web-only surface; Bun+CPython+Go spine |
 | [013](ADR-013-procedural-asset-generation.md) | Procedural asset generation | Accepted | Game asset bake step |
 | [014](ADR-014-loop-subject.md) | Loop subject (`loop::*`) | Accepted | Go kernel; receipts, replay, approvals inbox |
+| [015](ADR-015-silc-loop-and-vran.md) | Silc `loop` and Vran | Accepted | Names the borrowing; Vran (2027) may target the same semantics |
+| [016](ADR-016-generic-kernel-domain-layers.md) | Generic kernels, domain layers | Accepted | `scene::` kernel, `game::` gameplay layer; verticals stay outside the compiler |
 
 ### Partial supersession (0.4.0)
 
@@ -46,6 +48,7 @@ forward to ADR-009 for the current authoring rule.
 | [SILC-IPC-ABI-v1.md](SILC-IPC-ABI-v1.md) | Shared-buffer and UDS framing constants |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Subject model, crate map, execution layout |
 | [intent-vs-subjects.md](intent-vs-subjects.md) | Author intent surface vs compiler subjects |
+| [domains/vdc.md](domains/vdc.md) | VDC / AEC go-to-market; not a compiler vocabulary |
 
 ## Historical / reproducibility appendices
 

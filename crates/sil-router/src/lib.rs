@@ -278,7 +278,7 @@ mod tests {
     #[test]
     fn routes_score_processor_to_python() {
         let source = r#"
-@version("0.5.0")
+@version("0.6.0")
 contract FeedbackRecord { has Str $.author; has Str $.text; }
 component Page {
     method render() { ui::page(ui::text(:text("x"))) }
@@ -303,7 +303,7 @@ processor TextAnalyzer {
     #[test]
     fn routes_llm_processor_to_python() {
         let source = r#"
-@version("0.5.0")
+@version("0.6.0")
 contract ChatRecord { has Str $.prompt; has Str $.reply; }
 component ChatPage {
     has state Str $.prompt = "";
@@ -354,7 +354,7 @@ service FeedbackApi {
     #[test]
     fn routes_scrape_site_service_to_bun() {
         let source = r#"
-@version("0.5.0")
+@version("0.6.0")
 service Crawler {
     method run() {
         seed_url ==> scrape::site(:depth(2), :same_host(true)) ==> scrape::select(:css("title"), :as(title))
@@ -370,27 +370,26 @@ service Crawler {
     }
 
     #[test]
-    fn routes_scrape_site_task_to_go() {
+    fn task_declarator_is_removed() {
         let source = r#"
-@version("0.5.0")
+@version("0.6.0")
 task Crawler {
     method run() {
         seed_url ==> scrape::site(:depth(2), :same_host(true))
     }
 }
 "#;
-        let program = sil_parser::parse(source).expect("parse scrape site task");
-        let decisions = route_program(&program);
-        assert_eq!(decisions[0].target, Target::Go);
+        let err = sil_parser::parse(source).expect_err("task is removed");
         assert!(
-            decisions[0].provenance.contains("Colly") || decisions[0].provenance.contains("scrape")
+            err.to_string().contains("removed"),
+            "expected a removal diagnostic, got {err}"
         );
     }
 
     #[test]
     fn routes_scrape_page_with_ui_service_to_bun() {
         let source = r#"
-@version("0.5.0")
+@version("0.6.0")
 component Page {
     method render() { ui::page(ui::text(:text("x"))) }
 }
@@ -412,7 +411,7 @@ service Ingest {
     #[test]
     fn routes_scrape_render_processor_to_python() {
         let source = r#"
-@version("0.5.0")
+@version("0.6.0")
 processor Browser {
     method run() {
         url ==> scrape::render() ==> scrape::extract(:into(Article))

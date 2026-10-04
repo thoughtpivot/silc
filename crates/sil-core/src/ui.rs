@@ -1520,6 +1520,23 @@ pub fn validate_builtin_node(node: &UiNode) -> Result<(), String> {
         }
     }
     validate_closed_options(node, spec)?;
+    validate_string_templates(node)?;
+    Ok(())
+}
+
+/// `{$name.field}` placeholders use the same rule as `loop::` string templates.
+fn validate_string_templates(node: &UiNode) -> Result<(), String> {
+    for (name, expr) in &node.props {
+        let Expr::String(text) = expr else {
+            continue;
+        };
+        if !text.contains("{$") {
+            continue;
+        }
+        if let Err(err) = crate::loops::template_placeholders(text) {
+            return Err(format!("ui::{} `:{name}`: {err}", node.component));
+        }
+    }
     Ok(())
 }
 

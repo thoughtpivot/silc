@@ -31,9 +31,13 @@ pub fn keyword_doc(keyword: &str) -> Option<&'static str> {
              the entry that the runtime serves for both web and terminal surfaces."
         }
         "game" => {
-            "Declares a WebGPU-only game scene (`game Name { game::scene(...) }`). Distinct from \
-             dual-surface `app` routes; the compiler synthesizes a Babylon/Vite runtime from the \
-             closed `game::*` catalog (ADR-012)."
+            "Declares a WebGPU program (`game Name { scene::scene(...) }`). `game` remains a \
+             one-release alias of `scene`. Kernel nodes are `scene::`; gameplay nodes are `game::`."
+        }
+        "scene" => {
+            "Declares a real-time scene (`scene Name { scene::scene(...) }`). Kernel nodes \
+             (entity, mesh, camera, light, and the rest) live in `scene::`. Gameplay nodes \
+             (pawn, weapon, encounter, and the rest) live in `game::`."
         }
         "loop" => {
             "Declares scheduled, approval-gated work (`loop Name { loop::flow(trigger, steps...) }`). \
@@ -272,7 +276,7 @@ pub fn namespace_doc(ns: &str) -> Option<String> {
             count = UI_COMPONENT_CATALOG.len()
         ),
         "game" => format!(
-            "WebGPU game scene catalog ({count} nodes). Author `game::scene` and nested \
+            "WebGPU game scene catalog ({count} nodes). Author `scene::scene` and nested \
              `game::*` nodes inside a `game` declaration; the compiler lowers them to a Babylon \
              runtime manifest. Game programs are web-only (no terminal surface).",
             count = sil_core::GAME_NODE_CATALOG.len()
@@ -321,7 +325,7 @@ pub fn namespace_doc(ns: &str) -> Option<String> {
         }
         "tensor" => {
             "Runnable tensor namespace. Author `tensor::tokenize` then `tensor::infer` for the \
-             CPU MiniLM embedding path (exactly 384 `num32` values in Silc 0.5.0)."
+             CPU MiniLM embedding path (exactly 384 `num32` values in Silc 0.6.0)."
                 .into()
         }
         "ipc" => {
@@ -341,42 +345,42 @@ pub fn namespace_doc(ns: &str) -> Option<String> {
                 .into()
         }
         "http" => {
-            "Stub-only HTTP namespace in Silc 0.5.0. It parses and routes but does not execute; \
+            "Stub-only HTTP namespace in Silc 0.6.0. It parses and routes but does not execute; \
              prefer `scrape::*` for fetches and `service::http` for API surfaces."
                 .into()
         }
         "html" => {
-            "Stub-only HTML namespace in Silc 0.5.0. Prefer `scrape::select` / `scrape::extract` \
+            "Stub-only HTML namespace in Silc 0.6.0. Prefer `scrape::select` / `scrape::extract` \
              for structured extraction from fetched pages."
                 .into()
         }
         "numpy" | "pandas" => format!(
-            "Stub-only `{ns}` namespace in Silc 0.5.0. It parses and routes but does not \
+            "Stub-only `{ns}` namespace in Silc 0.6.0. It parses and routes but does not \
              execute; keep numerical / tabular work in typed contracts and runnable operations \
              such as `text::score` or `tensor::*`."
         ),
         "ws" => {
-            "Stub-only WebSocket namespace in Silc 0.5.0. It is recognized by the classifier \
+            "Stub-only WebSocket namespace in Silc 0.6.0. It is recognized by the classifier \
              but is not an author-runnable executable operation today."
                 .into()
         }
         "sys" => {
-            "Stub-only system namespace in Silc 0.5.0. Recognized for routing, but not \
+            "Stub-only system namespace in Silc 0.6.0. Recognized for routing, but not \
              executable; keep side effects in resources, services, and processors."
                 .into()
         }
         "schema" => {
-            "Stub-only schema namespace in Silc 0.5.0. Prefer `contract` / `subset` \
+            "Stub-only schema namespace in Silc 0.6.0. Prefer `contract` / `subset` \
              declarations for typed shapes rather than `schema::*` pipeline operations."
                 .into()
         }
         "payload" => {
-            "Stub-only payload namespace in Silc 0.5.0. Cross-engine payloads move through \
+            "Stub-only payload namespace in Silc 0.6.0. Cross-engine payloads move through \
              synthesized IPC; do not author `payload::*` calls."
                 .into()
         }
         "json" => {
-            "Stub-only JSON namespace in Silc 0.5.0. It parses and routes but does not \
+            "Stub-only JSON namespace in Silc 0.6.0. It parses and routes but does not \
              execute; prefer typed contracts and resource/HTTP surfaces for structured data."
                 .into()
         }
@@ -438,7 +442,7 @@ pub fn executable_op_doc(namespace: &str, name: &str) -> Option<String> {
              tokenization; expect non-trivial CPU cost on larger batches."
         }
         _ => {
-            "Runnable Silc 0.5.0 operation. Legal in the module or pipeline contexts documented \
+            "Runnable Silc 0.6.0 operation. Legal in the module or pipeline contexts documented \
              for its namespace; prefer the executable set over stub-only operations."
         }
     };
@@ -458,7 +462,7 @@ pub fn op_prop_doc(namespace: &str, op: &str, prop: &str) -> Option<&'static str
             "Closed model id from the Silc model catalog (for example `silclm` or `minilm-l6-v2`)."
         }
         (_, _, "prefer") => {
-            "Preferred execution device. Silc 0.5.0 accepts `CPU` for tensor inference; `CUDA` is rejected."
+            "Preferred execution device. Silc 0.6.0 accepts `CPU` for tensor inference; `CUDA` is rejected."
         }
         (_, _, "port") => {
             "TCP port for the HTTP API surface when used with `service::http`."
@@ -509,7 +513,7 @@ pub fn unit_literal_doc(lit: &str) -> Option<&'static str> {
         "cm" => "Centimeter length literal used by game near-field spacing and texel sizes.",
         "m" => "Meter length literal used by game extents, distances, and brush radii.",
         "deg" => "Degree angle literal used by game sun elevation/azimuth and wind direction.",
-        "fps" => "Frames-per-second literal used by `game::scene :target_fps`.",
+        "fps" => "Frames-per-second literal used by `scene::scene :target_fps`.",
         "px" => "Pixel size literal for screen-space quantities.",
         _ => return None,
     })
@@ -547,7 +551,7 @@ pub fn builtin_call_doc(name: &str) -> Option<&'static str> {
 pub fn stub_op_doc(namespace: &str, name: &str) -> String {
     format!(
         "Namespace operation `{namespace}::{name}`.\n\n\
-         This symbol is recognized but is not an author-runnable executable operation in Silc 0.5.0. \
+         This symbol is recognized but is not an author-runnable executable operation in Silc 0.6.0. \
          Prefer scrape::*, doc::extract, llm::complete, tensor::*, text::score, or service::http inside \
          processor, service, or awaited handler pipelines."
     )
@@ -599,6 +603,7 @@ pub const KEYWORD_NAMES: &[&str] = &[
     "resource",
     "app",
     "game",
+    "scene",
     "loop",
     "service",
     "processor",

@@ -27,13 +27,32 @@ fn read_workspace(rel: &str) -> String {
 }
 
 /// Every tracked example directory (one `main.silc` + `AGENTS.md` each).
+///
+/// Examples live in `examples/core/` and `examples/domains/<domain>/`.
 fn example_dirs() -> Vec<String> {
-    let mut dirs: Vec<String> = fs::read_dir(workspace_root().join("examples"))
-        .expect("read examples/")
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().join("main.silc").is_file())
-        .map(|e| e.file_name().to_string_lossy().into_owned())
-        .collect();
+    let root = workspace_root().join("examples");
+    let mut dirs = Vec::new();
+    fn walk(dir: &std::path::Path, rel: &str, dirs: &mut Vec<String>) {
+        for entry in fs::read_dir(dir).unwrap_or_else(|e| panic!("read {}: {e}", dir.display())) {
+            let entry = entry.expect("dir entry");
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if name.starts_with('.') {
+                continue;
+            }
+            let path = entry.path();
+            let child_rel = if rel.is_empty() {
+                name.clone()
+            } else {
+                format!("{rel}/{name}")
+            };
+            if path.join("main.silc").is_file() {
+                dirs.push(child_rel);
+            } else if path.is_dir() {
+                walk(&path, &child_rel, dirs);
+            }
+        }
+    }
+    walk(&root, "", &mut dirs);
     dirs.sort();
     assert!(
         dirs.len() >= 10,
@@ -262,7 +281,7 @@ fn removed_author_ops_not_listed_as_runnable() {
 
     for (label, doc) in [("AGENTS", &template), ("README", &readme)] {
         let start = doc
-            .find("Runnable operations (0.5.0)")
+            .find("Runnable operations (0.6.0)")
             .or_else(|| doc.find("### Executable operations"))
             .unwrap_or_else(|| panic!("{label}: missing runnable operations section"));
         let section = &doc[start..];
@@ -363,8 +382,8 @@ fn canonical_silc_sources_omit_runtime_plumbing() {
     for rel in &roots {
         let src = read_workspace(rel);
         assert!(
-            src.contains("@version(\"0.5.0\")"),
-            "{rel} must declare @version(\"0.5.0\")"
+            src.contains("@version(\"0.6.0\")"),
+            "{rel} must declare @version(\"0.6.0\")"
         );
         for needle in forbidden {
             assert!(
