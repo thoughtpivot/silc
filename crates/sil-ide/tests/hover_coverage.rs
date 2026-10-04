@@ -19,7 +19,12 @@ fn workspace_file(rel: &str) -> String {
 fn hover_at(src: &str, offset: u32) -> String {
     let doc = Document::open("file://coverage.silc", 1, src);
     resolve_hover(&doc, offset)
-        .unwrap_or_else(|| panic!("NONE hover at offset {offset} (parse_error={:?})", doc.parse_error))
+        .unwrap_or_else(|| {
+            panic!(
+                "NONE hover at offset {offset} (parse_error={:?})",
+                doc.parse_error
+            )
+        })
         .markdown
 }
 
@@ -39,7 +44,8 @@ fn keyword_and_type_catalogs_have_docs() {
         assert!(doc.len() > 60, "{kw} doc too short");
     }
     for ty in BUILTIN_TYPE_NAMES {
-        let doc = builtin_type_doc(ty).unwrap_or_else(|| panic!("missing builtin_type_doc for {ty}"));
+        let doc =
+            builtin_type_doc(ty).unwrap_or_else(|| panic!("missing builtin_type_doc for {ty}"));
         assert!(doc.len() > 40, "{ty} doc too short");
     }
 }
@@ -110,19 +116,23 @@ processor P {{
             let offset = (pos + ns.len() + 2) as u32;
             if let Some(hover) = resolve_hover(&doc, offset) {
                 assert!(
-                    hover.markdown.contains("executable op")
-                        || hover.markdown.contains("Runnable"),
+                    hover.markdown.contains("executable op") || hover.markdown.contains("Runnable"),
                     "{ns}::{name} hover weak:\n{}",
                     hover.markdown
                 );
                 assert!(
-                    !hover.markdown.contains("prefer the executable set over stub-only"),
+                    !hover
+                        .markdown
+                        .contains("prefer the executable set over stub-only"),
                     "{ns}::{name} should not use generic fallback prose:\n{}",
                     hover.markdown
                 );
             } else {
                 // Keyword-ns ops must resolve even when parse fails
-                panic!("NONE hover for {ns}::{name} (parse_error={:?})", doc.parse_error);
+                panic!(
+                    "NONE hover for {ns}::{name} (parse_error={:?})",
+                    doc.parse_error
+                );
             }
         }
     }
@@ -167,8 +177,7 @@ fn arena_game_node_hovers() {
             "{node} description"
         );
         assert!(
-            md.contains(lookup_game_node(node).unwrap().description)
-                || md.len() > 80,
+            md.contains(lookup_game_node(node).unwrap().description) || md.len() > 80,
             "thin hover for {node}:\n{md}"
         );
     }
@@ -180,11 +189,11 @@ fn arena_game_prop_and_enum_hovers() {
 
     let title_off = (src.find(":title(").unwrap() + 1) as u32;
     let md = hover_at(&src, title_off);
-    assert!(md.contains("game prop") && md.contains("title"), "{md}");
+    assert!(md.contains("game option") && md.contains("title"), "{md}");
 
     let as_pawn_off = (src.find(":as_pawn").unwrap() + 1) as u32;
     let md = hover_at(&src, as_pawn_off);
-    assert!(md.contains("game prop") && md.contains("as_pawn"), "{md}");
+    assert!(md.contains("game option") && md.contains("as_pawn"), "{md}");
 
     let capsule_off = src.find(":shape(capsule)").unwrap() + ":shape(".len();
     let md = hover_at(&src, capsule_off as u32);
@@ -270,7 +279,7 @@ fn doc_extract_and_op_prop_hover() {
     if let Some(pos) = src.find(":into(") {
         let md = hover_at(&src, (pos + 1) as u32);
         assert!(
-            md.contains("op prop") || md.contains("contract") || md.contains("into"),
+            md.contains("operation option") || md.contains("contract") || md.contains("into"),
             "into prop:\n{md}"
         );
     }
@@ -296,7 +305,11 @@ component X {
     let doc = Document::open("file://units.silc", 1, src);
     let vec_off = src.find("Vec[").unwrap() as u32;
     let hover = resolve_hover(&doc, vec_off).expect("Vec hover");
-    assert!(hover.markdown.contains("Vec") || hover.markdown.contains("vector"), "{}", hover.markdown);
+    assert!(
+        hover.markdown.contains("Vec") || hover.markdown.contains("vector"),
+        "{}",
+        hover.markdown
+    );
 
     for needle in ["250ms", "90fps", "8cm"] {
         let off = src.find(needle).unwrap() as u32;
@@ -347,11 +360,17 @@ component Page {
 fn loop_nodes_props_and_keyword_hover() {
     let src = workspace_file("crates/sil-codegen/tests/fixtures/loop_digest.silc");
     let node = hover_on_member(&src, "loop::read(");
-    assert!(node.contains("loop::read") && node.contains("mcp::call"), "{node}");
+    assert!(
+        node.contains("loop::read") && node.contains("mcp::call"),
+        "{node}"
+    );
 
     let prop_offset = src.find(":auth_env(").expect("auth_env") as u32 + 1;
     let prop = hover_at(&src, prop_offset);
-    assert!(prop.contains("loop::read") && prop.contains("environment variable"), "{prop}");
+    assert!(
+        prop.contains("loop::read") && prop.contains("environment variable"),
+        "{prop}"
+    );
 
     let ns_offset = src.find("loop::schedule").expect("schedule") as u32;
     let ns = hover_at(&src, ns_offset);
@@ -362,9 +381,18 @@ fn loop_nodes_props_and_keyword_hover() {
     assert!(kw.contains("ADR-014"), "{kw}");
 
     for spec in sil_core::LOOP_NODE_CATALOG {
-        assert!(spec.description.len() > 40, "loop::{} description too short", spec.name);
+        assert!(
+            spec.description.len() > 40,
+            "loop::{} description too short",
+            spec.name
+        );
         for p in spec.props {
-            assert!(p.description.len() > 10, "loop::{} :{} description too short", spec.name, p.name);
+            assert!(
+                p.description.len() > 10,
+                "loop::{} :{} description too short",
+                spec.name,
+                p.name
+            );
         }
     }
 }

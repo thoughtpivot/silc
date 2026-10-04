@@ -277,7 +277,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "text",
-        description: "Plain body copy bound through the required `:text` prop. Prefer it for paragraphs, captions, and any non-interactive string display.",
+        description: "Plain body copy bound through the required `:text` option. Prefer it for paragraphs, captions, and any non-interactive string display.",
         props: &[PropSpec {
             name: "text",
             kind: PropKind::Expr,
@@ -599,7 +599,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "chat",
-        description: "Conversational composer that collects a message and emits `send`. Optional session, persona, loading, and error props wire it into LLM or agent flows.",
+        description: "Conversational composer that collects a message and emits `send`. Optional session, persona, loading, and error options wire it into LLM or agent flows.",
         props: &[
             PropSpec {
                 name: "field",
@@ -679,7 +679,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
     },
     ComponentSpec {
         name: "search_input",
-        description: "Search-oriented text field that emits `input` while typing and `submit` on enter. Optional persona/context props support scored or agent-assisted search UIs.",
+        description: "Search-oriented text field that emits `input` while typing and `submit` on enter. Optional persona/context options support scored or agent-assisted search UIs.",
         props: &[
             PropSpec {
                 name: "field",
@@ -1288,7 +1288,7 @@ pub fn format_component_catalog_line(spec: &ComponentSpec) -> String {
         ),
     };
     format!(
-        "- `ui::{}` — props: {}; events: {}; slots: {}; children: {}; surfaces: web+terminal",
+        "- `ui::{}` — options: {}; events: {}; slots: {}; children: {}; surfaces: web+terminal",
         spec.name, props, events, slots, children
     )
 }
@@ -1332,7 +1332,7 @@ pub fn validate_builtin_node(node: &UiNode) -> Result<(), String> {
     for prop_spec in spec.props {
         if prop_spec.required && node.prop(prop_spec.name).is_none() {
             return Err(format!(
-                "`ui::{}` missing required prop `:{}`",
+                "`ui::{}` missing required option `:{}`",
                 node.component, prop_spec.name
             ));
         }
@@ -1340,7 +1340,7 @@ pub fn validate_builtin_node(node: &UiNode) -> Result<(), String> {
     for (name, _) in &node.props {
         if !spec.props.iter().any(|p| p.name == *name) {
             return Err(format!(
-                "unknown prop `:{}` on `ui::{}`",
+                "unknown option `:{}` on `ui::{}`",
                 name, node.component
             ));
         }
@@ -1478,7 +1478,7 @@ mod tests {
         let button = lookup_component("button").unwrap();
         assert_eq!(
             format_component_catalog_line(button),
-            "- `ui::button` — props: `label` (required), `variant?`, `size?`, `submit?` (flag), `active?`, `disabled?` (flag); events: `click`; slots: none; children: none; surfaces: web+terminal"
+            "- `ui::button` — options: `label` (required), `variant?`, `size?`, `submit?` (flag), `active?`, `disabled?` (flag); events: `click`; slots: none; children: none; surfaces: web+terminal"
         );
         assert_eq!(UI_COMPONENT_CATALOG.len(), 39);
         for spec in UI_COMPONENT_CATALOG {
@@ -1510,8 +1510,9 @@ mod tests {
     fn every_catalog_prop_and_event_has_docs() {
         for spec in UI_COMPONENT_CATALOG {
             for prop in spec.props {
-                let doc = prop_doc(spec.name, prop.name)
-                    .unwrap_or_else(|| panic!("missing prop_doc for ui::{}:{}", spec.name, prop.name));
+                let doc = prop_doc(spec.name, prop.name).unwrap_or_else(|| {
+                    panic!("missing prop_doc for ui::{}:{}", spec.name, prop.name)
+                });
                 assert!(
                     doc.len() > 20,
                     "prop_doc for ui::{}:{} too short",

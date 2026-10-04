@@ -118,9 +118,7 @@ fn zone(name: &str, kind: &str, children: &[String]) -> String {
         body.push_str(comma);
         body.push('\n');
     }
-    format!(
-        "game::zone(\n        :name(\"{name}\"),\n        :kind({kind}),\n{body}        )"
-    )
+    format!("game::zone(\n        :name(\"{name}\"),\n        :kind({kind}),\n{body}        )")
 }
 
 /// Build the five-room / four-walkway / outdoor megastructure zones.
@@ -133,9 +131,30 @@ pub fn megastructure_zone_nodes() -> Vec<String> {
         let mut c = floor_grid("Lobby", -20.0, -4.0, 5, 5);
         c.extend(wall_ring("Lobby", -20.0, -4.0, 5, 5, &[Side::E]));
         c.push(kit_ent("LobbyDesk", "desk_1.6", -14.0, FLOOR_TOP, 0.0, 0.0));
-        c.push(kit_ent("LobbyChair", "chair_0.5", -14.0, FLOOR_TOP, 1.2, 180.0));
-        c.push(kit_ent("LobbyLocker", "locker_0.6", -18.0, FLOOR_TOP, -2.0, 0.0));
-        c.push(kit_ent("LobbyCover", "cover_low", -12.0, FLOOR_TOP, 2.0, 0.0));
+        c.push(kit_ent(
+            "LobbyChair",
+            "chair_0.5",
+            -14.0,
+            FLOOR_TOP,
+            1.2,
+            180.0,
+        ));
+        c.push(kit_ent(
+            "LobbyLocker",
+            "locker_0.6",
+            -18.0,
+            FLOOR_TOP,
+            -2.0,
+            0.0,
+        ));
+        c.push(kit_ent(
+            "LobbyCover",
+            "cover_low",
+            -12.0,
+            FLOOR_TOP,
+            2.0,
+            0.0,
+        ));
         c.push(
             r##"game::entity(
             :name("LobbyLamp"),
@@ -163,7 +182,14 @@ pub fn megastructure_zone_nodes() -> Vec<String> {
         ));
         // Keep the origin clear — the player pawn spawns there.
         c.push(kit_ent("OpsConsole", "desk_1.6", -3.0, FLOOR_TOP, 3.0, 0.0));
-        c.push(kit_ent("OpsChair", "chair_0.5", -3.0, FLOOR_TOP, 1.6, 180.0));
+        c.push(kit_ent(
+            "OpsChair",
+            "chair_0.5",
+            -3.0,
+            FLOOR_TOP,
+            1.6,
+            180.0,
+        ));
         c.push(kit_ent("OpsCrate", "crate_1", 2.0, FLOOR_TOP, -2.0, 0.0));
         c.push(
             r##"game::entity(
@@ -183,10 +209,38 @@ pub fn megastructure_zone_nodes() -> Vec<String> {
         // West door opens onto the industrial catwalk.
         let mut c = floor_grid("Lab", 12.0, -4.0, 5, 5);
         c.extend(wall_ring("Lab", 12.0, -4.0, 5, 5, &[Side::W]));
-        c.push(kit_ent("LabTable1", "lab_table_2", 16.0, FLOOR_TOP, 0.0, 0.0));
-        c.push(kit_ent("LabTable2", "lab_table_2", 18.0, FLOOR_TOP, -2.0, 90.0));
-        c.push(kit_ent("LabLocker", "locker_0.6", 14.0, FLOOR_TOP, 2.0, 0.0));
-        c.push(kit_ent("LabCover", "cover_high", 20.0, FLOOR_TOP, 0.0, 90.0));
+        c.push(kit_ent(
+            "LabTable1",
+            "lab_table_2",
+            16.0,
+            FLOOR_TOP,
+            0.0,
+            0.0,
+        ));
+        c.push(kit_ent(
+            "LabTable2",
+            "lab_table_2",
+            18.0,
+            FLOOR_TOP,
+            -2.0,
+            90.0,
+        ));
+        c.push(kit_ent(
+            "LabLocker",
+            "locker_0.6",
+            14.0,
+            FLOOR_TOP,
+            2.0,
+            0.0,
+        ));
+        c.push(kit_ent(
+            "LabCover",
+            "cover_high",
+            20.0,
+            FLOOR_TOP,
+            0.0,
+            90.0,
+        ));
         c.push(
             r##"game::entity(
             :name("LabLamp"),
@@ -207,8 +261,22 @@ pub fn megastructure_zone_nodes() -> Vec<String> {
         c.extend(wall_ring("Barracks", -4.0, -20.0, 5, 5, &[Side::S]));
         c.push(kit_ent("Bunk1", "bunk_2", -2.0, FLOOR_TOP, -16.0, 0.0));
         c.push(kit_ent("Bunk2", "bunk_2", 2.0, FLOOR_TOP, -16.0, 0.0));
-        c.push(kit_ent("BarracksLocker", "locker_0.6", -2.0, FLOOR_TOP, -18.0, 0.0));
-        c.push(kit_ent("BarracksBench", "chair_0.5", 0.0, FLOOR_TOP, -14.0, 0.0));
+        c.push(kit_ent(
+            "BarracksLocker",
+            "locker_0.6",
+            -2.0,
+            FLOOR_TOP,
+            -18.0,
+            0.0,
+        ));
+        c.push(kit_ent(
+            "BarracksBench",
+            "chair_0.5",
+            0.0,
+            FLOOR_TOP,
+            -14.0,
+            0.0,
+        ));
         zones.push(zone("BarracksLounge", "room", &c));
     }
 
@@ -217,10 +285,38 @@ pub fn megastructure_zone_nodes() -> Vec<String> {
         // North door reaches the skywalk, south door the rooftop courtyard.
         let mut c = floor_grid("Reactor", -4.0, 12.0, 5, 5);
         c.extend(wall_ring("Reactor", -4.0, 12.0, 5, 5, &[Side::N, Side::S]));
-        c.push(kit_ent("ReactorColumn", "column_0.4", 0.0, FLOOR_TOP, 16.0, 0.0));
-        c.push(kit_ent("ReactorCrate1", "crate_1", -2.0, FLOOR_TOP, 14.0, 0.0));
-        c.push(kit_ent("ReactorCrate2", "crate_1", 2.0, FLOOR_TOP, 18.0, 15.0));
-        c.push(kit_ent("ReactorCover", "cover_high", 0.0, FLOOR_TOP, 14.0, 0.0));
+        c.push(kit_ent(
+            "ReactorColumn",
+            "column_0.4",
+            0.0,
+            FLOOR_TOP,
+            16.0,
+            0.0,
+        ));
+        c.push(kit_ent(
+            "ReactorCrate1",
+            "crate_1",
+            -2.0,
+            FLOOR_TOP,
+            14.0,
+            0.0,
+        ));
+        c.push(kit_ent(
+            "ReactorCrate2",
+            "crate_1",
+            2.0,
+            FLOOR_TOP,
+            18.0,
+            15.0,
+        ));
+        c.push(kit_ent(
+            "ReactorCover",
+            "cover_high",
+            0.0,
+            FLOOR_TOP,
+            14.0,
+            0.0,
+        ));
         c.push(
             r##"game::entity(
             :name("ReactorLamp"),
@@ -237,26 +333,68 @@ pub fn megastructure_zone_nodes() -> Vec<String> {
     // Walkways
     {
         let mut c = floor_grid("GlassBridge", -12.0, -2.0, 4, 2);
-        c.push(kit_ent("GlassWin1", "wall_window_2x3", -10.0, 0.0, -3.0, 0.0));
-        c.push(kit_ent("GlassWin2", "wall_window_2x3", -10.0, 0.0, 1.0, 0.0));
+        c.push(kit_ent(
+            "GlassWin1",
+            "wall_window_2x3",
+            -10.0,
+            0.0,
+            -3.0,
+            0.0,
+        ));
+        c.push(kit_ent(
+            "GlassWin2",
+            "wall_window_2x3",
+            -10.0,
+            0.0,
+            1.0,
+            0.0,
+        ));
         zones.push(zone("GlassBridge", "walkway", &c));
     }
     {
         let mut c = floor_grid("Catwalk", 4.0, -2.0, 4, 2);
-        c.push(kit_ent("CatwalkRail1", "cover_low", 6.0, FLOOR_TOP, -3.0, 0.0));
-        c.push(kit_ent("CatwalkRail2", "cover_low", 8.0, FLOOR_TOP, 1.0, 0.0));
+        c.push(kit_ent(
+            "CatwalkRail1",
+            "cover_low",
+            6.0,
+            FLOOR_TOP,
+            -3.0,
+            0.0,
+        ));
+        c.push(kit_ent(
+            "CatwalkRail2",
+            "cover_low",
+            8.0,
+            FLOOR_TOP,
+            1.0,
+            0.0,
+        ));
         zones.push(zone("IndustrialCatwalk", "walkway", &c));
     }
     {
         let mut c = floor_grid("Service", -2.0, -12.0, 2, 4);
         c.push(kit_ent("ServiceVent", "vent_1.2", 0.0, 2.5, -10.0, 0.0));
         // Hug the wall so the corridor stays walkable.
-        c.push(kit_ent("ServiceCrate", "crate_1", -2.0, FLOOR_TOP, -8.0, 0.0));
+        c.push(kit_ent(
+            "ServiceCrate",
+            "crate_1",
+            -2.0,
+            FLOOR_TOP,
+            -8.0,
+            0.0,
+        ));
         zones.push(zone("ServiceCorridor", "walkway", &c));
     }
     {
         let mut c = floor_grid("Skywalk", -2.0, 4.0, 2, 4);
-        c.push(kit_ent("SkywalkWin", "wall_window_2x3", -3.0, 0.0, 8.0, 90.0));
+        c.push(kit_ent(
+            "SkywalkWin",
+            "wall_window_2x3",
+            -3.0,
+            0.0,
+            8.0,
+            90.0,
+        ));
         zones.push(zone("ExteriorSkywalk", "walkway", &c));
     }
 
@@ -266,8 +404,22 @@ pub fn megastructure_zone_nodes() -> Vec<String> {
         c.push(kit_ent("Planter1", "planter_1", -4.0, FLOOR_TOP, 22.0, 0.0));
         c.push(kit_ent("Planter2", "planter_1", 4.0, FLOOR_TOP, 22.0, 0.0));
         c.push(kit_ent("VentUnit1", "vent_1.2", 0.0, FLOOR_TOP, 26.0, 0.0));
-        c.push(kit_ent("CourtCover1", "cover_low", -2.0, FLOOR_TOP, 24.0, 0.0));
-        c.push(kit_ent("CourtCover2", "cover_high", 2.0, FLOOR_TOP, 24.0, 90.0));
+        c.push(kit_ent(
+            "CourtCover1",
+            "cover_low",
+            -2.0,
+            FLOOR_TOP,
+            24.0,
+            0.0,
+        ));
+        c.push(kit_ent(
+            "CourtCover2",
+            "cover_high",
+            2.0,
+            FLOOR_TOP,
+            24.0,
+            90.0,
+        ));
         c.push(
             r##"game::entity(
             :name("CourtSunFill"),

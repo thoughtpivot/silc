@@ -332,10 +332,11 @@ pub fn repair_guidance(error: &str) -> Option<String> {
         );
     }
     if lower.contains("unknown game node")
-        || (lower.contains("unknown prop") && lower.contains("game::"))
+        || ((lower.contains("unknown option") || lower.contains("unknown prop"))
+            && lower.contains("game::"))
     {
         return Some(format!(
-            "GAME CATALOG RULE: use only closed `game::*` nodes/props.\n{}\nFix: replace the unknown node/prop with a catalog entry above.",
+            "GAME CATALOG RULE: use only closed `game::*` nodes/options.\n{}\nFix: replace the unknown node/option with a catalog entry above.",
             sil_core::format_game_catalog_md()
         ));
     }
@@ -433,9 +434,12 @@ WEAPON FIRE MODE RULE: `game::weapon :fire_mode` must be one of \
         );
     }
 
-    if lower.contains("unknown prop") || lower.contains("unknown event") {
+    if lower.contains("unknown option")
+        || lower.contains("unknown prop")
+        || lower.contains("unknown event")
+    {
         return Some(
-            "CATALOG RULE: UI nodes only accept catalog props/events. Remove the unknown prop/event and use documented ones (`:label`, `:field`, `:value`, `:variant`, `:tone`, `:size`, `:on(click(handler))`, `:on(submit(handler))`)."
+            "CATALOG RULE: UI nodes only accept catalog options/events. Remove the unknown option/event and use documented ones (`:label`, `:field`, `:value`, `:variant`, `:tone`, `:size`, `:on(click(handler))`, `:on(submit(handler))`)."
                 .into(),
         );
     }
@@ -467,7 +471,7 @@ WEAPON FIRE MODE RULE: `game::weapon :fire_mode` must be one of \
 
     if lower.contains("text::score") && lower.contains("llm::complete") {
         return Some(
-            "OP RULE: `text::score` and `llm::complete` cannot both appear. Keep at most one processor and one of these ops."
+            "OP RULE: `text::score` and `llm::complete` cannot both appear. Keep at most one processor and one of these operations."
                 .into(),
         );
     }
@@ -560,10 +564,7 @@ pub fn autofix(program: &str, error: &str) -> Option<(String, String)> {
 
     if lower.contains("cannot contain game::") {
         if let Some((fixed, kind)) = hoist_scene_only_nodes(program, error) {
-            return Some((
-                fixed,
-                format!("moved game::{kind} to scene scope"),
-            ));
+            return Some((fixed, format!("moved game::{kind} to scene scope")));
         }
     }
 
@@ -573,7 +574,10 @@ pub fn autofix(program: &str, error: &str) -> Option<(String, String)> {
 /// Apply the first matching closed FPS injector for `task`.
 pub fn inject_fps_task(task: &str, seed: &str) -> Option<(String, String)> {
     if let Some(fixed) = inject_named_fps_weapons(task, seed) {
-        return Some((fixed, "injected closed FPS weapon loadout into seed scene".into()));
+        return Some((
+            fixed,
+            "injected closed FPS weapon loadout into seed scene".into(),
+        ));
     }
     if crate::fps_inject::wants_megastructure_rebuild(task)
         && seed.contains(":name(\"SecurityLobby\")")
@@ -596,19 +600,28 @@ pub fn inject_fps_task(task: &str, seed: &str) -> Option<(String, String)> {
         } else {
             fixed
         };
-        return Some((fixed, "injected megastructure zones/kit furniture into seed scene".into()));
+        return Some((
+            fixed,
+            "injected megastructure zones/kit furniture into seed scene".into(),
+        ));
     }
     if crate::fps_inject::wants_hostiles(task) && !seed.contains(":name(\"Suppressor\")") {
         let nodes = crate::fps_inject::hostile_encounter_nodes();
         let fixed = insert_scene_children(seed, &nodes)?;
-        return Some((fixed, "injected hostile archetypes/encounters/minds into seed scene".into()));
+        return Some((
+            fixed,
+            "injected hostile archetypes/encounters/minds into seed scene".into(),
+        ));
     }
     if crate::fps_inject::wants_strip_neon(task)
         && (seed.contains("NeonSphere") || seed.contains("WarmPointLight"))
     {
         let fixed = strip_neon_entities(seed);
         if fixed != seed {
-            return Some((fixed, "removed neon placeholder entities from seed scene".into()));
+            return Some((
+                fixed,
+                "removed neon placeholder entities from seed scene".into(),
+            ));
         }
     }
     None
@@ -620,7 +633,9 @@ fn strip_game_nodes(program: &str, kind: &str) -> String {
     let needle = format!("game::{kind}(");
     let mut out = program.to_string();
     loop {
-        let Some(start) = out.find(&needle) else { break };
+        let Some(start) = out.find(&needle) else {
+            break;
+        };
         let mut depth = 0i32;
         let mut end = None;
         for (i, ch) in out[start..].char_indices() {
@@ -656,9 +671,13 @@ fn strip_neon_entities(program: &str) -> String {
     for name_prefix in ["NeonSphere", "WarmPointLight"] {
         loop {
             let needle = format!(":name(\"{name_prefix}");
-            let Some(name_at) = out.find(&needle) else { break };
+            let Some(name_at) = out.find(&needle) else {
+                break;
+            };
             // Walk back to the owning `game::entity(` start.
-            let Some(ent_at) = out[..name_at].rfind("game::entity(") else { break };
+            let Some(ent_at) = out[..name_at].rfind("game::entity(") else {
+                break;
+            };
             let mut depth = 0i32;
             let mut end = None;
             for (i, ch) in out[ent_at..].char_indices() {
@@ -703,8 +722,7 @@ pub fn inject_named_fps_weapons(task: &str, seed: &str) -> Option<String> {
     if !wants || !seed.contains("game::scene(") {
         return None;
     }
-    if seed.contains("game::weapon(:name(\"VanguardAR\")")
-        || seed.contains(":name(\"VanguardAR\")")
+    if seed.contains("game::weapon(:name(\"VanguardAR\")") || seed.contains(":name(\"VanguardAR\")")
     {
         return None;
     }
@@ -732,11 +750,14 @@ pub fn inject_named_fps_weapons(task: &str, seed: &str) -> Option<String> {
     ];
     let mut additions = Vec::new();
     for node in nodes {
-        let key = node_identity(node, if node.contains("game::weapon") {
-            "weapon"
-        } else {
-            "data"
-        });
+        let key = node_identity(
+            node,
+            if node.contains("game::weapon") {
+                "weapon"
+            } else {
+                "data"
+            },
+        );
         if seed.contains(&key) || additions.iter().any(|a: &String| a.contains(&key)) {
             continue;
         }
@@ -1358,7 +1379,7 @@ entity world tree with `game::zone` volumes, spawn, mode, controller, \
 `game::camera :mode(first_person)`, `game::hud`, weapons with cue children, optional \
 `game::encounter` waves and NPC stacks (`npc`/`perception`/`behavior`/`mind`), post_process, overlay.\n\n\
 {}\n\
-Rules: use ONLY catalog nodes/props; `:title` is manifest data — never invent title-named compiler branches; \
+Rules: use ONLY catalog nodes/options; `:title` is manifest data — never invent title-named compiler branches; \
 default web port 18140; runtime TypeScript/Babylon kernel is compiler-owned; do not mix with UI `app` routes.",
             sil_core::format_game_catalog_md()
         ))
@@ -2400,7 +2421,8 @@ pub fn run_author_with_failure(
                 // Truncated additive FPS drafts: graft new data/weapon/zone nodes
                 // from the broken draft onto the known-good seed scene tree, or
                 // inject the closed four-weapon loadout named by the task.
-                if let Some(seed_src) = ctx.target.as_deref().filter(|s| s.contains("game::scene")) {
+                if let Some(seed_src) = ctx.target.as_deref().filter(|s| s.contains("game::scene"))
+                {
                     let merged = inject_fps_task(task, seed_src)
                         .map(|(p, _)| p)
                         .or_else(|| merge_additive_game_draft(seed_src, &program));
@@ -2547,7 +2569,7 @@ fn build_user_prompt(
             .is_some_and(|target| target.contains("game::scene"))
         {
             out.push_str(
-                "\n# Modify guidance\nPrefer the SMALLEST edit that fulfills the task inside the existing `game::scene` tree. Keep the same `game Name`, `:title`, and every system the task did not name.\nGAME PRESERVATION RULE: a game edit is additive unless the task explicitly says to remove a system. Preserve every existing `game::*` node, repeated post stage, prefab, data asset, asset/material declaration, zone, weapon, spawn, signal, encounter, NPC/mind stack, HUD, and weapon/ability cue. Never trade away camera (especially `:mode(first_person)`), controller, mode, pawn, prefab, entity/zone tree, weapons, overlay, post-processing, or encounters merely to shorten the output. Prefer Godot-style nested `entity`/`zone` trees, Unity-style `prefab`/`data`/`asset`/`material`/`spawn`, and Unreal-style `mode`/`pawn`/`controller` with FPS weapons and encounter waves.\nDo not invent `app` / `component` / `resource` / `processor`. Use only closed `game::*` catalog nodes and props.\n",
+                "\n# Modify guidance\nPrefer the SMALLEST edit that fulfills the task inside the existing `game::scene` tree. Keep the same `game Name`, `:title`, and every system the task did not name.\nGAME PRESERVATION RULE: a game edit is additive unless the task explicitly says to remove a system. Preserve every existing `game::*` node, repeated post stage, prefab, data asset, asset/material declaration, zone, weapon, spawn, signal, encounter, NPC/mind stack, HUD, and weapon/ability cue. Never trade away camera (especially `:mode(first_person)`), controller, mode, pawn, prefab, entity/zone tree, weapons, overlay, post-processing, or encounters merely to shorten the output. Prefer Godot-style nested `entity`/`zone` trees, Unity-style `prefab`/`data`/`asset`/`material`/`spawn`, and Unreal-style `mode`/`pawn`/`controller` with FPS weapons and encounter waves.\nDo not invent `app` / `component` / `resource` / `processor`. Use only closed `game::*` catalog nodes and options.\n",
             );
         } else {
             out.push_str(
@@ -2565,7 +2587,7 @@ fn build_user_prompt(
             );
         } else {
             out.push_str(
-                "\n# Build guidance\nStart from the skeleton above and change it to fit the task: rename the contract/component/app, set the contract fields, and build the form and render tree the task needs. Keep its structure and syntax.\nKeep `method on_submit() { submit(); }` exactly as written — submission is synthesized, so do not invent pipeline ops or `==>` chains inside it.\nEvery `method` is a SIBLING: close `render()` with `}` before declaring the next method — never nest a method inside another.\nDo not add a `resource`, `query` or `processor` unless the task clearly needs stored records.\n",
+                "\n# Build guidance\nStart from the skeleton above and change it to fit the task: rename the contract/component/app, set the contract fields, and build the form and render tree the task needs. Keep its structure and syntax.\nKeep `method on_submit() { submit(); }` exactly as written — submission is synthesized, so do not invent pipeline operations or `==>` chains inside it.\nEvery `method` is a SIBLING: close `render()` with `}` before declaring the next method — never nest a method inside another.\nDo not add a `resource`, `query` or `processor` unless the task clearly needs stored records.\n",
             );
         }
     }
@@ -3211,7 +3233,7 @@ mod tests {
 
     #[test]
     fn repair_guidance_covers_unknown_game_prop() {
-        let guidance = repair_guidance("validate: unknown prop `:foo` on game::prefab")
+        let guidance = repair_guidance("validate: unknown option `:foo` on game::prefab")
             .expect("game prop errors need catalog guidance");
         assert!(guidance.contains("GAME CATALOG RULE"));
         assert!(guidance.contains("game::prefab"));

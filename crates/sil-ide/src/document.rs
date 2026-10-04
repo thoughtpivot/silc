@@ -102,7 +102,9 @@ impl Document {
             .find(|t| offset >= t.start && offset < t.end)
             .or_else(|| {
                 // Allow hovering at the exact end of a token (common caret placement).
-                self.tokens.iter().find(|t| offset == t.end && t.start < t.end)
+                self.tokens
+                    .iter()
+                    .find(|t| offset == t.end && t.start < t.end)
             })
     }
 

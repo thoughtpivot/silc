@@ -2,9 +2,9 @@
 
 use sil_core::{
     App, CompField, Component, Contract, EmitDecl, EventBinding, Expr, Field, Game, GameNode,
-    Handler, Loop, LoopNode, Method, Module, ModuleKind, Param, Pipeline, PipelineStep, Program, QueryBinding,
-    Resource, ResourceKind, ResourceMethod, ResourceSeed, Route, SlotDecl, Span, Subset,
-    SubsetPredicate, TraitArg, TypeExpr, UiNode, UiTemplate,
+    Handler, Loop, LoopNode, Method, Module, ModuleKind, Param, Pipeline, PipelineStep, Program,
+    QueryBinding, Resource, ResourceKind, ResourceMethod, ResourceSeed, Route, SlotDecl, Span,
+    Subset, SubsetPredicate, TraitArg, TypeExpr, UiNode, UiTemplate,
 };
 use sil_lexer::{lex, SpannedToken, Token};
 
@@ -651,7 +651,7 @@ impl Parser {
             }
             if matches!(self.peek(), Some(Token::Colon)) {
                 self.advance();
-                let (key, key_span) = self.expect_ident_spanned("prop/slot/event name")?;
+                let (key, key_span) = self.expect_ident_spanned("option/slot/event name")?;
                 if key == "on" {
                     // :on(click(handler)) or :on(add => handler)
                     self.expect_simple(Token::LParen, "`(` after :on")?;
@@ -691,7 +691,7 @@ impl Parser {
                         prop_spans.push(key_span);
                     } else {
                         let expr = self.parse_expr()?;
-                        self.expect_simple(Token::RParen, "`)` after prop")?;
+                        self.expect_simple(Token::RParen, "`)` after option")?;
                         props.push((key, expr));
                         prop_spans.push(key_span);
                     }
@@ -973,7 +973,7 @@ impl Parser {
             if matches!(self.peek(), Some(Token::Colon)) {
                 self.advance();
                 // Prop names may reuse reserved words (`:slot`, `:state`, `:route`, …).
-                let (key, key_span) = self.expect_ident_like_spanned("game prop name")?;
+                let (key, key_span) = self.expect_ident_like_spanned("game option name")?;
                 if matches!(self.peek(), Some(Token::LParen)) {
                     self.advance();
                     if matches!(self.peek(), Some(Token::RParen)) {
@@ -986,7 +986,7 @@ impl Parser {
                         children.push(child);
                     } else {
                         let expr = self.parse_game_prop_expr()?;
-                        self.expect_simple(Token::RParen, "`)` after game prop")?;
+                        self.expect_simple(Token::RParen, "`)` after game option")?;
                         props.push((key, expr));
                         prop_spans.push(key_span);
                     }
@@ -997,7 +997,7 @@ impl Parser {
             } else if self.at_game_node() {
                 children.push(self.parse_game_node()?);
             } else {
-                return Err(self.error_here("expected `:prop(...)` or `game::node(...)`"));
+                return Err(self.error_here("expected `:option(...)` or `game::node(...)`"));
             }
         }
         self.expect_simple(Token::RParen, "`)` after game node")?;
@@ -1027,7 +1027,10 @@ impl Parser {
 
     fn at_loop_node(&self) -> bool {
         matches!(self.peek(), Some(Token::Ident(n)) if n == "loop")
-            && matches!(self.tokens.get(self.pos + 1).map(|t| &t.token), Some(Token::DoubleColon))
+            && matches!(
+                self.tokens.get(self.pos + 1).map(|t| &t.token),
+                Some(Token::DoubleColon)
+            )
     }
 
     fn parse_loop_node(&mut self) -> Result<LoopNode, ParseError> {
@@ -1049,7 +1052,7 @@ impl Parser {
             }
             if matches!(self.peek(), Some(Token::Colon)) {
                 self.advance();
-                let (key, key_span) = self.expect_ident_like_spanned("loop prop name")?;
+                let (key, key_span) = self.expect_ident_like_spanned("loop option name")?;
                 if matches!(self.peek(), Some(Token::LParen)) {
                     self.advance();
                     if matches!(self.peek(), Some(Token::RParen)) {
@@ -1057,7 +1060,7 @@ impl Parser {
                         props.push((key, Expr::Bool(true)));
                     } else {
                         let expr = self.parse_game_prop_expr()?;
-                        self.expect_simple(Token::RParen, "`)` after loop prop")?;
+                        self.expect_simple(Token::RParen, "`)` after loop option")?;
                         props.push((key, expr));
                     }
                 } else {
@@ -1067,7 +1070,7 @@ impl Parser {
             } else if self.at_loop_node() {
                 children.push(self.parse_loop_node()?);
             } else {
-                return Err(self.error_here("expected `:prop(...)` or `loop::node(...)`"));
+                return Err(self.error_here("expected `:option(...)` or `loop::node(...)`"));
             }
         }
         self.expect_simple(Token::RParen, "`)` after loop node")?;
@@ -1766,8 +1769,18 @@ fn parse_step(tokens: &[SpannedToken]) -> Result<PipelineStep, String> {
                     vec![]
                 };
                 let span = Span::cover(
-                    Span::new(tokens[0].start, tokens[0].end, tokens[0].line, tokens[0].col),
-                    Span::new(tokens[2].start, tokens[2].end, tokens[2].line, tokens[2].col),
+                    Span::new(
+                        tokens[0].start,
+                        tokens[0].end,
+                        tokens[0].line,
+                        tokens[0].col,
+                    ),
+                    Span::new(
+                        tokens[2].start,
+                        tokens[2].end,
+                        tokens[2].line,
+                        tokens[2].col,
+                    ),
                 );
                 return Ok(PipelineStep::Call {
                     namespace: Some(ns),
@@ -1784,7 +1797,12 @@ fn parse_step(tokens: &[SpannedToken]) -> Result<PipelineStep, String> {
         // name(...) without namespace
         if matches!(tokens.get(1).map(|t| &t.token), Some(Token::LParen)) {
             let args = parse_call_args(&tokens[2..])?;
-            let span = Span::new(tokens[0].start, tokens[0].end, tokens[0].line, tokens[0].col);
+            let span = Span::new(
+                tokens[0].start,
+                tokens[0].end,
+                tokens[0].line,
+                tokens[0].col,
+            );
             return Ok(PipelineStep::Call {
                 namespace: None,
                 name: ns,
@@ -2165,7 +2183,10 @@ game Foo {
         assert_eq!(program.games[0].name, "Foo");
         assert_eq!(program.games[0].root.name, "scene");
         assert_eq!(
-            program.games[0].root.prop("title").and_then(|e| e.as_string_literal()),
+            program.games[0]
+                .root
+                .prop("title")
+                .and_then(|e| e.as_string_literal()),
             Some("T")
         );
         assert_eq!(program.games[0].root.children.len(), 1);
@@ -2178,21 +2199,68 @@ game Foo {
         let mut parser = Parser::new(lex(r#"$a != "" && $b != "" || $c < 1 + 2 * 3"#).unwrap());
         let expr = parser.parse_expr().unwrap();
         let rendered = format!("{expr:?}");
-        let Expr::BinOp { op: sil_core::BinOp::Or, left, right } = expr else {
+        let Expr::BinOp {
+            op: sil_core::BinOp::Or,
+            left,
+            right,
+        } = expr
+        else {
             panic!("`||` should be the root: {rendered}");
         };
-        let Expr::BinOp { op: sil_core::BinOp::And, left: and_l, right: and_r } = *left else {
+        let Expr::BinOp {
+            op: sil_core::BinOp::And,
+            left: and_l,
+            right: and_r,
+        } = *left
+        else {
             panic!("`&&` should be under `||`: {rendered}");
         };
-        assert!(matches!(*and_l, Expr::BinOp { op: sil_core::BinOp::Ne, .. }), "{rendered}");
-        assert!(matches!(*and_r, Expr::BinOp { op: sil_core::BinOp::Ne, .. }), "{rendered}");
-        let Expr::BinOp { op: sil_core::BinOp::Lt, right: sum, .. } = *right else {
+        assert!(
+            matches!(
+                *and_l,
+                Expr::BinOp {
+                    op: sil_core::BinOp::Ne,
+                    ..
+                }
+            ),
+            "{rendered}"
+        );
+        assert!(
+            matches!(
+                *and_r,
+                Expr::BinOp {
+                    op: sil_core::BinOp::Ne,
+                    ..
+                }
+            ),
+            "{rendered}"
+        );
+        let Expr::BinOp {
+            op: sil_core::BinOp::Lt,
+            right: sum,
+            ..
+        } = *right
+        else {
             panic!("`<` should be the right of `||`: {rendered}");
         };
-        let Expr::BinOp { op: sil_core::BinOp::Add, right: product, .. } = *sum else {
+        let Expr::BinOp {
+            op: sil_core::BinOp::Add,
+            right: product,
+            ..
+        } = *sum
+        else {
             panic!("`+` under `<`: {rendered}");
         };
-        assert!(matches!(*product, Expr::BinOp { op: sil_core::BinOp::Mul, .. }), "{rendered}");
+        assert!(
+            matches!(
+                *product,
+                Expr::BinOp {
+                    op: sil_core::BinOp::Mul,
+                    ..
+                }
+            ),
+            "{rendered}"
+        );
     }
 
     #[test]

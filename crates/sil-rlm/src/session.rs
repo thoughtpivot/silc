@@ -205,7 +205,11 @@ pub fn run_assist(
 
                         let is_explore = matches!(
                             call.name.as_str(),
-                            "corpus_list" | "corpus_grep" | "corpus_read" | "draft_get" | "llm_query"
+                            "corpus_list"
+                                | "corpus_grep"
+                                | "corpus_read"
+                                | "draft_get"
+                                | "llm_query"
                         );
                         let made_progress = call.name == "draft_set"
                             && !meta.contains("draft_set: rejected")
@@ -282,84 +286,84 @@ pub fn run_assist(
             ParsedTurn::Final(program) => {
                 invalid_streak = 0;
                 match resolve_final(&program, &mut state) {
-                Ok(program) => {
-                    emit_action(
-                        &mut progress,
-                        state.stats.root_turns,
-                        budgets.max_root_turns,
-                        turn_secs,
+                    Ok(program) => {
+                        emit_action(
+                            &mut progress,
+                            state.stats.root_turns,
+                            budgets.max_root_turns,
+                            turn_secs,
                             ActionKind::Accepted,
-                    );
-                    return Ok(AssistResult {
-                        program,
-                        stats: state.stats,
-                        finalized: true,
-                    });
-                }
-                Err(error) => {
-                    emit_action(
-                        &mut progress,
-                        state.stats.root_turns,
-                        budgets.max_root_turns,
-                        turn_secs,
+                        );
+                        return Ok(AssistResult {
+                            program,
+                            stats: state.stats,
+                            finalized: true,
+                        });
+                    }
+                    Err(error) => {
+                        emit_action(
+                            &mut progress,
+                            state.stats.root_turns,
+                            budgets.max_root_turns,
+                            turn_secs,
                             ActionKind::StillRefining {
-                            reason: if error.contains("unchanged") {
-                                friendly_final_var_reason(&error)
-                            } else {
-                                "program did not pass the compiler check".into()
+                                reason: if error.contains("unchanged") {
+                                    friendly_final_var_reason(&error)
+                                } else {
+                                    "program did not pass the compiler check".into()
+                                },
                             },
-                        },
-                    );
-                    history.push_str("\n# Assistant\n");
-                    history.push_str(&truncate_for_history(&response, 1200));
-                    history.push_str("\n# Error\n");
-                    history.push_str(&error);
-                    history.push_str("\n# Next\nRepair with tools, then FINAL again.\n");
-                    history = truncate_history(&history, HISTORY_CAP);
+                        );
+                        history.push_str("\n# Assistant\n");
+                        history.push_str(&truncate_for_history(&response, 1200));
+                        history.push_str("\n# Error\n");
+                        history.push_str(&error);
+                        history.push_str("\n# Next\nRepair with tools, then FINAL again.\n");
+                        history = truncate_history(&history, HISTORY_CAP);
+                    }
                 }
-            }
             }
             ParsedTurn::FinalVar => {
                 invalid_streak = 0;
                 match resolve_final_var(&state) {
-                Ok(program) => {
-                    emit_action(
-                        &mut progress,
-                        state.stats.root_turns,
-                        budgets.max_root_turns,
-                        turn_secs,
+                    Ok(program) => {
+                        emit_action(
+                            &mut progress,
+                            state.stats.root_turns,
+                            budgets.max_root_turns,
+                            turn_secs,
                             ActionKind::Accepted,
-                    );
-                    return Ok(AssistResult {
-                        program,
-                        stats: state.stats,
-                        finalized: true,
-                    });
-                }
-                Err(error) => {
-                    emit_action(
-                        &mut progress,
-                        state.stats.root_turns,
-                        budgets.max_root_turns,
-                        turn_secs,
+                        );
+                        return Ok(AssistResult {
+                            program,
+                            stats: state.stats,
+                            finalized: true,
+                        });
+                    }
+                    Err(error) => {
+                        emit_action(
+                            &mut progress,
+                            state.stats.root_turns,
+                            budgets.max_root_turns,
+                            turn_secs,
                             ActionKind::StillRefining {
-                            reason: friendly_final_var_reason(&error),
-                        },
-                    );
-                    history.push_str("\n# Assistant\nFINAL_VAR(draft)\n# Error\n");
-                    history.push_str(&error);
-                    if error.contains("unchanged") {
-                        history.push_str(
+                                reason: friendly_final_var_reason(&error),
+                            },
+                        );
+                        history.push_str("\n# Assistant\nFINAL_VAR(draft)\n# Error\n");
+                        history.push_str(&error);
+                        if error.contains("unchanged") {
+                            history.push_str(
                             "\n# Next\nWrite the edited program now: reply with the COMPLETE modified Silc program in a <silc>…</silc> block (keep valid structure, apply the task), then silc_check.\n",
                         );
-                    } else {
-                        history.push_str(
-                            "\n# Next\nUse silc_check on the draft, then FINAL_VAR(draft).\n",
-                        );
+                        } else {
+                            history.push_str(
+                                "\n# Next\nUse silc_check on the draft, then FINAL_VAR(draft).\n",
+                            );
+                        }
+                        history = truncate_history(&history, HISTORY_CAP);
                     }
-                    history = truncate_history(&history, HISTORY_CAP);
                 }
-            }
             }
             ParsedTurn::Invalid(msg) => {
                 invalid_streak += 1;
@@ -444,9 +448,7 @@ fn emit_action_from_tool(
     corpus: &Corpus,
 ) {
     let kind = match call.name.as_str() {
-        "corpus_list" => ActionKind::ListedCorpus {
-            docs: corpus.len(),
-        },
+        "corpus_list" => ActionKind::ListedCorpus { docs: corpus.len() },
         "corpus_grep" => {
             let pattern = call
                 .args
@@ -482,11 +484,7 @@ fn emit_action_from_tool(
                     .unwrap_or("corpus");
                 ActionKind::ReadCorpus {
                     id: friendly_corpus_id(id),
-                    start: call
-                        .args
-                        .get("start")
-                        .and_then(|v| v.as_u64())
-                        .unwrap_or(0) as usize,
+                    start: call.args.get("start").and_then(|v| v.as_u64()).unwrap_or(0) as usize,
                     end: 0,
                     total: 0,
                 }
@@ -634,9 +632,7 @@ fn truncate_history(history: &str, max_chars: usize) -> String {
         return history.to_string();
     }
 
-    let split_at = history
-        .find("\n# Assistant\n")
-        .unwrap_or(0);
+    let split_at = history.find("\n# Assistant\n").unwrap_or(0);
     let (prefix, rest) = history.split_at(split_at);
     let prefix_len = prefix.chars().count();
     if prefix_len >= max_chars {
@@ -645,7 +641,9 @@ fn truncate_history(history: &str, max_chars: usize) -> String {
 
     let marker = "\n…[history truncated]\n";
     let marker_len = marker.chars().count();
-    let rest_budget = max_chars.saturating_sub(prefix_len).saturating_sub(marker_len);
+    let rest_budget = max_chars
+        .saturating_sub(prefix_len)
+        .saturating_sub(marker_len);
     let rest_count = rest.chars().count();
     if rest_count <= rest_budget {
         return history.to_string();
@@ -806,7 +804,9 @@ mod tests {
         assert!(joined.contains("Accepted"), "{joined}");
         // grep should report at least one match for FeedbackRecord
         assert!(
-            cap.kinds.iter().any(|k| k.contains("match_count") && !k.contains("match_count: 0")),
+            cap.kinds
+                .iter()
+                .any(|k| k.contains("match_count") && !k.contains("match_count: 0")),
             "{joined}"
         );
     }
@@ -961,13 +961,9 @@ mod tests {
         impl Completer for Rec {
             fn complete(&mut self, prompt: &str) -> Result<String, String> {
                 self.prompts.push(prompt.to_string());
-                let out = self
-                    .responses
-                    .get(self.i)
-                    .cloned()
-                    .unwrap_or_else(|| {
-                        "```tool\n{\"name\":\"corpus_list\",\"args\":{}}\n```".into()
-                    });
+                let out = self.responses.get(self.i).cloned().unwrap_or_else(|| {
+                    "```tool\n{\"name\":\"corpus_list\",\"args\":{}}\n```".into()
+                });
                 self.i += 1;
                 Ok(out)
             }
@@ -996,7 +992,13 @@ mod tests {
         assert!(
             last.contains("STOP exploring") || last.contains("COMPLETE Silc program"),
             "expected force-write nudge in history, got tail:\n{}",
-            last.chars().rev().take(800).collect::<String>().chars().rev().collect::<String>()
+            last.chars()
+                .rev()
+                .take(800)
+                .collect::<String>()
+                .chars()
+                .rev()
+                .collect::<String>()
         );
     }
 

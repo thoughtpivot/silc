@@ -7,10 +7,7 @@
 #[derive(Debug, Clone)]
 pub enum ProgressEvent {
     /// About to call the completer for this root turn (spinner only).
-    Thinking {
-        turn: usize,
-        max_turns: usize,
-    },
+    Thinking { turn: usize, max_turns: usize },
     /// Durable, user-facing action completed on a turn.
     Action {
         turn: usize,

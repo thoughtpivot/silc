@@ -4,7 +4,10 @@ use sil_core::offset_to_lsp;
 use sil_ide::{hover_at_lsp, resolve_hover, Document};
 
 fn blog_source() -> String {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../examples/blogApp/main.silc");
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../examples/blogApp/main.silc"
+    );
     std::fs::read_to_string(path).expect("read blogApp/main.silc")
 }
 
@@ -13,8 +16,12 @@ fn hover_at_needle(src: &str, needle: &str) -> String {
         .find(needle)
         .unwrap_or_else(|| panic!("needle not found: {needle}")) as u32;
     let doc = Document::open("file://blog.silc", 1, src);
-    let hover = resolve_hover(&doc, offset)
-        .unwrap_or_else(|| panic!("no hover for `{needle}` (parse_error={:?})", doc.parse_error));
+    let hover = resolve_hover(&doc, offset).unwrap_or_else(|| {
+        panic!(
+            "no hover for `{needle}` (parse_error={:?})",
+            doc.parse_error
+        )
+    });
     hover.markdown
 }
 
@@ -44,17 +51,28 @@ fn blog_articles_list_method_hover() {
 #[test]
 fn blog_ui_table_hover() {
     let src = blog_source();
-    let offset = src.find("ui::table").and_then(|i| Some(i + "ui::".len())).expect("ui::table") as u32;
+    let offset = src
+        .find("ui::table")
+        .and_then(|i| Some(i + "ui::".len()))
+        .expect("ui::table") as u32;
     let doc = Document::open("file://blog.silc", 1, &src);
     let hover = resolve_hover(&doc, offset).expect("table hover");
-    assert!(hover.markdown.contains("ui primitive"), "{}", hover.markdown);
+    assert!(
+        hover.markdown.contains("ui primitive"),
+        "{}",
+        hover.markdown
+    );
     assert!(
         hover.markdown.contains("Renders a collection of records")
             || hover.markdown.contains("tabular data"),
         "expected prose description ahead of catalog line:\n{}",
         hover.markdown
     );
-    let body = hover.markdown.split("---").next().unwrap_or(&hover.markdown);
+    let body = hover
+        .markdown
+        .split("---")
+        .next()
+        .unwrap_or(&hover.markdown);
     assert!(
         body.len() > 120,
         "ui::table hover should include more than the bare catalog line:\n{body}"
@@ -184,7 +202,11 @@ fn blog_feed_operator_hover() {
         let doc = Document::open("file://feed.silc", 1, snippet);
         // Parse may fail for incomplete program; token hover should still work.
         if let Some(hover) = resolve_hover(&doc, offset) {
-            assert!(hover.markdown.contains("operator") || hover.markdown.contains("==>"), "{}", hover.markdown);
+            assert!(
+                hover.markdown.contains("operator") || hover.markdown.contains("==>"),
+                "{}",
+                hover.markdown
+            );
         }
         return;
     };

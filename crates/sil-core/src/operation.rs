@@ -3,11 +3,11 @@
 use crate::app::App;
 use crate::component::Component;
 use crate::expr::Expr;
+use crate::game::{GameCapabilities, DEFAULT_GAME_FPS, DEFAULT_GAME_PORT};
 use crate::model_catalog::{
     validate_embedding_model_id, validate_model_id, DEFAULT_EMBEDDING_MODEL_ID, DEFAULT_MODEL_ID,
     DEFAULT_TENSOR_INPUT_FIELD, DEFAULT_TENSOR_OUTPUT_FIELD, MINILM_EMBEDDING_DIM,
 };
-use crate::game::{GameCapabilities, DEFAULT_GAME_FPS, DEFAULT_GAME_PORT};
 use crate::module::{Module, ModuleKind};
 use crate::pipeline::PipelineStep;
 use crate::program::Program;
@@ -409,7 +409,7 @@ pub fn classify_program(program: &Program) -> Result<ExecutionMode, String> {
             ));
         }
         return Err(format!(
-            "cannot mix stub-only and executable operations; supported runnable ops: {SUPPORTED_OPS_HELP}"
+            "cannot mix stub-only and executable operations; supported runnable operations: {SUPPORTED_OPS_HELP}"
         ));
     }
     if saw_exec || declaration_runnable {
@@ -420,7 +420,7 @@ pub fn classify_program(program: &Program) -> Result<ExecutionMode, String> {
                         namespace: Some(ns),
                         name,
                         ..
-                } = step
+                    } = step
                     {
                         if is_v1_exec_namespace(ns) && !is_executable_op(ns, name) {
                             return Err(format!(
@@ -1132,7 +1132,13 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
                 Some(DEFAULT_TENSOR_OUTPUT_FIELD.into()),
             )
         } else if loop_ask {
-            (Some(crate::model_catalog::DEFAULT_MODEL_ID.to_string()), None, None, None, None)
+            (
+                Some(crate::model_catalog::DEFAULT_MODEL_ID.to_string()),
+                None,
+                None,
+                None,
+                None,
+            )
         } else {
             (None, None, None, None, None)
         };

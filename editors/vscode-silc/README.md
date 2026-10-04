@@ -33,9 +33,9 @@ Hover works on:
 | Resource methods | `Articles.list()` |
 | Query bindings | `query $.articles = …` |
 | Contracts / fields | `Article`, `$article.title` |
-| Components / props / state / handlers | `AdminPage`, `$.q`, parameters |
-| UI primitives & props | `ui::table`, `:sortable` |
-| Executable ops | `llm::complete`, `scrape::page` |
+| Components / options / state / handlers | `AdminPage`, `$.q`, parameters |
+| UI primitives & options | `ui::table`, `:sortable` |
+| Executable operations | `llm::complete`, `scrape::page` |
 | Keywords, operators, builtin types | `query`, `==>`, `Str` |
 
 ## Development
@@ -57,13 +57,14 @@ Point the editor at a local binary without reinstalling:
 
 | Silc construct | Example | Scope |
 | --- | --- | --- |
-| Declarations | `contract`, `component`, `resource`, `app`, `game`, `service`, `processor`, `sink`, `task`, `subset`, `class` | `storage.type.declaration.silc` |
+| Declarations | `subset`, `contract`, `component`, `resource`, `app`, `game`, `loop`, `service`, `processor`, `task` | `storage.type.declaration.silc` |
+| Removed declarations | `class`, `sink` (rejected by the parser; see ADR-002 / ADR-009) | `invalid.deprecated.declaration.silc` |
 | Members | `has`, `method`, `query`, `mutation`, `seed`, `slot`, `emit`, `state` | `keyword.other.member.silc` |
 | Control | `when`, `else`, `for`, `await`, `route` | `keyword.control.silc` |
 | Modifiers | `is`, `of`, `where` | `storage.modifier.silc` |
 | Builtin types | `Str`, `UUID`, `Bool`, `Int`, `num32`, `num64`, `int32`, `int64`, `Vec` | `support.type.builtin.silc` |
 | Namespaced calls | `ui::stack`, `llm::complete`, `scrape::site`, `game::scene` | `support.class.namespace.silc` + `support.function.builtin.silc` |
-| Colon pairs | `:label("Save")`, `:sortable` | `entity.other.attribute-name.silc` |
+| Options (colon pairs) | `:label("Save")`, `:sortable` | `entity.other.attribute-name.silc` |
 | Attributes | `$.title`, `$record` | `variable.other.member.silc` |
 | Feed / arrows | `==>`, `=>`, `->` | `keyword.operator.feed.silc`, `keyword.operator.arrow.silc` |
 | Annotations | `@version("0.5.0")` | `entity.name.function.decorator.silc` |

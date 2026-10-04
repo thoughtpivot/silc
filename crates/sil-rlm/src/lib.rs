@@ -17,7 +17,7 @@ pub mod tools;
 pub use complete::{ChatReply, ChatRequest, Completer, ScriptedCompleter};
 pub use corpus::{find_agents_md, Corpus};
 pub use progress::{
-    draft_preview, truncate_one_line, ActionKind, ProgressEvent, ProgressReporter, NullProgress,
+    draft_preview, truncate_one_line, ActionKind, NullProgress, ProgressEvent, ProgressReporter,
 };
 pub use session::{run_assist, AssistError, AssistResult, AssistSeed, HISTORY_CAP};
 pub use tools::{BudgetStats, Budgets, MIN_DRAFT_CHARS};

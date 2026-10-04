@@ -92,8 +92,7 @@ impl Program {
         }
         if !self.games.is_empty() && !self.apps.is_empty() {
             return Err(
-                "cannot mix `game` and `app` in one program; game programs are WebGPU-only"
-                    .into(),
+                "cannot mix `game` and `app` in one program; game programs are WebGPU-only".into(),
             );
         }
         if self.games.len() > 1 {
@@ -409,7 +408,7 @@ fn validate_component_template(
                 for prop in &target.props {
                     if prop.default.is_none() && node.prop(&prop.name).is_none() {
                         return Err(format!(
-                            "component `{}` invocation in `{}` is missing required prop `:{}`",
+                            "component `{}` invocation in `{}` is missing required option `:{}`",
                             target.name, owner.name, prop.name
                         ));
                     }
@@ -417,7 +416,7 @@ fn validate_component_template(
                 for (name, _) in &node.props {
                     if !target.props.iter().any(|prop| prop.name == *name) {
                         return Err(format!(
-                            "unknown prop `:{name}` on component `{}`",
+                            "unknown option `:{name}` on component `{}`",
                             target.name
                         ));
                     }

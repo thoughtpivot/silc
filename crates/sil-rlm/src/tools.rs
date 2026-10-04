@@ -160,10 +160,7 @@ pub fn parse_turn(text: &str) -> ParsedTurn {
 
 /// Turn a bare Silc program reply into a `draft_set` call.
 fn implicit_draft_set(text: &str) -> Option<ToolCall> {
-    if !(text.contains("```silc")
-        || text.contains("<silc>")
-        || text.contains("@version("))
-    {
+    if !(text.contains("```silc") || text.contains("<silc>") || text.contains("@version(")) {
         return None;
     }
     let mut program = extract_program(text);
@@ -698,9 +695,8 @@ app App { route "/" => Home; }
 
     #[test]
     fn silc_sentinel_becomes_draft_set() {
-        let turn = parse_turn(
-            "<silc>\n@version(\"0.5.0\")\ncontract Note { has Str $.text; }\n</silc>",
-        );
+        let turn =
+            parse_turn("<silc>\n@version(\"0.5.0\")\ncontract Note { has Str $.text; }\n</silc>");
         match turn {
             ParsedTurn::Tool(c) => {
                 assert_eq!(c.name, "draft_set");
@@ -732,7 +728,9 @@ app App { route "/" => Home; }
                     msg.contains("widened") || msg.contains(":id"),
                     "expected auto-widen or seed/:id hits, got: {msg}"
                 );
-                assert!(!msg.lines().all(|l| l.contains("(no matches)") && !l.contains("widened")));
+                assert!(!msg
+                    .lines()
+                    .all(|l| l.contains("(no matches)") && !l.contains("widened")));
             }
             ToolOutcome::Finished(_) => panic!("unexpected finish"),
         }
