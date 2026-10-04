@@ -12,6 +12,7 @@ use std::fs;
 use std::io::{BufReader, BufWriter};
 use std::net::TcpListener;
 use std::os::unix::net::{UnixListener, UnixStream};
+use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -19,6 +20,71 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
+
+/// Configure a supervised worker so it dies with `silc` and is not left under pid 1.
+///
+/// - New process group: terminal SIGINT reaches only `silc`, which then tears the tree down
+///   cleanly (avoids the loop-kernel restart race where SIGINT kills the kernel and the
+///   supervisor respawns it before `stop` is set).
+/// - Linux `PR_SET_PDEATHSIG`: if `silc` is SIGKILL'd or otherwise exits without cleanup,
+///   workers receive SIGTERM instead of being reparented to init while still running.
+fn configure_worker(command: &mut Command) -> &mut Command {
+    unsafe {
+        command.pre_exec(|| {
+            #[cfg(target_os = "linux")]
+            {
+                // PR_SET_PDEATHSIG == 1
+                if libc::prctl(1, libc::SIGTERM) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                // Parent may have died between fork and prctl.
+                if libc::getppid() == 1 {
+                    let _ = libc::raise(libc::SIGTERM);
+                }
+            }
+            Ok(())
+        });
+    }
+    command.process_group(0)
+}
+
+/// Kill a worker and its process group, then wait for the Child handle.
+fn kill_worker_tree(child: &mut Child) {
+    let pid = child.id() as i32;
+    if pid > 0 {
+        unsafe {
+            // Negative pid: entire process group created by `process_group(0)`.
+            let _ = libc::kill(-pid, libc::SIGTERM);
+        }
+        let deadline = Instant::now() + Duration::from_millis(500);
+        while Instant::now() < deadline {
+            match child.try_wait() {
+                Ok(Some(_)) => return,
+                Ok(None) => thread::sleep(Duration::from_millis(20)),
+                Err(_) => break,
+            }
+        }
+        unsafe {
+            let _ = libc::kill(-pid, libc::SIGKILL);
+        }
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+fn kill_worker_slot(slot: &Mutex<Option<Child>>) {
+    if let Ok(mut guard) = slot.lock() {
+        if let Some(mut child) = guard.take() {
+            kill_worker_tree(&mut child);
+        }
+    }
+}
+
+fn kill_all_workers(children: &mut [Child]) {
+    for child in children.iter_mut() {
+        kill_worker_tree(child);
+    }
+}
 
 struct WorkerPool {
     writers: Vec<Arc<Mutex<BufWriter<UnixStream>>>>,
@@ -143,7 +209,8 @@ fn supervise_loop_kernel(
     let spawn = {
         let bin = bin.clone();
         move || {
-            Command::new(&bin)
+            let mut cmd = Command::new(&bin);
+            configure_worker(&mut cmd)
                 .env("SILC_SOCKET", &socket)
                 .env("SILC_DB_PATH", &db_path)
                 .env("SILC_LOOP_PLAN", &plan)
@@ -158,8 +225,9 @@ fn supervise_loop_kernel(
     let handle = thread::spawn(move || {
         let mut restarts = 0u32;
         loop {
-            thread::sleep(Duration::from_millis(500));
+            thread::sleep(Duration::from_millis(200));
             if stop.load(Ordering::SeqCst) {
+                kill_worker_slot(&watch);
                 break;
             }
             let exited = match watch.lock() {
@@ -171,12 +239,17 @@ fn supervise_loop_kernel(
             };
             if let Some(status) = exited {
                 if stop.load(Ordering::SeqCst) {
+                    kill_worker_slot(&watch);
                     break;
                 }
                 restarts += 1;
                 let backoff = Duration::from_millis(500 * u64::from(restarts.min(10)));
                 eprintln!("silc: loop kernel exited ({status}); restarting in {backoff:?}");
                 thread::sleep(backoff);
+                if stop.load(Ordering::SeqCst) {
+                    kill_worker_slot(&watch);
+                    break;
+                }
                 match spawn() {
                     Ok(child) => {
                         if let Ok(mut guard) = watch.lock() {
@@ -421,10 +494,10 @@ pub fn run_game(output: &EmitResult, lock: &RuntimeLock) -> Result<(), String> {
         .env("SILC_DB_PATH", &db_path)
         .env("SILC_SQLITE_TABLE", &graph.sqlite_table)
         .env("SILC_HTTP_PORT", graph.http_port.to_string())
-        .env("SILC_COGNITION_PORT", cognition_port.to_string());
-    let bun_child = bun_cmd
+        .env("SILC_COGNITION_PORT", cognition_port.to_string())
         .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    let bun_child = configure_worker(&mut bun_cmd)
         .spawn()
         .map_err(|e| format!("failed to spawn game Bun worker: {e}"))?;
     children.push(bun_child);
@@ -453,10 +526,7 @@ pub fn run_game(output: &EmitResult, lock: &RuntimeLock) -> Result<(), String> {
             }
         }
     }
-    for child in &mut children {
-        let _ = child.kill();
-        let _ = child.wait();
-    }
+    kill_all_workers(&mut children);
     let _ = fs::remove_file(&socket_abs);
     let _ = fs::remove_file(&socket_path);
     println!("silc: stopped");
@@ -514,7 +584,7 @@ fn spawn_game_cognition_worker(
     if let Some(path) = model_path.as_ref() {
         cmd.env("SILC_MODEL_PATH", path);
     }
-    let child = cmd
+    let child = configure_worker(&mut cmd)
         .spawn()
         .map_err(|e| format!("failed to spawn game cognition worker: {e}"))?;
     children.push(child);
@@ -940,10 +1010,12 @@ pub fn run_api(output: &EmitResult, _lock: &RuntimeLock) -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
 
-    let mut child = Command::new(&api_bin)
+    let mut child = Command::new(&api_bin);
+    configure_worker(&mut child)
         .env("SILC_API_PORT", port.to_string())
         .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    let mut child = child
         .spawn()
         .map_err(|e| format!("failed to spawn Silc Go API worker: {e}"))?;
 
@@ -956,8 +1028,7 @@ pub fn run_api(output: &EmitResult, _lock: &RuntimeLock) -> Result<(), String> {
     println!("silc: press Ctrl-C to stop");
 
     wait_for_ctrl_c();
-    let _ = child.kill();
-    let _ = child.wait();
+    kill_worker_tree(&mut child);
     println!("silc: stopped");
     Ok(())
 }
@@ -1068,13 +1139,15 @@ pub fn run_loop_command(output: &EmitResult, lock: &RuntimeLock) -> Result<(), S
             wait_for_pool(&workers, "python", 1, Duration::from_secs(300))?;
         }
         eprintln!("silc: running {} once", graph.loops.join(", "));
-        let mut kernel = Command::new(&kernel_bin)
+        let mut kernel_cmd = Command::new(&kernel_bin);
+        configure_worker(&mut kernel_cmd)
             .env("SILC_SOCKET", &socket_path)
             .env("SILC_DB_PATH", &db_path)
             .env("SILC_LOOP_PLAN", output.root.join("loop/plan.json"))
             .env("SILC_LOOP_ONCE", "1")
             .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
+            .stderr(Stdio::inherit());
+        let mut kernel = kernel_cmd
             .spawn()
             .map_err(|e| format!("failed to spawn Silc loop kernel: {e}"))?;
         let status = kernel
@@ -1099,10 +1172,7 @@ pub fn run_loop_command(output: &EmitResult, lock: &RuntimeLock) -> Result<(), S
             }
         }
     }
-    for child in &mut children {
-        let _ = child.kill();
-        let _ = child.wait();
-    }
+    kill_all_workers(&mut children);
     let _ = fs::remove_file(&socket_path);
     result
 }
@@ -1273,10 +1343,12 @@ fn run_graph(
             return Err(format!("Go API binary missing at {}", api_bin.display()));
         }
         let api_port = graph.api_port().unwrap();
-        let api_child = Command::new(&api_bin)
+        let mut api_cmd = Command::new(&api_bin);
+        configure_worker(&mut api_cmd)
             .env("SILC_API_PORT", api_port.to_string())
             .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
+            .stderr(Stdio::inherit());
+        let api_child = api_cmd
             .spawn()
             .map_err(|e| format!("failed to spawn Silc Go API worker: {e}"))?;
         children.push(api_child);
@@ -1330,7 +1402,7 @@ fn run_graph(
     if let Some(input_json) = pipeline_input {
         bun_cmd.env("SILC_PIPELINE_INPUT_JSON", input_json);
     }
-    let bun_child = bun_cmd
+    let bun_child = configure_worker(&mut bun_cmd)
         .spawn()
         .map_err(|e| format!("failed to spawn Silc Bun worker: {e}"))?;
     children.push(bun_child);
@@ -1357,6 +1429,10 @@ fn run_graph(
             .wait()
             .map_err(|error| format!("wait for pipeline ingress: {error}"))?;
         stop.store(true, Ordering::SeqCst);
+        if let Some((watcher, slot)) = loop_kernel {
+            kill_worker_slot(&slot);
+            let _ = watcher.join();
+        }
         let _ = UnixStream::connect(&socket_path);
         let _ = accept_workers.join();
         if let Ok(map) = workers.lock() {
@@ -1368,10 +1444,7 @@ fn run_graph(
                 }
             }
         }
-        for child in &mut children {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
+        kill_all_workers(&mut children);
         let _ = fs::remove_file(&socket_path);
         return if status.success() {
             Ok(())
@@ -1401,8 +1474,8 @@ fn run_graph(
         // leaves mouse-move reports (`35;col;rowM`) for the shell to execute.
         if terminal_main.is_file() && has_tty {
             saved_tty = capture_tty();
-            // Classic JSX so TerminalApp lowers to OpenTUI `h`, not React.
-            let opentui = Command::new(&lock.bun_bin)
+            let mut opentui = Command::new(&lock.bun_bin);
+            opentui
                 .arg("--jsx-runtime=classic")
                 .arg("--jsx-factory=h")
                 .arg("--jsx-fragment=Fragment")
@@ -1417,8 +1490,8 @@ fn run_graph(
                 )
                 .stdout(Stdio::inherit())
                 .stderr(Stdio::inherit())
-                .stdin(Stdio::inherit())
-                .spawn();
+                .stdin(Stdio::inherit());
+            let opentui = configure_worker(&mut opentui).spawn();
             match opentui {
                 Ok(child) => {
                     children.push(child);
@@ -1464,14 +1537,10 @@ fn run_graph(
 
     wait_for_ctrl_c();
     stop.store(true, Ordering::SeqCst);
+    // Kill the loop kernel before joining its watcher so a mid-restart spawn cannot race.
     if let Some((watcher, slot)) = loop_kernel {
+        kill_worker_slot(&slot);
         let _ = watcher.join();
-        if let Ok(mut guard) = slot.lock() {
-            if let Some(mut child) = guard.take() {
-                let _ = child.kill();
-                let _ = child.wait();
-            }
-        }
     }
     let _ = UnixStream::connect(&socket_path);
     let _ = accept_workers.join();
@@ -1485,10 +1554,7 @@ fn run_graph(
             }
         }
     }
-    for child in &mut children {
-        let _ = child.kill();
-        let _ = child.wait();
-    }
+    kill_all_workers(&mut children);
     if saved_tty.is_some() {
         restore_tty(saved_tty);
     }
@@ -2114,7 +2180,7 @@ fn spawn_workers(
             command.env("SILC_LLM_N_CTX", n_ctx);
         }
         children.push(
-            command
+            configure_worker(&mut command)
                 .spawn()
                 .map_err(|e| format!("failed to spawn Silc CPython worker: {e}"))?,
         );
@@ -2124,14 +2190,16 @@ fn spawn_workers(
         return Err(format!("Go worker binary missing at {}", go_bin.display()));
     }
     for _ in 0..go_replicas {
+        let mut go_cmd = Command::new(&go_bin);
+        configure_worker(&mut go_cmd)
+            .env("SILC_SOCKET", socket)
+            .env("SILC_IPC_DIR", ipc_dir)
+            .env("SILC_DB_PATH", data_dir.join("app.db"))
+            .env("SILC_SQLITE_TABLE", &graph.sqlite_table)
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit());
         children.push(
-            Command::new(&go_bin)
-                .env("SILC_SOCKET", socket)
-                .env("SILC_IPC_DIR", ipc_dir)
-                .env("SILC_DB_PATH", data_dir.join("app.db"))
-                .env("SILC_SQLITE_TABLE", &graph.sqlite_table)
-                .stdout(Stdio::null())
-                .stderr(Stdio::inherit())
+            go_cmd
                 .spawn()
                 .map_err(|e| format!("failed to spawn Silc Go worker: {e}"))?,
         );
@@ -2223,5 +2291,50 @@ fn set_handler(tx: std::sync::mpsc::Sender<()>) {
     unsafe {
         libc::signal(libc::SIGINT, on_signal as *const () as usize);
         libc::signal(libc::SIGTERM, on_signal as *const () as usize);
+    }
+}
+
+#[cfg(test)]
+mod worker_lifecycle_tests {
+    use super::{configure_worker, kill_worker_tree};
+    use std::process::{Command, Stdio};
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    fn process_alive(pid: u32) -> bool {
+        unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
+    }
+
+    #[test]
+    fn kill_worker_tree_stops_process_group() {
+        let mut cmd = Command::new("sleep");
+        configure_worker(&mut cmd)
+            .arg("30")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let mut child = cmd.spawn().expect("spawn sleep");
+        let pid = child.id();
+        assert!(process_alive(pid), "worker should be running");
+        kill_worker_tree(&mut child);
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while Instant::now() < deadline && process_alive(pid) {
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert!(!process_alive(pid), "worker tree should be dead after kill");
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn configure_worker_sets_process_group() {
+        let mut cmd = Command::new("sleep");
+        configure_worker(&mut cmd)
+            .arg("5")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let mut child = cmd.spawn().expect("spawn");
+        let pid = child.id() as i32;
+        let pgid = unsafe { libc::getpgid(pid) };
+        assert_eq!(pgid, pid, "worker should be its own process-group leader");
+        kill_worker_tree(&mut child);
     }
 }

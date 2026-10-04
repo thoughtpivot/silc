@@ -1,0 +1,49 @@
+#!/usr/bin/env silc
+# Minimal loop+app fixture for THO-121 lifecycle tests. No silclm.
+@version("0.6.0")
+
+contract Item {
+    has Str $.id;
+    has Str $.name;
+}
+
+resource Items for Item {
+    query list;
+    mutation create;
+    seed Item.new(:id("a"), :name("alpha"));
+}
+
+loop Pulse {
+    loop::flow(
+        loop::schedule(:cron("0 0 1 1 *"), :tz("UTC"), :catch_up("1h")),
+        loop::find(:as(all), :from(Items.list), :max(10)),
+        loop::notify(
+            :to("ops"),
+            :text("pulse count {$all.count}"),
+            :key("pulse:{$today}")
+        )
+    )
+}
+
+component Board {
+    query $.items = Items.list();
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("Pulse"))),
+            ui::stack(
+                ui::section(
+                    :title("Items"),
+                    ui::table(
+                        :rows($.items),
+                        :columns(["name"]),
+                        :empty_text("none")
+                    )
+                )
+            )
+        )
+    }
+}
+
+app PulseApp {
+    route "/" => Board;
+}
