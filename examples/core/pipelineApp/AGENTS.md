@@ -125,7 +125,7 @@ API contract (options / events / slots / children).
 
 #### Shell and navigation
 
-- `ui::page` — options: none; events: none; slots: `app_bar`→`app_bar`, `side_panel`→`side_panel`, `footer`→`footer`; children: anyOf(`stack`, `row`, `grid`, `card`, `heading`, `text`, `form`, `text_input`, `textarea`, `file_input`, `radio_group`, `select`, `checkbox`, `switch`, `field`, `button`, `toolbar`, `chat`, `chat_history`, `search_input`, `filter_bar`, `collection`, `list`, `table`, `badge`, `alert`, `divider`, `section`, `description_list`, `tabs`, `dialog`, `loading`, `empty`, `nav_item`); surfaces: web+terminal
+- `ui::page` — options: none; events: none; slots: `app_bar`→`app_bar`, `side_panel`→`side_panel`, `footer`→`footer`; children: anyOf(`stack`, `row`, `grid`, `card`, `heading`, `text`, `form`, `text_input`, `textarea`, `file_input`, `radio_group`, `select`, `checkbox`, `switch`, `field`, `button`, `toolbar`, `chat`, `chat_history`, `search_input`, `filter_bar`, `collection`, `list`, `table`, `badge`, `alert`, `divider`, `section`, `description_list`, `tabs`, `dialog`, `loading`, `empty`, `embed`, `nav_item`); surfaces: web+terminal
 - `ui::app_bar` — options: `title` (required); events: none; slots: none; children: none; surfaces: web+terminal
 - `ui::side_panel` — options: none; events: none; slots: none; children: anyOf(`nav_item`); surfaces: web+terminal
 - `ui::nav_item` — options: `label` (required), `to?`, `active?` (flag); events: `click`; slots: none; children: none; surfaces: web+terminal
@@ -179,6 +179,8 @@ API contract (options / events / slots / children).
 - `ui::dialog` — options: `open` (required), `title?`; events: `confirm`, `cancel`; slots: none; children: any; surfaces: web+terminal
 - `ui::loading` — options: `text?`; events: none; slots: none; children: none; surfaces: web+terminal
 - `ui::empty` — options: `text?`; events: none; slots: none; children: none; surfaces: web+terminal
+- `ui::embed` — options: `src` (required), `title?`; events: none; slots: none; children: none; surfaces: web+terminal
+  - Web: sandboxed iframe (`allow-scripts`, never with `allow-same-origin`); terminal: card with title, full URL, and “Open in a browser”. Not a canvas over telnet; no `srcdoc` / postMessage bridge (ADR-017).
 
 ### Complete game::* catalog (ADR-012)
 

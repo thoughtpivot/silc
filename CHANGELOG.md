@@ -40,6 +40,9 @@ Entries before 0.5.0 are reconstructed from the commit history.
 
 ### Added
 
+- `ui::embed` — dual-surface URL viewport (`:src` required, `:title?`). Web
+  lowers to a sandboxed iframe; terminal lowers to a title/URL/“Open in a
+  browser” card (THO-119, [ADR-017](docs/ADR-017-ui-embed.md)).
 - [docs/SILC-LANGUAGE.md](docs/SILC-LANGUAGE.md): the normative language
   surface, including the list of known irregularities scheduled for 0.6.0.
 - [docs/GLOSSARY.md](docs/GLOSSARY.md): one meaning per term and the retired

@@ -74,6 +74,7 @@ pub fn render_web_app(
     out.push_str("import { Dialog } from \"./components/ui/dialog\";\n");
     out.push_str("import { Loading } from \"./components/ui/loading\";\n");
     out.push_str("import { Empty } from \"./components/ui/empty\";\n");
+    out.push_str("import { Embed } from \"./components/ui/embed\";\n");
     out.push_str("\n");
     // Empty arrays/objects are truthy in JS; Silc `when` treats them as empty.
     out.push_str(
@@ -1606,6 +1607,19 @@ fn render_node(node: &UiNode, indent: usize) -> String {
                 .map(expr_to_js)
                 .unwrap_or_else(|| "\"No items\"".into())
         ),
+        "embed" => {
+            let src = prop_js(node, "src");
+            let title = node
+                .prop("title")
+                .map(expr_to_js)
+                .unwrap_or_else(|| "undefined".into());
+            format!(
+                "{pad}<Embed src={{{src}}} title={{{title}}} />",
+                pad = pad,
+                src = src,
+                title = title
+            )
+        }
         other => panic!(
             "silc codegen: no web/terminal lowerer for ui::{other} — add a render_node arm"
         ),
@@ -1953,7 +1967,7 @@ pub fn render_terminal_app(
         out.push_str(
             "  DescriptionList, Tabs, Tab, Dialog, DataTable, ChatThread, ChatComposer,\n",
         );
-        out.push_str("  HistoryPanel, SearchInput, FilterBar, Loading, Empty, Main,\n");
+        out.push_str("  HistoryPanel, SearchInput, FilterBar, Loading, Empty, Embed, Main,\n");
         out.push_str("} from \"./components/terminal/components\";\n\n");
         out.push_str("let __silcNavigateImpl = (_path) => {};\n");
         out.push_str("export function __silcNavigate(path) { __silcNavigateImpl(path); }\n\n");
@@ -2142,6 +2156,7 @@ const LOWERED_BUILTINS: &[&str] = &[
     "dialog",
     "loading",
     "empty",
+    "embed",
 ];
 
 #[cfg(test)]
@@ -2239,6 +2254,55 @@ mod tests {
         assert!(term_select.contains("SelectField") && term_select.contains("disabled={true}"));
         assert!(web_section.contains("Section") && web_section.contains("Stock"));
         assert!(term_section.contains("Section") && term_section.contains("Stock"));
+    }
+
+    #[test]
+    fn lowers_embed_web_iframe_and_terminal_card() {
+        let embed = UiNode {
+            component: "embed".into(),
+            component_span: Default::default(),
+            prop_spans: vec![],
+            props: vec![
+                (
+                    "src".into(),
+                    Expr::String("http://127.0.0.1:18140/".into()),
+                ),
+                ("title".into(), Expr::String("Firefly Run".into())),
+            ],
+            events: vec![],
+            slots: vec![],
+            children: vec![],
+            span: Span::default(),
+        };
+        let web = with_surface(SurfaceKind::Web, || {
+            render_template(&UiTemplate::Node(embed.clone()), 0)
+        });
+        let term = with_surface(SurfaceKind::Terminal, || {
+            render_template(&UiTemplate::Node(embed), 0)
+        });
+        assert!(web.contains("<Embed"));
+        assert!(web.contains("http://127.0.0.1:18140/"));
+        assert!(web.contains("Firefly Run"));
+        assert!(term.contains("<Embed"));
+        assert!(term.contains("http://127.0.0.1:18140/"));
+        assert!(term.contains("Firefly Run"));
+
+        // Template contracts: sandbox tokens and terminal card copy.
+        let web_tsx = include_str!("../templates/ui_web_embed.tsx");
+        assert!(web_tsx.contains("sandbox=\"allow-scripts allow-pointer-lock\""));
+        assert!(web_tsx.contains("allow=\"fullscreen; gamepad\""));
+        assert!(
+            !web_tsx.contains("sandbox=\"allow-scripts allow-same-origin\"")
+                && !web_tsx.contains("sandbox=\"allow-same-origin"),
+            "embed sandbox must not grant same-origin with scripts"
+        );
+        assert!(!web_tsx.contains("srcdoc"));
+        assert!(web_tsx.contains("min-h-[70vh]"));
+
+        let term_ts = include_str!("../templates/ui_terminal_components.ts");
+        assert!(term_ts.contains("Open in a browser"));
+        assert!(term_ts.contains("Embedded page"));
+        assert!(term_ts.contains("export function Embed"));
     }
 
     #[test]

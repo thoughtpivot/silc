@@ -85,6 +85,7 @@ const UI_WEB_TABS_TSX: &str = include_str!("../templates/ui_web_tabs.tsx");
 const UI_WEB_DIALOG_TSX: &str = include_str!("../templates/ui_web_dialog.tsx");
 const UI_WEB_LOADING_TSX: &str = include_str!("../templates/ui_web_loading.tsx");
 const UI_WEB_EMPTY_TSX: &str = include_str!("../templates/ui_web_empty.tsx");
+const UI_WEB_EMBED_TSX: &str = include_str!("../templates/ui_web_embed.tsx");
 const UI_TERMINAL_RUNTIME_TS: &str = include_str!("../templates/ui_terminal_runtime.ts");
 const UI_TERMINAL_COMPONENTS_TS: &str = include_str!("../templates/ui_terminal_components.ts");
 const UI_TERMINAL_MAIN_TS: &str = include_str!("../templates/ui_terminal_main.ts");
@@ -310,6 +311,7 @@ pub fn emit(
                     "typescript/src/components/ui/dialog.tsx",
                     "typescript/src/components/ui/loading.tsx",
                     "typescript/src/components/ui/empty.tsx",
+                    "typescript/src/components/ui/embed.tsx",
                     "typescript/tailwind.config.js",
                     "typescript/index.html",
                     "typescript/package.json",
@@ -1087,6 +1089,10 @@ fn emit_ui_app(
         (
             root.join("typescript/src/components/ui/empty.tsx"),
             UI_WEB_EMPTY_TSX.to_string(),
+        ),
+        (
+            root.join("typescript/src/components/ui/embed.tsx"),
+            UI_WEB_EMBED_TSX.to_string(),
         ),
         (
             root.join("python/worker.py"),
@@ -2110,6 +2116,9 @@ service FeedbackApi {
                     .is_file()
                 && output
                     .join("typescript/src/components/ui/dialog.tsx")
+                    .is_file()
+                && output
+                    .join("typescript/src/components/ui/embed.tsx")
                     .is_file(),
             "phase-1/2 web primitives must be emitted"
         );
@@ -2136,6 +2145,7 @@ service FeedbackApi {
             "Tabs",
             "Dialog",
             "DataTable",
+            "Embed",
         ] {
             assert!(
                 terminal_components.contains(&format!("export function {export}")),
