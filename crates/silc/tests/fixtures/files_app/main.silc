@@ -1,0 +1,21 @@
+#!/usr/bin/env silc
+# Fixture for the `files` capability (ADR-018): one shared directory, one browser.
+@version("0.6.0")
+
+component FilesPage {
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("Files fixture"))),
+            ui::section(
+                :title("File library"),
+                :description("Browse the sysop's shared folder."),
+                ui::file_browser(:title("File library"), :empty_text("Nothing here yet."))
+            )
+        )
+    }
+}
+
+app FilesApp {
+    route "/" => FilesPage;
+    files "./files";
+}

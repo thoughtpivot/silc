@@ -8,6 +8,7 @@
   [ADR-004](ADR-004-runtime-strengths.md),
   [ADR-009](ADR-009-compiler-synthesized-runtime.md),
   [ADR-017](ADR-017-ui-embed.md),
+  [ADR-018](ADR-018-files-capability.md),
   [ARCHITECTURE.md](ARCHITECTURE.md)
 - **Superseded by (partial):** [ADR-009](ADR-009-compiler-synthesized-runtime.md)
   for author-declared `ui::web` / `ui::terminal` / `method serve()` mechanics.
@@ -96,6 +97,13 @@ terminal lowers to a title/URL/“Open in a browser” card. Full sandbox tokens
 WebGPU-in-iframe findings, and non-goals live in
 [ADR-017](ADR-017-ui-embed.md). This addendum does **not** change ADR-012’s ban
 on mixing `game` with `app` / `component` / `resource`.
+
+### Addendum: `files` and `ui::file_browser` (2026-10-04)
+
+`files "<dir>";` inside an `app` names one sysop-shared directory. `ui::file_browser`
+lists it and downloads files as-is and folders as a zip, through synthesized
+`GET /files/list` and `GET /files/download`. Terminal shows URLs instead of
+transferring bytes. Full rules live in [ADR-018](ADR-018-files-capability.md).
 
 ### Page slots and child rules
 

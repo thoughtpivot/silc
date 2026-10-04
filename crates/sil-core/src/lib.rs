@@ -25,7 +25,7 @@ pub mod target;
 pub mod types;
 pub mod ui;
 
-pub use app::{App, Route};
+pub use app::{App, FilesDecl, Route};
 pub use component::{
     CompField, Component, EmitDecl, EventBinding, Handler, QueryBinding, SlotDecl, UiNode,
     UiTemplate,

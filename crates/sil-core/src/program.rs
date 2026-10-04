@@ -305,6 +305,25 @@ impl Program {
                     ));
                 }
             }
+            if let Some(files) = &app.files {
+                let p = files.path.trim();
+                if p.contains("..") {
+                    return Err(format!(
+                        "app `{}` `files` directory `{}` must not contain `..`; use a path inside the project",
+                        app.name, files.path
+                    ));
+                }
+            }
+        }
+        // `ui::file_browser` is served by the synthesized `/files/*` routes, which
+        // exist only when an app names the directory with `files "<dir>";`.
+        let uses_file_browser = self
+            .all_components()
+            .any(|c| c.render.contains_component("file_browser"));
+        if uses_file_browser && !self.apps.iter().any(|a| a.files.is_some()) {
+            return Err(
+                "`ui::file_browser` requires the app to declare a shared directory: add `files \"./files\";` inside the `app` block".into(),
+            );
         }
 
         for resource in &self.resources {

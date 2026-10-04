@@ -8,6 +8,12 @@ Entries before 0.5.0 are reconstructed from the commit history.
 
 ### Added
 
+- `files "<dir>";` on an `app` plus `ui::file_browser`. The synthesized worker
+  serves `GET /files/list` and `GET /files/download`: files stream as
+  attachments, folders (and `zip=1`) stream a zip from the pinned CPython.
+  Paths stay inside the share. Terminal lists URLs instead of transferring
+  bytes ([ADR-018](docs/ADR-018-files-capability.md)).
+
 - Synthesized MCP server on `POST /mcp` for programs with an `app` (or a loop
   web surface). Tools come from resource queries/mutations and schedule/manual
   loops (`talks_list`, `talk_today_run`, …). Auth is `SILC_MCP_TOKEN`. The plan

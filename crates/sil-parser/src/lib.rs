@@ -3,8 +3,8 @@
 use sil_core::{
     App, CompField, Component, Contract, EmitDecl, EventBinding, Expr, Field, Game, GameNode,
     Handler, Loop, LoopNode, Method, Module, ModuleKind, Param, Pipeline, PipelineStep, Program,
-    QueryBinding, Resource, ResourceKind, ResourceMethod, ResourceSeed, Route, SlotDecl, Span,
-    Subset, SubsetPredicate, TraitArg, TypeExpr, UiNode, UiTemplate,
+    FilesDecl, QueryBinding, Resource, ResourceKind, ResourceMethod, ResourceSeed, Route,
+    SlotDecl, Span, Subset, SubsetPredicate, TraitArg, TypeExpr, UiNode, UiTemplate,
 };
 use sil_lexer::{lex, SpannedToken, Token};
 
@@ -915,8 +915,38 @@ impl Parser {
 
     fn parse_app_body(&mut self, name: String, start: Span) -> Result<App, ParseError> {
         let mut routes = Vec::new();
+        let mut files: Option<FilesDecl> = None;
         while !matches!(self.peek(), Some(Token::RBrace)) {
             match self.peek() {
+                // `files "<dir>";` — sysop-shared directory (ADR-018). `files` stays an
+                // ordinary identifier everywhere else, so it is matched by name here.
+                Some(Token::Ident(kw)) if kw == "files" => {
+                    let span = self.current_span();
+                    if files.is_some() {
+                        return Err(self.error_here(
+                            "an app may declare `files` only once; one shared directory per app",
+                        ));
+                    }
+                    self.advance();
+                    let path = match self.advance_token()? {
+                        Token::StringLit(s) => s.trim_matches('"').to_string(),
+                        _ => {
+                            return Err(self.error_here(
+                                "expected a directory string after `files`, e.g. `files \"./files\";`",
+                            ))
+                        }
+                    };
+                    if path.trim().is_empty() {
+                        return Err(self.error_here("`files` directory must not be empty"));
+                    }
+                    if matches!(self.peek(), Some(Token::Semi)) {
+                        self.advance();
+                    }
+                    files = Some(FilesDecl {
+                        path,
+                        span: self.finish_span(span),
+                    });
+                }
                 Some(Token::Route) => {
                     let span = self.current_span();
                     self.advance();
@@ -940,12 +970,13 @@ impl Parser {
                         "app `method serve()` is not supported in Silc 0.6.0; declare routes only — dual-surface web/terminal serving is synthesized by the compiler",
                     ));
                 }
-                _ => return Err(self.error_here("expected `route` or `}`")),
+                _ => return Err(self.error_here("expected `route`, `files`, or `}`")),
             }
         }
         Ok(App {
             name,
             routes,
+            files,
             span: self.finish_span(start),
         })
     }

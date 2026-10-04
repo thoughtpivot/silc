@@ -1399,6 +1399,29 @@ fn run_graph(
             output.root.join("python/.venv-doc/bin/python"),
         );
     }
+    if let Some(files_dir) = graph.files_dir() {
+        // `files "<dir>"` is relative to the entry file; `.runtime/<program>` sits
+        // in that same directory, so the workdir is two levels above output.root.
+        let workdir = output
+            .root
+            .parent()
+            .and_then(|p| p.parent())
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."));
+        let abs = workdir.join(files_dir);
+        if !abs.is_dir() {
+            eprintln!(
+                "silc: warning: files directory {} does not exist; /files will report not found until it is created",
+                abs.display()
+            );
+        }
+        bun_cmd.env("SILC_FILES_DIR", &abs);
+        bun_cmd.env(
+            "SILC_FILES_ZIP_PY",
+            output.root.join("python/files_zip_worker.py"),
+        );
+        bun_cmd.env("SILC_FILES_PYTHON_BIN", &lock.python_bin);
+    }
     if let Some(input_json) = pipeline_input {
         bun_cmd.env("SILC_PIPELINE_INPUT_JSON", input_json);
     }

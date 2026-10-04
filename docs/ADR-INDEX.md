@@ -27,6 +27,7 @@ root [README](../README.md).
 | [015](ADR-015-silc-loop-and-vran.md) | Silc `loop` and Vran | Accepted | Names the borrowing; Vran (2027) may target the same semantics |
 | [016](ADR-016-generic-kernel-domain-layers.md) | Generic kernels, domain layers | Accepted | `scene::` kernel, `game::` gameplay layer; verticals stay outside the compiler |
 | [017](ADR-017-ui-embed.md) | `ui::embed` dual-surface URL viewport | Accepted | Sandboxed iframe on web; card fallback on terminal; does not relax ADR-012 |
+| [018](ADR-018-files-capability.md) | Sysop-shared files (`files` + `ui::file_browser`) | Accepted | `/files/list` + `/files/download`; folders zip via pinned CPython |
 
 ### Partial supersession (0.4.0)
 
