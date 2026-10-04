@@ -243,6 +243,20 @@ impl ExecutableGraph {
         self.doc.active()
     }
 
+    /// Sysop-shared directory declared with `files "<dir>";` (ADR-018),
+    /// relative to the entry file. `Some` enables the synthesized `/files/*`
+    /// routes in the Bun worker.
+    pub fn files_dir(&self) -> Option<&str> {
+        self.app
+            .as_ref()
+            .and_then(|app| app.files.as_ref())
+            .map(|files| files.path.as_str())
+    }
+
+    pub fn has_files(&self) -> bool {
+        self.files_dir().is_some()
+    }
+
     pub fn is_scrape_only(&self) -> bool {
         self.has_scrape() && !self.has_ui() && !self.has_api() && !self.needs_tensor()
     }

@@ -44,6 +44,7 @@ const SCRAPE_CRAWL_GOMOD: &str = include_str!("../templates/scrape_crawl_go.mod"
 const SCRAPE_BROWSER_PY: &str = include_str!("../templates/scrape_browser_worker.py");
 const SCRAPE_REQUIREMENTS: &str = include_str!("../templates/scrape_requirements.txt");
 const DOC_EXTRACT_PY: &str = include_str!("../templates/doc_extract_worker.py");
+const FILES_ZIP_PY: &str = include_str!("../templates/files_zip_worker.py");
 const DOC_REQUIREMENTS: &str = include_str!("../templates/doc_requirements.txt");
 
 pub const SCRAPE_BUN_ADAPTER: &str = "bun-fetch-v1";
@@ -87,6 +88,7 @@ const UI_WEB_DIALOG_TSX: &str = include_str!("../templates/ui_web_dialog.tsx");
 const UI_WEB_LOADING_TSX: &str = include_str!("../templates/ui_web_loading.tsx");
 const UI_WEB_EMPTY_TSX: &str = include_str!("../templates/ui_web_empty.tsx");
 const UI_WEB_EMBED_TSX: &str = include_str!("../templates/ui_web_embed.tsx");
+const UI_WEB_FILE_BROWSER_TSX: &str = include_str!("../templates/ui_web_file_browser.tsx");
 const UI_TERMINAL_RUNTIME_TS: &str = include_str!("../templates/ui_terminal_runtime.ts");
 const UI_TERMINAL_COMPONENTS_TS: &str = include_str!("../templates/ui_terminal_components.ts");
 const UI_TERMINAL_MAIN_TS: &str = include_str!("../templates/ui_terminal_main.ts");
@@ -316,6 +318,7 @@ pub fn emit(
                     "typescript/src/components/ui/loading.tsx",
                     "typescript/src/components/ui/empty.tsx",
                     "typescript/src/components/ui/embed.tsx",
+                    "typescript/src/components/ui/file_browser.tsx",
                     "typescript/tailwind.config.js",
                     "typescript/index.html",
                     "typescript/package.json",
@@ -469,6 +472,13 @@ pub fn emit(
                 "python_doc_extract".into(),
                 serde_json::json!("python/doc_extract_worker.py"),
             );
+        }
+        if let Some(dir) = g.files_dir() {
+            entrypoints.insert(
+                "python_files_zip".into(),
+                serde_json::json!("python/files_zip_worker.py"),
+            );
+            entrypoints.insert("files_dir".into(), serde_json::json!(dir));
         }
         if g.is_pipeline_only() {
             entrypoints.insert(
@@ -1103,6 +1113,10 @@ fn emit_ui_app(
             UI_WEB_EMBED_TSX.to_string(),
         ),
         (
+            root.join("typescript/src/components/ui/file_browser.tsx"),
+            UI_WEB_FILE_BROWSER_TSX.to_string(),
+        ),
+        (
             root.join("python/worker.py"),
             render_template(
                 PROCESSOR_WORKER_PY,
@@ -1151,6 +1165,12 @@ fn emit_ui_app(
         files.push((
             root.join("python/doc_requirements.txt"),
             DOC_REQUIREMENTS.to_string(),
+        ));
+    }
+    if graph.has_files() {
+        files.push((
+            root.join("python/files_zip_worker.py"),
+            FILES_ZIP_PY.replace("__COMPILER_VERSION__", compiler_version),
         ));
     }
     for (path, contents) in files {
@@ -1413,6 +1433,12 @@ fn scrape_table(graph: &ExecutableGraph) -> String {
         .unwrap_or_else(|| "scraped_pages".into())
 }
 
+/// Escape a value for interpolation inside a double-quoted TS string literal
+/// (the `__FILES_DIR__` placeholder sits between quotes in the template).
+fn escape_ts_string(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
 fn doc_table(graph: &ExecutableGraph) -> String {
     graph
         .doc
@@ -1547,6 +1573,14 @@ fn render_template(
         .replace("__HAS_LLM__", has_llm)
         .replace("__HAS_SCRAPE__", has_scrape)
         .replace("__HAS_DOC__", has_doc)
+        .replace(
+            "__HAS_FILES__",
+            if graph.has_files() { "true" } else { "false" },
+        )
+        .replace(
+            "__FILES_DIR__",
+            &escape_ts_string(graph.files_dir().unwrap_or("files")),
+        )
         .replace("__SCRAPE_SITE__", scrape_site)
         .replace("__SCRAPE_JS__", graph.scrape.js.as_str())
         .replace("__SCRAPE_DEPTH__", &graph.scrape.depth.to_string())
@@ -2143,6 +2177,9 @@ service FeedbackApi {
                     .is_file()
                 && output
                     .join("typescript/src/components/ui/embed.tsx")
+                    .is_file()
+                && output
+                    .join("typescript/src/components/ui/file_browser.tsx")
                     .is_file(),
             "phase-1/2 web primitives must be emitted"
         );
@@ -2170,6 +2207,7 @@ service FeedbackApi {
             "Dialog",
             "DataTable",
             "Embed",
+            "FileBrowser",
         ] {
             assert!(
                 terminal_components.contains(&format!("export function {export}")),
@@ -2637,6 +2675,63 @@ service Extractor {
     }
 }
 "#;
+
+    const FILES_SOURCE: &str = r#"
+@version("0.6.0")
+
+component FilesPage {
+    method render() {
+        ui::page(
+            ui::heading(:text("Files"), :level(1)),
+            ui::file_browser(:title("File library"), :empty_text("Nothing yet."))
+        )
+    }
+}
+
+app FilesApp {
+    route "/" => FilesPage;
+    files "./shared files";
+}
+"#;
+
+    #[test]
+    fn emits_files_capability_when_app_declares_a_directory() {
+        let (_program, result, output) = parse_emit(FILES_SOURCE, "files_app");
+        let graph = result.graph.as_ref().unwrap();
+        assert!(graph.has_files());
+        assert_eq!(graph.files_dir(), Some("./shared files"));
+
+        let ts = fs::read_to_string(output.join("typescript/worker.ts")).unwrap();
+        assert!(ts.contains("const HAS_FILES = true"));
+        assert!(ts.contains("\"./shared files\""));
+        assert!(ts.contains("async function handleFiles"));
+        assert!(!ts.contains("__HAS_FILES__"));
+        assert!(!ts.contains("__FILES_DIR__"));
+        assert!(output.join("python/files_zip_worker.py").is_file());
+
+        let app = fs::read_to_string(output.join("typescript/src/App.tsx")).unwrap();
+        assert!(app.contains("<FileBrowser title={\"File library\"}"));
+        assert!(output
+            .join("typescript/src/components/ui/file_browser.tsx")
+            .is_file());
+
+        let manifest: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&result.manifest).unwrap()).unwrap();
+        assert_eq!(
+            manifest["entrypoints"]["files_dir"],
+            serde_json::json!("./shared files")
+        );
+    }
+
+    #[test]
+    fn apps_without_files_do_not_emit_the_zip_worker() {
+        let (_program, result, output) = parse_emit(FEEDBACK_SOURCE, "feedback_no_files");
+        let graph = result.graph.as_ref().unwrap();
+        assert!(!graph.has_files());
+        let ts = fs::read_to_string(output.join("typescript/worker.ts")).unwrap();
+        assert!(ts.contains("const HAS_FILES = false"));
+        assert!(!output.join("python/files_zip_worker.py").exists());
+    }
 
     #[test]
     fn emits_doc_extract_upload_pipeline() {

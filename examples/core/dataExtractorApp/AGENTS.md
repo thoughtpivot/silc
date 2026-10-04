@@ -125,7 +125,7 @@ API contract (options / events / slots / children).
 
 #### Shell and navigation
 
-- `ui::page` — options: none; events: none; slots: `app_bar`→`app_bar`, `side_panel`→`side_panel`, `footer`→`footer`; children: anyOf(`stack`, `row`, `grid`, `card`, `heading`, `text`, `form`, `text_input`, `textarea`, `file_input`, `radio_group`, `select`, `checkbox`, `switch`, `field`, `button`, `toolbar`, `chat`, `chat_history`, `search_input`, `filter_bar`, `collection`, `list`, `table`, `badge`, `alert`, `divider`, `section`, `description_list`, `tabs`, `dialog`, `loading`, `empty`, `embed`, `nav_item`); surfaces: web+terminal
+- `ui::page` — options: none; events: none; slots: `app_bar`→`app_bar`, `side_panel`→`side_panel`, `footer`→`footer`; children: anyOf(`stack`, `row`, `grid`, `card`, `heading`, `text`, `form`, `text_input`, `textarea`, `file_input`, `radio_group`, `select`, `checkbox`, `switch`, `field`, `button`, `toolbar`, `chat`, `chat_history`, `search_input`, `filter_bar`, `collection`, `list`, `table`, `badge`, `alert`, `divider`, `section`, `description_list`, `tabs`, `dialog`, `loading`, `empty`, `embed`, `file_browser`, `nav_item`); surfaces: web+terminal
 - `ui::app_bar` — options: `title` (required); events: none; slots: none; children: none; surfaces: web+terminal
 - `ui::side_panel` — options: none; events: none; slots: none; children: anyOf(`nav_item`); surfaces: web+terminal
 - `ui::nav_item` — options: `label` (required), `to?`, `active?` (flag); events: `click`; slots: none; children: none; surfaces: web+terminal
@@ -181,6 +181,8 @@ API contract (options / events / slots / children).
 - `ui::empty` — options: `text?`; events: none; slots: none; children: none; surfaces: web+terminal
 - `ui::embed` — options: `src` (required), `title?`; events: none; slots: none; children: none; surfaces: web+terminal
   - Web: sandboxed iframe (`allow-scripts`, never with `allow-same-origin`); terminal: card with title, full URL, and “Open in a browser”. Not a canvas over telnet; no `srcdoc` / postMessage bridge (ADR-017).
+- `ui::file_browser` — options: `title?`, `empty_text?`; events: none; slots: none; children: none; surfaces: web+terminal
+  - Browser for the directory named by `files "<dir>";` inside the `app` (one per app, relative to the entry file, no `..`). The compiler owns the current folder and the routes: `GET /files/list?path=` returns `{ path, parent, entries }` (dirs first, dot-files hidden); `GET /files/download?path=` streams a file, or a zip of a folder (and of a file when `zip=1`). Paths are `realpath`'d and must stay inside the share. Web: breadcrumb, folder navigation, Download buttons. Terminal: navigable listing plus the full download URL and “Open in a browser” — no binary transfer over telnet (ADR-018). Using `ui::file_browser` without a `files` directive is a compile error.
 
 ### Complete game::* catalog (ADR-012)
 
@@ -536,6 +538,7 @@ Compiler-owned (do not invent alternatives):
 - `POST /complete` — chat / `*.complete()` processors
 - `GET|POST|PUT|DELETE /api/{table}` — resource queries/mutations
 - `POST /mcp` — streamable-HTTP MCP server (`tools/list`, `tools/call`); bearer token from `SILC_MCP_TOKEN`
+- `GET /files/list` and `GET /files/download` — sysop-shared directory when the app declares `files "<dir>";` (ADR-018). Override the directory with `SILC_FILES_DIR`
 - Web: React app served by Bun (`silc main.silc`)
 - Terminal: OpenTUI + telnet CLI when run with `--terminal` / `SILC_TERMINAL=1`
 
@@ -557,6 +560,9 @@ Compiler-owned (do not invent alternatives):
    `SILC_HTTP_PORT` / `SILC_TERMINAL_PORT` / service `:port` as needed.
 10. Tensor pipelines require MiniLM, CPU, and exactly 384 normalized `num32`
    values in `vector_embedding`.
+11. `ui::file_browser` requires exactly one `files "<dir>";` in the `app`.
+    The path is relative to the entry file and must not contain `..`. A missing
+    directory warns at startup; it does not fail the build.
 
 ## Rules for agents
 

@@ -185,7 +185,16 @@ fn looks_like_direct_run(first: &str) -> bool {
     }
     !matches!(
         first,
-        "assist" | "init" | "build" | "run" | "help" | "--help" | "-h" | "--version" | "-V"
+        "assist"
+            | "init"
+            | "build"
+            | "docs"
+            | "run"
+            | "help"
+            | "--help"
+            | "-h"
+            | "--version"
+            | "-V"
     )
 }
 
@@ -513,6 +522,7 @@ mod tests {
         assert!(looks_like_direct_run("main.silc"));
         assert!(!looks_like_direct_run("assist"));
         assert!(!looks_like_direct_run("build"));
+        assert!(!looks_like_direct_run("docs"));
         assert!(!looks_like_direct_run("--help"));
     }
 }

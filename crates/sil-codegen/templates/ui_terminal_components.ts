@@ -8,6 +8,8 @@ import {
   TabSelect,
   TextTableRenderable,
   h,
+  useEffect,
+  useState,
   type VChild,
 } from "./runtime";
 
@@ -620,6 +622,125 @@ export function Embed(props: { src: string; title?: string }) {
     },
     h(Text, { content: url, fg: "#38bdf8" }),
     h(Text, { content: "Open in a browser", fg: "#94a3b8" })
+  );
+}
+
+type FileEntry = {
+  name: string;
+  kind: "file" | "dir";
+  size: number;
+  modified: string;
+  path: string;
+};
+
+function formatFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value < 10 ? value.toFixed(1) : Math.round(value)} ${units[unit]}`;
+}
+
+function fileDownloadUrl(path: string): string {
+  const origin =
+    (typeof process !== "undefined" && process.env.SILC_WEB_ORIGIN) || "http://127.0.0.1";
+  return `${origin}/files/download?path=${encodeURIComponent(path)}`;
+}
+
+/**
+ * Terminal fallback for ui::file_browser (ADR-018). Folders are navigable
+ * with Enter; files show their size and full download URL. Binary transfer
+ * over telnet/OpenTUI is not a thing, so this says "Open in a browser".
+ */
+export function FileBrowser(props: { title?: string; emptyText?: string }) {
+  const [path, setPath] = useState("");
+  const [entries, setEntries] = useState<FileEntry[] | null>(null);
+  const [parent, setParent] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setError(null);
+    fetch(`/files/list?path=${encodeURIComponent(path)}`)
+      .then(async (response) => {
+        const body: any = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(String(body?.error || `HTTP ${response.status}`));
+        return body;
+      })
+      .then((body: any) => {
+        if (!active) return;
+        setEntries(Array.isArray(body?.entries) ? body.entries : []);
+        setParent(body?.parent ?? null);
+      })
+      .catch((err: unknown) => {
+        if (!active) return;
+        setEntries([]);
+        setError(err instanceof Error ? err.message : String(err));
+      });
+    return () => {
+      active = false;
+    };
+  }, [path]);
+
+  const heading =
+    props.title && String(props.title).trim().length > 0 ? String(props.title) : "Files";
+  const rows: VChild[] = [];
+  rows.push(h(Text, { content: `/${path}`, fg: "#94a3b8" }));
+  if (parent !== null) {
+    rows.push(h(Button, { label: "..", variant: "secondary", onClick: () => setPath(parent) }));
+  }
+  if (error) {
+    rows.push(h(Text, { content: error, fg: "#f87171" }));
+  } else if (entries === null) {
+    rows.push(h(Text, { content: "Loading…", fg: "#64748b" }));
+  } else if (entries.length === 0) {
+    rows.push(h(Text, { content: props.emptyText ?? "This folder is empty.", fg: "#64748b" }));
+  } else {
+    for (const entry of entries) {
+      if (entry.kind === "dir") {
+        rows.push(
+          h(
+            Box,
+            { flexDirection: "row", gap: 2, width: "100%" },
+            h(Button, { label: `${entry.name}/`, onClick: () => setPath(entry.path) }),
+            h(Text, { content: `zip: ${fileDownloadUrl(entry.path)}`, fg: "#64748b" })
+          )
+        );
+      } else {
+        rows.push(
+          h(
+            Box,
+            { flexDirection: "column", width: "100%" },
+            h(
+              Box,
+              { flexDirection: "row", gap: 2, width: "100%" },
+              h(Text, { content: entry.name, fg: "#e2e8f0" }),
+              h(Text, { content: formatFileSize(entry.size), fg: "#94a3b8" })
+            ),
+            h(Text, { content: fileDownloadUrl(entry.path), fg: "#38bdf8" })
+          )
+        );
+      }
+    }
+    rows.push(h(Text, { content: "Open a URL in a browser to download", fg: "#94a3b8" }));
+  }
+  return h(
+    Box,
+    {
+      border: true,
+      borderColor: "#475569",
+      title: heading,
+      padding: 1,
+      flexDirection: "column",
+      gap: 1,
+      width: "100%",
+    },
+    ...rows
   );
 }
 

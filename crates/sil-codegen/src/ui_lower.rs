@@ -75,6 +75,7 @@ pub fn render_web_app(
     out.push_str("import { Loading } from \"./components/ui/loading\";\n");
     out.push_str("import { Empty } from \"./components/ui/empty\";\n");
     out.push_str("import { Embed } from \"./components/ui/embed\";\n");
+    out.push_str("import { FileBrowser } from \"./components/ui/file_browser\";\n");
     out.push_str("\n");
     // Empty arrays/objects are truthy in JS; Silc `when` treats them as empty.
     out.push_str(
@@ -1620,6 +1621,22 @@ fn render_node(node: &UiNode, indent: usize) -> String {
                 title = title
             )
         }
+        "file_browser" => {
+            let title = node
+                .prop("title")
+                .map(expr_to_js)
+                .unwrap_or_else(|| "undefined".into());
+            let empty_text = node
+                .prop("empty_text")
+                .map(expr_to_js)
+                .unwrap_or_else(|| "undefined".into());
+            format!(
+                "{pad}<FileBrowser title={{{title}}} emptyText={{{empty_text}}} />",
+                pad = pad,
+                title = title,
+                empty_text = empty_text
+            )
+        }
         other => panic!(
             "silc codegen: no web/terminal lowerer for ui::{other} — add a render_node arm"
         ),
@@ -1718,7 +1735,9 @@ pub fn expr_to_js(expr: &Expr) -> String {
             format!("props.on{}?.({})", pascal(event), p)
         }
         Expr::Navigate { path } => format!(
-            "(window.history.pushState({{}}, \"\", {}); window.dispatchEvent(new PopStateEvent(\"popstate\")))",
+            // Comma operator: this is an expression (handler statement), not a block.
+            // A semicolon here is a syntax error inside the parentheses.
+            "(window.history.pushState({{}}, \"\", {}), window.dispatchEvent(new PopStateEvent(\"popstate\")))",
             escape_js_string(path)
         ),
         Expr::Await(inner) => format!("(await {})", expr_to_js(inner)),
@@ -1967,7 +1986,9 @@ pub fn render_terminal_app(
         out.push_str(
             "  DescriptionList, Tabs, Tab, Dialog, DataTable, ChatThread, ChatComposer,\n",
         );
-        out.push_str("  HistoryPanel, SearchInput, FilterBar, Loading, Empty, Embed, Main,\n");
+        out.push_str(
+            "  HistoryPanel, SearchInput, FilterBar, Loading, Empty, Embed, FileBrowser, Main,\n",
+        );
         out.push_str("} from \"./components/terminal/components\";\n\n");
         out.push_str("let __silcNavigateImpl = (_path) => {};\n");
         out.push_str("export function __silcNavigate(path) { __silcNavigateImpl(path); }\n\n");
@@ -2157,6 +2178,7 @@ const LOWERED_BUILTINS: &[&str] = &[
     "loading",
     "empty",
     "embed",
+    "file_browser",
 ];
 
 #[cfg(test)]
@@ -2300,6 +2322,64 @@ mod tests {
         assert!(term_ts.contains("Open in a browser"));
         assert!(term_ts.contains("Embedded page"));
         assert!(term_ts.contains("export function Embed"));
+    }
+
+    #[test]
+    fn navigate_lowers_to_a_valid_comma_expression() {
+        let js = expr_to_js(&Expr::Navigate {
+            path: "/visitors".into(),
+        });
+        assert!(
+            js.contains(", window.dispatchEvent"),
+            "navigate must use the comma operator, got {js}"
+        );
+        assert!(
+            !js.contains("; window.dispatchEvent"),
+            "a semicolon inside the navigate parens is a syntax error: {js}"
+        );
+        assert!(js.contains("\"/visitors\""));
+    }
+
+    #[test]
+    fn lowers_file_browser_on_both_surfaces() {
+        let browser = UiNode {
+            component: "file_browser".into(),
+            component_span: Default::default(),
+            prop_spans: vec![],
+            props: vec![
+                ("title".into(), Expr::String("File library".into())),
+                ("empty_text".into(), Expr::String("Nothing yet.".into())),
+            ],
+            events: vec![],
+            slots: vec![],
+            children: vec![],
+            span: Span::default(),
+        };
+        let web = with_surface(SurfaceKind::Web, || {
+            render_template(&UiTemplate::Node(browser.clone()), 0)
+        });
+        let term = with_surface(SurfaceKind::Terminal, || {
+            render_template(&UiTemplate::Node(browser), 0)
+        });
+        for out in [&web, &term] {
+            assert!(out.contains("<FileBrowser"));
+            assert!(out.contains("File library"));
+            assert!(out.contains("emptyText={\"Nothing yet.\"}"));
+        }
+
+        // Template contracts: the compiler-owned routes and no author state.
+        let web_tsx = include_str!("../templates/ui_web_file_browser.tsx");
+        assert!(web_tsx.contains("/files/list?path="));
+        assert!(web_tsx.contains("/files/download?"));
+        assert!(web_tsx.contains("Download"));
+        let term_ts = include_str!("../templates/ui_terminal_components.ts");
+        assert!(term_ts.contains("export function FileBrowser"));
+        assert!(term_ts.contains("/files/list?path="));
+        assert!(term_ts.contains("Open a URL in a browser"));
+        let worker = include_str!("../templates/app_worker.ts");
+        assert!(worker.contains("async function handleFiles"));
+        assert!(worker.contains("\"/files/list\""));
+        assert!(worker.contains("\"/files/download\""));
     }
 
     #[test]

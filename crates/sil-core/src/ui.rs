@@ -51,6 +51,7 @@ const LAYOUT_CHILDREN: &[&str] = &[
     "loading",
     "empty",
     "embed",
+    "file_browser",
     "nav_item",
 ];
 
@@ -1223,6 +1224,31 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
         surfaces: BOTH,
         role: NodeRole::Plain,
     },
+    ComponentSpec {
+        name: "file_browser",
+        description: "Browser for the app's sysop-shared directory (`files \"<dir>\";` in the `app`). The compiler owns the folder state and the synthesized `GET /files/list` and `GET /files/download` routes: files download as-is, folders download as a zip. On web it lowers to a breadcrumb + listing with Download buttons; on terminal it lists entries with their download URLs and \"Open in a browser\" (ADR-018).",
+        props: &[
+            PropSpec {
+                name: "title",
+                kind: PropKind::Expr,
+                required: false,
+                description: "",
+                closed_values: &[],
+            },
+            PropSpec {
+                name: "empty_text",
+                kind: PropKind::Expr,
+                required: false,
+                description: "",
+                closed_values: &[],
+            },
+        ],
+        slots: &[],
+        children: ChildPolicy::None,
+        events: &[],
+        surfaces: BOTH,
+        role: NodeRole::Plain,
+    },
 ];
 
 pub fn lookup_component(name: &str) -> Option<&'static ComponentSpec> {
@@ -1413,6 +1439,16 @@ const PROP_DOC_OVERRIDES: &[(&str, &str, &str)] = &[
         "embed",
         "title",
         "Optional heading for the embed. Web uses it as the iframe title (fallback: the URL); terminal uses it as the card heading (fallback: \"Embedded page\").",
+    ),
+    (
+        "file_browser",
+        "title",
+        "Optional heading above the listing (fallback: \"Files\"). The current folder path is shown beneath it as a breadcrumb.",
+    ),
+    (
+        "file_browser",
+        "empty_text",
+        "Optional copy shown when the current folder has no visible entries (fallback: \"This folder is empty.\"). Dot-files are never listed.",
     ),
 ];
 
@@ -1698,7 +1734,7 @@ mod tests {
             format_component_catalog_line(button),
             "- `ui::button` — options: `label` (required), `variant?`, `size?`, `submit?` (flag), `active?`, `disabled?` (flag); events: `click`; slots: none; children: none; surfaces: web+terminal"
         );
-        assert_eq!(UI_COMPONENT_CATALOG.len(), 40);
+        assert_eq!(UI_COMPONENT_CATALOG.len(), 41);
         for spec in UI_COMPONENT_CATALOG {
             let line = format_component_catalog_line(spec);
             assert!(line.starts_with(&format!("- `ui::{}` — ", spec.name)));
@@ -1708,7 +1744,7 @@ mod tests {
 
     #[test]
     fn every_catalog_entry_has_nonempty_description() {
-        assert_eq!(UI_COMPONENT_CATALOG.len(), 40);
+        assert_eq!(UI_COMPONENT_CATALOG.len(), 41);
         for spec in UI_COMPONENT_CATALOG {
             assert!(
                 !spec.description.trim().is_empty(),
@@ -1853,5 +1889,43 @@ mod tests {
             format_component_catalog_line(embed),
             "- `ui::embed` — options: `src` (required), `title?`; events: none; slots: none; children: none; surfaces: web+terminal"
         );
+    }
+
+    #[test]
+    fn file_browser_catalog_line_and_options() {
+        let spec = lookup_component("file_browser").unwrap();
+        assert_eq!(
+            format_component_catalog_line(spec),
+            "- `ui::file_browser` — options: `title?`, `empty_text?`; events: none; slots: none; children: none; surfaces: web+terminal"
+        );
+
+        let bare = node("file_browser", vec![]);
+        assert!(validate_builtin_node(&bare).is_ok());
+
+        let ok = node(
+            "file_browser",
+            vec![
+                ("title", Expr::String("File library".into())),
+                ("empty_text", Expr::String("Nothing here yet.".into())),
+            ],
+        );
+        assert!(validate_builtin_node(&ok).is_ok());
+
+        let unknown = node(
+            "file_browser",
+            vec![("directory", Expr::String("./files".into()))],
+        );
+        assert!(validate_builtin_node(&unknown)
+            .unwrap_err()
+            .contains("unknown option `:directory`"));
+
+        assert!(crate::catalog::child_allowed(
+            lookup_component("page").unwrap().children,
+            "file_browser"
+        ));
+        assert!(crate::catalog::child_allowed(
+            lookup_component("section").unwrap().children,
+            "file_browser"
+        ));
     }
 }
