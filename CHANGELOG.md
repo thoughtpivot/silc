@@ -50,6 +50,7 @@ Entries before 0.5.0 are reconstructed from the commit history.
 - `ui::embed` — dual-surface URL viewport (`:src` required, `:title?`). Web
   lowers to a sandboxed iframe; terminal lowers to a title/URL/“Open in a
   browser” card (THO-119, [ADR-017](docs/ADR-017-ui-embed.md)).
+- `examples/core/embedLoopApp`: one program with `ui::embed`, blank-Str `loop::ask` (“no more items”), and a live loop kernel on `app.db` (THO-119/120/121).
 - [docs/SILC-LANGUAGE.md](docs/SILC-LANGUAGE.md): the normative language
   surface, including the list of known irregularities scheduled for 0.6.0.
 - [docs/GLOSSARY.md](docs/GLOSSARY.md): one meaning per term and the retired
@@ -62,6 +63,7 @@ Entries before 0.5.0 are reconstructed from the commit history.
 
 ### Fixed
 
+- THO-120: `loop::ask` contract checking accepts blank and whitespace-only strings as valid `Str`. Non-string JSON values still fail, and the error names the actual JSON type (number, object, array, bool, null).
 - THO-121: exiting `silc` tears down the worker tree (Go loop kernel, Bun, CPython)
   so children are not reparented to pid 1. Workers join a dedicated process group and
   receive `PR_SET_PDEATHSIG` on Linux. A second loop kernel refuses an `app.db` that
