@@ -56,7 +56,7 @@ fn init_scaffolds_runnable_dual_surface_app() {
     assert!(agents.contains("resource X for Contract"));
     assert!(agents.contains("app X"));
     assert!(agents.contains("ui::web") && agents.contains("ui::terminal"));
-    assert!(agents.contains("Complete UI primitive catalog (39)"));
+    assert!(agents.contains("### Complete UI primitive catalog"));
     assert!(agents.contains("`ui::page`") && agents.contains("`ui::button`"));
     assert!(agents.contains("`ui::chat`") && agents.contains("`ui::table`"));
     assert!(agents.contains("llm::complete"));
