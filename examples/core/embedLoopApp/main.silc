@@ -9,7 +9,7 @@ contract Slot {
     has Str $.day;
 }
 
-# Blank `item` ("") is a valid Str: it means "no more items", not a type error (THO-120).
+# Blank item ("") is a valid Str: it means "no more items", not a type error (THO-120).
 contract NextSlot {
     has Str $.item;
     has Str $.note;
@@ -26,34 +26,31 @@ loop CollectSlots {
         loop::manual(),
         loop::find(:as(existing), :from(Slots.list), :max(50)),
         loop::ask(
-            :as(slot),
+            :as(next),
             :into(NextSlot),
             :from($existing),
             :retry(2),
             :prompt("Today is {$calendar.today}. Review the existing slots. Propose one more backlog item name in item, or return an empty string for item when there are no more items. Put a short note in note."),
             loop::otherwise(loop::fail(:reason("could not read next slot")))
         ),
-        loop::branch(
-            loop::when(
-                :that($slot.item == ""),
-                loop::stop(:reason("no more items"))
-            ),
-            loop::otherwise(
-                loop::write(
-                    :to(Slots.create),
-                    :key("slot:{$now}"),
-                    :value(Slot.new(
-                        :item($slot.item),
-                        :note($slot.note),
-                        :day($calendar.today)
-                    ))
-                ),
-                loop::notify(
-                    :to("collector"),
-                    :text("Queued {$slot.item}"),
-                    :key("slot:{$now}")
-                )
-            )
+        loop::gate(
+            :that($next.item != ""),
+            :reason("blank item means no more items"),
+            loop::otherwise(loop::stop(:reason("no more items")))
+        ),
+        loop::write(
+            :to(Slots.create),
+            :key("slot:{$now}"),
+            :value(Slot.new(
+                :item($next.item),
+                :note($next.note),
+                :day($calendar.today)
+            ))
+        ),
+        loop::notify(
+            :to("collector"),
+            :text("Queued {$next.item}"),
+            :key("slot:{$now}")
         )
     )
 }
