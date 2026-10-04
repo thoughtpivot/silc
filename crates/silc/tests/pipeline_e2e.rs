@@ -64,15 +64,22 @@ fn local_http_to_normalized_embedding_to_sqlite() {
         serde_json::from_str(&fs::read_to_string(root.join(".silc/runtimes.lock.json")).unwrap())
             .unwrap();
     let python = lock["python_bin"].as_str().unwrap();
+    // Synthesized sink table for contract ArticlePayload is `article_payloads`
+    // (see sil_core::sink_table_for_contract / infer_graph.sqlite_table).
     let query = Command::new(python)
         .arg("-c")
         .arg(
-            "import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute('select data from embeddings limit 1').fetchone()[0])",
+            "import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute('select data from article_payloads limit 1').fetchone()[0])",
         )
         .arg(&db)
         .output()
         .unwrap();
-    assert!(query.status.success());
+    assert!(
+        query.status.success(),
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&query.stdout),
+        String::from_utf8_lossy(&query.stderr)
+    );
     let payload: serde_json::Value =
         serde_json::from_slice(String::from_utf8_lossy(&query.stdout).trim().as_bytes()).unwrap();
     assert!(payload["raw_content"]
