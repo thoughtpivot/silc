@@ -34,6 +34,7 @@ Silc remains pre-1.0; this project follows SemVer 0.x with Conventional Commits.
 
 ### Fixed
 
+- *(THO-120)* accept blank strings as valid Str in loop::ask
 - *(ui)* keep single-token table cells and headers on one line
 - stop terminal surface crashes on conditionals and route swaps
 - accept bare domains in scraper app
