@@ -159,7 +159,12 @@ const ENTITY_CHILDREN: &[&str] = &[
 
 const PREFAB_CHILDREN: &[&str] = ENTITY_CHILDREN;
 
-const ABILITY_CHILDREN: &[&str] = &["particle_emitter", "dynamic_light", "camera_impulse", "audio"];
+const ABILITY_CHILDREN: &[&str] = &[
+    "particle_emitter",
+    "dynamic_light",
+    "camera_impulse",
+    "audio",
+];
 
 const WEAPON_CHILDREN: &[&str] = &[
     "projectile",
@@ -988,12 +993,12 @@ pub fn format_game_catalog_md() -> String {
         "# game::* catalog (ADR-012)\n\n\
          WebGPU programs declare one `game Name { game::scene(...) }` tree. \
          Godot tree+signals, Unity prefabs/data/components, Unreal mode/pawn/controller. \
-         Use only these nodes/props. No `app` / `component` / `resource` mix.\n\n",
+         Use only these nodes/options. No `app` / `component` / `resource` mix.\n\n",
     );
     for node in GAME_NODE_CATALOG {
         out.push_str(&format!("## game::{}\n{}\n", node.name, node.description));
         if !node.props.is_empty() {
-            out.push_str("\nProps:\n");
+            out.push_str("\nOptions:\n");
             for prop in node.props {
                 let req = if prop.required {
                     "required"
@@ -1028,25 +1033,33 @@ pub fn format_game_catalog_md() -> String {
         }
         out.push('\n');
     }
-    out.push_str(
-        "Closed enums: `:renderer(webgpu)`; mesh/collider `:shape(plane|box|capsule|sphere)`; \
-         mesh `:asset` XOR `:shape`; light `:kind(directional|point|spot)`; \
-         movement `:style(walk|first_person|sprint|jump|platformer)`; controller `:scheme(wasd_mouse|arrows_jump)`; \
-         camera `:mode(third_person|first_person|side_scroll)`; asset `:kind(gltf|texture|audio|navmesh)`; \
-         zone `:kind(room|walkway|outdoor)`; weapon `:fire_mode(hitscan|pellet|projectile|beam)`; \
-         projectile `:kind(tracer|shell|plasma|rail)`; damage `:type_ident(bullet|pellet|plasma|rail|melee)`; \
-         pickup `:kind(weapon|ammo|health)`; npc `:archetype(suppressor|flanker|breacher)` `:faction(hostile|neutral)`; \
-         behavior `:tree(patrol_combat|guard)` `:default_tactic(suppress|flank|push|retreat)`; \
-         objective `:kind(clear_hostiles|reach)`; audio `:kind(oneshot|loop)`; door `:state(open|closed)`; \
-         trigger `:kind(enter|exit)`; cover `:quality(low|med|high)`; \
-         particle_emitter `:kind(burst|spark|smoke)`; \
-         post_process `:stage(taa|ssao|ssr|dof|bloom|tonemap|grain|sharpen)`; \
-         collectible `:kind(coin|gem|health|powerup|key|custom)`; \
-         interactable `:kind(breakable|bumpable|switchable|container)`; \
-         patrol `:behavior(walk_reverse|walk_fall|stationary|follow|flee)`; \
-         warp `:direction(down|up|left|right)`.\n",
-    );
+    out.push_str(&format_game_closed_enums_line());
+    out.push('\n');
     out
+}
+
+/// One paragraph listing every closed option value set in the `game::*`
+/// catalog. Generated from `GAME_NODE_CATALOG` so AGENTS.md and assist prompts
+/// cannot drift from the compiler; the `:asset` XOR `:shape` rule on
+/// `game::mesh` is structural rather than enumerated, so it is appended by hand.
+pub fn format_game_closed_enums_line() -> String {
+    let mut parts = Vec::new();
+    for node in GAME_NODE_CATALOG {
+        for prop in node.props {
+            if !prop.closed_values.is_empty() {
+                parts.push(format!(
+                    "`game::{}` `:{}({})`",
+                    node.name,
+                    prop.name,
+                    prop.closed_values.join("|")
+                ));
+            }
+        }
+    }
+    format!(
+        "Closed enums: {}. `game::mesh` takes `:asset` XOR `:shape`.",
+        parts.join("; ")
+    )
 }
 
 /// Condensed game catalog for platformer tasks - omits FPS-specific nodes.
@@ -1055,17 +1068,43 @@ pub fn format_game_catalog_md() -> String {
 /// shadow, post_process, hud, overlay, trigger, plus new platformer nodes.
 pub fn format_game_catalog_platformer_md() -> String {
     const PLATFORMER_NODES: &[&str] = &[
-        "scene", "entity", "prefab", "spawn", "data", "asset", "material",
-        "mesh", "light", "collider", "movement", "attribute", "mode", "pawn",
-        "controller", "camera", "signal", "group", "environment", "shadow",
-        "post_process", "hud", "overlay", "trigger",
+        "scene",
+        "entity",
+        "prefab",
+        "spawn",
+        "data",
+        "asset",
+        "material",
+        "mesh",
+        "light",
+        "collider",
+        "movement",
+        "attribute",
+        "mode",
+        "pawn",
+        "controller",
+        "camera",
+        "signal",
+        "group",
+        "environment",
+        "shadow",
+        "post_process",
+        "hud",
+        "overlay",
+        "trigger",
         // New platformer nodes (when added):
-        "sprite", "tilemap", "collectible", "interactable", "patrol", "warp", "level_end",
+        "sprite",
+        "tilemap",
+        "collectible",
+        "interactable",
+        "patrol",
+        "warp",
+        "level_end",
     ];
     let mut out = String::from(
         "# game::* catalog (platformer subset)\n\n\
          WebGPU programs declare one `game Name { game::scene(...) }` tree. \
-         Use only these nodes/props for platformer games.\n\n",
+         Use only these nodes/options for platformer games.\n\n",
     );
     for node in GAME_NODE_CATALOG {
         if !PLATFORMER_NODES.contains(&node.name) {
@@ -1073,16 +1112,20 @@ pub fn format_game_catalog_platformer_md() -> String {
         }
         out.push_str(&format!("## game::{}\n{}\n", node.name, node.description));
         if !node.props.is_empty() {
-            out.push_str("Props: ");
-            let props: Vec<String> = node.props.iter().map(|p| {
-                let req = if p.required { "" } else { "?" };
-                let closed = if p.closed_values.is_empty() {
-                    String::new()
-                } else {
-                    format!("({})", p.closed_values.join("|"))
-                };
-                format!(":{}{}{}", p.name, req, closed)
-            }).collect();
+            out.push_str("Options: ");
+            let props: Vec<String> = node
+                .props
+                .iter()
+                .map(|p| {
+                    let req = if p.required { "" } else { "?" };
+                    let closed = if p.closed_values.is_empty() {
+                        String::new()
+                    } else {
+                        format!("({})", p.closed_values.join("|"))
+                    };
+                    format!(":{}{}{}", p.name, req, closed)
+                })
+                .collect();
             out.push_str(&props.join(", "));
             out.push('\n');
         }
@@ -1118,7 +1161,7 @@ pub fn format_game_catalog_line(spec: &GameNodeSpec) -> String {
             .join(", "),
     };
     format!(
-        "- `game::{}` — props: {}; children: {}",
+        "- `game::{}` — options: {}; children: {}",
         spec.name,
         if props.is_empty() {
             "none".into()
@@ -1167,7 +1210,12 @@ pub struct GameCapabilities {
 pub const DEFAULT_GAME_PORT: u16 = 18140;
 pub const DEFAULT_GAME_FPS: u32 = 90;
 
-fn validate_closed_ident(node: &str, prop: &str, value: &str, allowed: &[&str]) -> Result<(), String> {
+fn validate_closed_ident(
+    node: &str,
+    prop: &str,
+    value: &str,
+    allowed: &[&str],
+) -> Result<(), String> {
     if allowed.contains(&value) {
         Ok(())
     } else {
@@ -1190,14 +1238,17 @@ pub fn validate_game_node(node: &GameNode) -> Result<(), String> {
     for prop in spec.props.iter().filter(|p| p.required) {
         if node.prop(prop.name).is_none() {
             return Err(format!(
-                "game::{} requires prop `:{}`",
+                "game::{} requires option `:{}`",
                 node.name, prop.name
             ));
         }
     }
     for (pname, _) in &node.props {
         if !spec.props.iter().any(|p| p.name == *pname) {
-            return Err(format!("unknown prop `:{}` on game::{}", pname, node.name));
+            return Err(format!(
+                "unknown option `:{}` on game::{}",
+                pname, node.name
+            ));
         }
     }
 

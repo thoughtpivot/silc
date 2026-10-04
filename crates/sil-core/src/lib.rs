@@ -32,19 +32,18 @@ pub use constraint::TraitArg;
 pub use contract::{Contract, Field, Subset, SubsetPredicate};
 pub use expr::{BinOp, Expr, InterpPart, SpannedExpr, UnaryOp};
 pub use game::{
-    catalog_game_node_names, format_game_catalog_line, format_game_catalog_md, format_game_catalog_platformer_md, game_closed_value_doc,
+    catalog_game_node_names, format_game_catalog_line, format_game_catalog_md,
+    format_game_catalog_platformer_md, format_game_closed_enums_line, game_closed_value_doc,
     game_closed_value_owners, game_prop_doc, lookup_game_node, validate_game, validate_game_node,
     Game, GameCapabilities, GameChildPolicy, GameNode, GameNodeSpec, GamePropKind, GamePropSpec,
     GameSurface, DEFAULT_GAME_FPS, DEFAULT_GAME_PORT, GAME_NODE_CATALOG,
 };
 pub use loops::{
     catalog_loop_node_names, describe_loop_trigger, format_loop_catalog_line,
-    format_loop_catalog_md, format_loop_cost_report, loop_bounds,
-    loop_prop_doc, loops_are_command, loops_use_ask, lookup_loop_node, parse_loop_duration,
-    template_placeholders,
-    validate_cron, validate_loop, validate_loops, Loop, LoopBounds, LoopChildPolicy, LoopNode,
-    LoopNodeRole, LoopNodeSpec, LoopPropKind, LoopPropSpec, LOOP_NODE_CATALOG, LOOP_STEPS,
-    LOOP_TRIGGERS,
+    format_loop_catalog_md, format_loop_cost_report, lookup_loop_node, loop_bounds, loop_prop_doc,
+    loops_are_command, loops_use_ask, parse_loop_duration, template_placeholders, validate_cron,
+    validate_loop, validate_loops, Loop, LoopBounds, LoopChildPolicy, LoopNode, LoopNodeRole,
+    LoopNodeSpec, LoopPropKind, LoopPropSpec, LOOP_NODE_CATALOG, LOOP_STEPS, LOOP_TRIGGERS,
 };
 pub use model_catalog::{
     is_known_embedding_model_id, is_known_model_id, lookup_embedding_model, lookup_model,
@@ -55,9 +54,9 @@ pub use model_catalog::{
 };
 pub use module::{Method, Module, ModuleKind, Param};
 pub use operation::{
-    classify_program, infer_graph, is_executable_op, scan_author_calls, ApiRoute, ExecutableGraph,
-    ExecutionMode, ProcessorOp, DocCapabilities, ScrapeCapabilities, ScrapeSelect, UiCapabilities, DEFAULT_API_PORT,
-    DEFAULT_TERMINAL_PORT, DEFAULT_WEB_PORT, EXECUTABLE_OPS, KNOWN_NAMESPACES,
+    classify_program, infer_graph, is_executable_op, scan_author_calls, ApiRoute, DocCapabilities,
+    ExecutableGraph, ExecutionMode, ProcessorOp, ScrapeCapabilities, ScrapeSelect, UiCapabilities,
+    DEFAULT_API_PORT, DEFAULT_TERMINAL_PORT, DEFAULT_WEB_PORT, EXECUTABLE_OPS, KNOWN_NAMESPACES,
 };
 pub use pipeline::{Pipeline, PipelineStep};
 pub use program::Program;
