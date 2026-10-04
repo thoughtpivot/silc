@@ -15,7 +15,7 @@ root [README](../README.md).
 | [003](ADR-003-declarative-ui.md) | Declarative dual-surface UI | Accepted | Dual-surface **outcome**; authoring mechanics in ADR-009 |
 | [004](ADR-004-runtime-strengths.md) | Runtime engine strength catalog | Accepted | Bun / CPython / Go routing rationale |
 | [005](ADR-005-local-llm-complete.md) | Local LLM completions (`llm::complete` / silclm) | Accepted (v1) | Persistence synthesized (ADR-009) |
-| [006](ADR-006-scrape-namespace.md) | Scrape namespace (`scrape::*`) | Accepted | All five ops shipped |
+| [006](ADR-006-scrape-namespace.md) | Scrape namespace (`scrape::*`) | Accepted | All five operations shipped |
 | [007](ADR-007-pipeline-feeds.md) | Pipeline feeds (`==>`) | Accepted | Author vs synthesized steps clarified by ADR-009 |
 | [008](ADR-008-recursive-silclm-assist.md) | Recursive silclm assist (`silc assist`) | Accepted (Phase 1) | Distinct from in-app `llm::complete` |
 | [009](ADR-009-compiler-synthesized-runtime.md) | Compiler-synthesized runtime (0.4.0) | Accepted | Partially supersedes authoring examples in 002/003/005/007 |
@@ -41,6 +41,8 @@ forward to ADR-009 for the current authoring rule.
 
 | Spec | Role |
 | --- | --- |
+| [SILC-LANGUAGE.md](SILC-LANGUAGE.md) | Normative language surface: declarations, nodes, options, operations, compatibility |
+| [GLOSSARY.md](GLOSSARY.md) | One meaning per term; retired vocabulary |
 | [SILC-IPC-ABI-v1.md](SILC-IPC-ABI-v1.md) | Shared-buffer and UDS framing constants |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | Subject model, crate map, execution layout |
 | [intent-vs-subjects.md](intent-vs-subjects.md) | Author intent surface vs compiler subjects |

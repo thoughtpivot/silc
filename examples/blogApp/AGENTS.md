@@ -52,13 +52,13 @@ meaningful edit. Stop and report limits instead of inventing substrates.
 | `@version("0.5.0")` | Required exact source-version annotation |
 | `subset Name of Base where { … }` | Semantic type alias; v1 `where` predicates (Str): `.contains` / `.starts-with` / `.ends-with` (ADR-002) |
 | `contract X { has T $.f; }` | **Contract** — typed data schema |
-| `component X` | **Component** — props, `has state`, slots, `emit`, handlers, `render()` |
+| `component X` | **Component** — options (`has`), `has state`, slots, `emit`, handlers, `render()` |
 | `resource X for Contract` | **Resource** — capability CRUD (`query list;`, `mutation create;`, …) |
 | `app X` | **App** — `route` table (dual-surface serving is synthesized) |
 | `game X` | **Game** — web-only WebGPU scene tree (`game::scene(...)`; ADR-012). Do not mix with `app` / UI routes |
 | `loop X` | **Loop** — scheduled, approval-gated, model-assisted work (`loop::flow(...)`; ADR-014). Runs beside an `app`; the compiler adds the `/loops` inbox. With no `app` and only `loop::manual` triggers it is a **command**: `silc main.silc` runs each loop once, prints its notices to stdout, and exits |
 | `service X` / `processor X` / `task X` | Optional workflow modules |
-| `==>` | Pipeline feed between values and `ns::op(...)` calls |
+| `==>` | Pipeline feed between values and `ns::operation(...)` calls |
 
 Removed in 0.2.0 (do not use):
 
@@ -83,7 +83,7 @@ vectors (`Vec[num32; 768]`).
 Supported in handlers / templates:
 
 - Literals, `$name` / `$.field`, member access, calls, `Type.new(:field(value))`
-- Arithmetic / comparison / boolean ops, unary `!` / `-`
+- Arithmetic / comparison / boolean operators, unary `!` / `-`
 - Assignment to component state: `$.field = expr;`
 - Lists: `[a, b]`
 - `emit event(payload)`, `navigate("/path")`, `await expr`
@@ -104,7 +104,7 @@ Tailwind, OpenTUI, ShadCN trees, or bundler config in Silc source.
 attach OpenTUI and the telnet CLI. Override ports with `SILC_HTTP_PORT` /
 `SILC_TERMINAL_PORT` when the terminal surface is attached.
 
-### Shared prop vocabulary
+### Shared option vocabulary
 
 | Concern | Shape | Closed values / notes |
 | --- | --- | --- |
@@ -115,135 +115,135 @@ attach OpenTUI and the telnet CLI. Override ports with `SILC_HTTP_PORT` /
 | Size | `:size(...)` | `sm` \| `md` \| `lg` |
 | Capability flags | bare flags | `:disabled`, `:sortable`, `:searchable`, `:selectable`, `:dense`, `:active`, `:submit`, `:dismissible`, `:collapsible` |
 
-Unknown closed tokens are compile errors. `:field` stays a prop pattern;
+Unknown closed tokens are compile errors. `:field` stays an option pattern;
 `ui::field` is optional chrome around a control.
 
-### Complete UI primitive catalog (39)
+### Complete UI primitive catalog
 
 Every builtin is dual-surface (`web+terminal`). Lines below are the canonical
-API contract (props / events / slots / children).
+API contract (options / events / slots / children).
 
 #### Shell and navigation
 
-- `ui::page` — props: none; events: none; slots: `app_bar`→`app_bar`, `side_panel`→`side_panel`, `footer`→`footer`; children: anyOf(`stack`, `row`, `grid`, `card`, `heading`, `text`, `form`, `text_input`, `textarea`, `file_input`, `radio_group`, `select`, `checkbox`, `switch`, `field`, `button`, `toolbar`, `chat`, `chat_history`, `search_input`, `filter_bar`, `collection`, `list`, `table`, `badge`, `alert`, `divider`, `section`, `description_list`, `tabs`, `dialog`, `loading`, `empty`, `nav_item`); surfaces: web+terminal
-- `ui::app_bar` — props: `title` (required); events: none; slots: none; children: none; surfaces: web+terminal
-- `ui::side_panel` — props: none; events: none; slots: none; children: anyOf(`nav_item`); surfaces: web+terminal
-- `ui::nav_item` — props: `label` (required), `to?`, `active?` (flag); events: `click`; slots: none; children: none; surfaces: web+terminal
-- `ui::toolbar` — props: none; events: none; slots: none; children: anyOf(`button`); surfaces: web+terminal
-- `ui::footer` — props: none; events: none; slots: none; children: any; surfaces: web+terminal
+- `ui::page` — options: none; events: none; slots: `app_bar`→`app_bar`, `side_panel`→`side_panel`, `footer`→`footer`; children: anyOf(`stack`, `row`, `grid`, `card`, `heading`, `text`, `form`, `text_input`, `textarea`, `file_input`, `radio_group`, `select`, `checkbox`, `switch`, `field`, `button`, `toolbar`, `chat`, `chat_history`, `search_input`, `filter_bar`, `collection`, `list`, `table`, `badge`, `alert`, `divider`, `section`, `description_list`, `tabs`, `dialog`, `loading`, `empty`, `nav_item`); surfaces: web+terminal
+- `ui::app_bar` — options: `title` (required); events: none; slots: none; children: none; surfaces: web+terminal
+- `ui::side_panel` — options: none; events: none; slots: none; children: anyOf(`nav_item`); surfaces: web+terminal
+- `ui::nav_item` — options: `label` (required), `to?`, `active?` (flag); events: `click`; slots: none; children: none; surfaces: web+terminal
+- `ui::toolbar` — options: none; events: none; slots: none; children: anyOf(`button`); surfaces: web+terminal
+- `ui::footer` — options: none; events: none; slots: none; children: any; surfaces: web+terminal
 
 #### Layout
 
-- `ui::stack` — props: none; events: none; slots: none; children: any; surfaces: web+terminal
-- `ui::row` — props: none; events: none; slots: none; children: any; surfaces: web+terminal
-- `ui::grid` — props: none; events: none; slots: none; children: any; surfaces: web+terminal
-- `ui::card` — props: none; events: none; slots: `actions`→`row`; children: any; surfaces: web+terminal
-- `ui::section` — props: `title?`, `description?`; events: none; slots: none; children: any; surfaces: web+terminal
-- `ui::divider` — props: `label?`; events: none; slots: none; children: none; surfaces: web+terminal
-- `ui::heading` — props: `text` (required), `level?`; events: none; slots: none; children: none; surfaces: web+terminal
-- `ui::text` — props: `text` (required); events: none; slots: none; children: none; surfaces: web+terminal
+- `ui::stack` — options: none; events: none; slots: none; children: any; surfaces: web+terminal
+- `ui::row` — options: none; events: none; slots: none; children: any; surfaces: web+terminal
+- `ui::grid` — options: none; events: none; slots: none; children: any; surfaces: web+terminal
+- `ui::card` — options: none; events: none; slots: `actions`→`row`; children: any; surfaces: web+terminal
+- `ui::section` — options: `title?`, `description?`; events: none; slots: none; children: any; surfaces: web+terminal
+- `ui::divider` — options: `label?`; events: none; slots: none; children: none; surfaces: web+terminal
+- `ui::heading` — options: `text` (required), `level?`; events: none; slots: none; children: none; surfaces: web+terminal
+- `ui::text` — options: `text` (required); events: none; slots: none; children: none; surfaces: web+terminal
 
 #### Forms
 
-- `ui::form` — props: none; events: `submit`; slots: none; children: anyOf(`stack`, `row`, `grid`, `card`, `heading`, `text`, `text_input`, `textarea`, `file_input`, `radio_group`, `select`, `checkbox`, `switch`, `field`, `button`, `toolbar`, `badge`, `alert`, `divider`, `section`, `loading`, `empty`); surfaces: web+terminal
-- `ui::text_input` — props: `field?`, `value?`, `label?`, `placeholder?`, `disabled?` (flag); events: `input`, `change`; slots: none; children: none; surfaces: web+terminal
-- `ui::textarea` — props: `field?`, `value?`, `label?`, `disabled?` (flag); events: `input`, `change`; slots: none; children: none; surfaces: web+terminal
-- `ui::file_input` — props: `field?`, `label?`, `accept?`, `multiple?` (flag), `disabled?` (flag); events: `change`; slots: none; children: none; surfaces: web+terminal
-- `ui::radio_group` — props: `field?`, `value?`, `options` (required), `label?`, `disabled?` (flag); events: `change`; slots: none; children: none; surfaces: web+terminal
-- `ui::select` — props: `field?`, `value?`, `options` (required), `label?`, `placeholder?`, `disabled?` (flag); events: `change`; slots: none; children: none; surfaces: web+terminal
-- `ui::checkbox` — props: `field?`, `label` (required), `checked?`, `disabled?` (flag); events: `change`; slots: none; children: none; surfaces: web+terminal
-- `ui::switch` — props: `field?`, `label` (required), `checked?`, `disabled?` (flag); events: `change`; slots: none; children: none; surfaces: web+terminal
-- `ui::field` — props: `label?`, `hint?`, `error?`; events: none; slots: none; children: anyOf(`stack`, `row`, `grid`, `card`, `heading`, `text`, `text_input`, `textarea`, `file_input`, `radio_group`, `select`, `checkbox`, `switch`, `field`, `button`, `toolbar`, `badge`, `alert`, `divider`, `section`, `loading`, `empty`); surfaces: web+terminal
-- `ui::button` — props: `label` (required), `variant?`, `size?`, `submit?` (flag), `active?`, `disabled?` (flag); events: `click`; slots: none; children: none; surfaces: web+terminal
+- `ui::form` — options: none; events: `submit`; slots: none; children: anyOf(`stack`, `row`, `grid`, `card`, `heading`, `text`, `text_input`, `textarea`, `file_input`, `radio_group`, `select`, `checkbox`, `switch`, `field`, `button`, `toolbar`, `badge`, `alert`, `divider`, `section`, `loading`, `empty`); surfaces: web+terminal
+- `ui::text_input` — options: `field?`, `value?`, `label?`, `placeholder?`, `disabled?` (flag); events: `input`, `change`; slots: none; children: none; surfaces: web+terminal
+- `ui::textarea` — options: `field?`, `value?`, `label?`, `disabled?` (flag); events: `input`, `change`; slots: none; children: none; surfaces: web+terminal
+- `ui::file_input` — options: `field?`, `label?`, `accept?`, `multiple?` (flag), `disabled?` (flag); events: `change`; slots: none; children: none; surfaces: web+terminal
+- `ui::radio_group` — options: `field?`, `value?`, `options` (required), `label?`, `disabled?` (flag); events: `change`; slots: none; children: none; surfaces: web+terminal
+- `ui::select` — options: `field?`, `value?`, `options` (required), `label?`, `placeholder?`, `disabled?` (flag); events: `change`; slots: none; children: none; surfaces: web+terminal
+- `ui::checkbox` — options: `field?`, `label` (required), `checked?`, `disabled?` (flag); events: `change`; slots: none; children: none; surfaces: web+terminal
+- `ui::switch` — options: `field?`, `label` (required), `checked?`, `disabled?` (flag); events: `change`; slots: none; children: none; surfaces: web+terminal
+- `ui::field` — options: `label?`, `hint?`, `error?`; events: none; slots: none; children: anyOf(`stack`, `row`, `grid`, `card`, `heading`, `text`, `text_input`, `textarea`, `file_input`, `radio_group`, `select`, `checkbox`, `switch`, `field`, `button`, `toolbar`, `badge`, `alert`, `divider`, `section`, `loading`, `empty`); surfaces: web+terminal
+- `ui::button` — options: `label` (required), `variant?`, `size?`, `submit?` (flag), `active?`, `disabled?` (flag); events: `click`; slots: none; children: none; surfaces: web+terminal
 
 #### Chat and search
 
-- `ui::chat` — props: `field?`, `value?`, `label?`, `placeholder?`, `session?`, `loading?`, `error?`, `context?`, `persona?`; events: `send`; slots: none; children: none; surfaces: web+terminal
-- `ui::chat_history` — props: `title?`, `items?`, `collapsible?` (flag); events: none; slots: none; children: none; surfaces: web+terminal
-- `ui::search_input` — props: `field?`, `value?`, `label?`, `placeholder?`, `context?`, `persona?`; events: `input`, `submit`; slots: none; children: none; surfaces: web+terminal
-- `ui::filter_bar` — props: none; events: none; slots: none; children: anyOf(`search_input`, `button`, `text_input`); surfaces: web+terminal
+- `ui::chat` — options: `field?`, `value?`, `label?`, `placeholder?`, `session?`, `loading?`, `error?`, `context?`, `persona?`; events: `send`; slots: none; children: none; surfaces: web+terminal
+- `ui::chat_history` — options: `title?`, `items?`, `collapsible?` (flag); events: none; slots: none; children: none; surfaces: web+terminal
+- `ui::search_input` — options: `field?`, `value?`, `label?`, `placeholder?`, `context?`, `persona?`; events: `input`, `submit`; slots: none; children: none; surfaces: web+terminal
+- `ui::filter_bar` — options: none; events: none; slots: none; children: anyOf(`search_input`, `button`, `text_input`); surfaces: web+terminal
 
 #### Data display
 
-- `ui::collection` — props: `items` (required), `empty_text?`; events: none; slots: none; children: any; surfaces: web+terminal
-- `ui::list` — props: `items?`; events: none; slots: none; children: any; surfaces: web+terminal
-- `ui::table` — props: `rows` (required), `columns` (required), `empty_text?`, `filter_field?`, `filter_column?`, `filter_all?`, `sortable?` (flag), `searchable?` (flag), `selectable?` (flag), `dense?` (flag); events: `select`; slots: none; children: none; surfaces: web+terminal
-- `ui::description_list` — props: `items` (required); events: none; slots: none; children: none; surfaces: web+terminal
+- `ui::collection` — options: `items` (required), `empty_text?`; events: none; slots: none; children: any; surfaces: web+terminal
+- `ui::list` — options: `items?`; events: none; slots: none; children: any; surfaces: web+terminal
+- `ui::table` — options: `rows` (required), `columns` (required), `empty_text?`, `filter_field?`, `filter_column?`, `filter_all?`, `sortable?` (flag), `searchable?` (flag), `selectable?` (flag), `dense?` (flag); events: `select`; slots: none; children: none; surfaces: web+terminal
+- `ui::description_list` — options: `items` (required); events: none; slots: none; children: none; surfaces: web+terminal
 
 #### Feedback and overlays
 
-- `ui::badge` — props: `text` (required), `tone?`; events: none; slots: none; children: none; surfaces: web+terminal
-- `ui::alert` — props: `text` (required), `title?`, `tone?`, `dismissible?` (flag), `auto_dismiss_ms?`; events: `dismiss`; slots: none; children: none; surfaces: web+terminal
-- `ui::tabs` — props: `field?`, `value?`; events: `change`; slots: none; children: anyOf(`tab`); surfaces: web+terminal
-- `ui::tab` — props: `label` (required), `value` (required); events: none; slots: none; children: any; surfaces: web+terminal
-- `ui::dialog` — props: `open` (required), `title?`; events: `confirm`, `cancel`; slots: none; children: any; surfaces: web+terminal
-- `ui::loading` — props: `text?`; events: none; slots: none; children: none; surfaces: web+terminal
-- `ui::empty` — props: `text?`; events: none; slots: none; children: none; surfaces: web+terminal
+- `ui::badge` — options: `text` (required), `tone?`; events: none; slots: none; children: none; surfaces: web+terminal
+- `ui::alert` — options: `text` (required), `title?`, `tone?`, `dismissible?` (flag), `auto_dismiss_ms?`; events: `dismiss`; slots: none; children: none; surfaces: web+terminal
+- `ui::tabs` — options: `field?`, `value?`; events: `change`; slots: none; children: anyOf(`tab`); surfaces: web+terminal
+- `ui::tab` — options: `label` (required), `value` (required); events: none; slots: none; children: any; surfaces: web+terminal
+- `ui::dialog` — options: `open` (required), `title?`; events: `confirm`, `cancel`; slots: none; children: any; surfaces: web+terminal
+- `ui::loading` — options: `text?`; events: none; slots: none; children: none; surfaces: web+terminal
+- `ui::empty` — options: `text?`; events: none; slots: none; children: none; surfaces: web+terminal
 
 ### Complete game::* catalog (ADR-012)
 
 WebGPU-only. One `game Name { game::scene(...) }` root. Godot tree+signals, Unity prefabs/data/components, Unreal mode/pawn/controller. Do not mix with `app` / `component` / `resource`.
 
-- `game::scene` — props: `title`, `renderer?`, `target_fps?`; children: `entity`, `prefab`, `spawn`, `data`, `asset`, `generate`, `material`, `mode`, `controller`, `camera`, `post_process`, `overlay`, `hud`, `environment`, `shadow`, `zone`, `weapon`, `encounter`, `objective`, `signal`, `group`, `tilemap`, `parallax`, `particle_effect`, `floating_text`
-- `game::entity` — props: `name`, `x?`, `y?`, `z?`, `yaw?`, `pitch?`, `roll?`, `sx?`, `sy?`, `sz?`; children: `entity`, `mesh`, `light`, `collider`, `movement`, `attribute`, `pawn`, `ability`, `weapon`, `ammo`, `damage`, `pickup`, `npc`, `perception`, `behavior`, `mind`, `nav_agent`, `door`, `trigger`, `cover`, `audio`, `signal`, `group`, `spawn`, `sprite`, `collectible`, `interactable`, `patrol`, `warp`, `level_end`, `state_machine`, `particle_effect`
-- `game::prefab` — props: `name`, `x?`, `y?`, `z?`, `yaw?`, `pitch?`, `roll?`, `sx?`, `sy?`, `sz?`; children: `entity`, `mesh`, `light`, `collider`, `movement`, `attribute`, `pawn`, `ability`, `weapon`, `ammo`, `damage`, `pickup`, `npc`, `perception`, `behavior`, `mind`, `nav_agent`, `door`, `trigger`, `cover`, `audio`, `signal`, `group`, `spawn`, `sprite`, `collectible`, `interactable`, `patrol`, `warp`, `level_end`, `state_machine`, `particle_effect`
-- `game::spawn` — props: `prefab`, `x?`, `y?`, `z?`, `as_pawn?` (flag); children: none
-- `game::data` — props: `name`, `speed?`, `jump_height?`, `gravity?`, `cooldown?`, `cost?`, `damage?`, `range?`, `fire_rate?`, `magazine?`, `reload?`, `spread?`, `pellet_count?`, `charge_time?`, `splash_radius?`, `cadence_s?`, `persona?`, `aggression?`, `morale?`, `health?`, `armor?`; children: none
-- `game::signal` — props: `name`, `on?`; children: none
-- `game::group` — props: `name`; children: none
-- `game::mesh` — props: `shape?`, `asset?`, `material?`, `size?`, `color?`; children: none
-- `game::light` — props: `kind`, `intensity?`, `color?`, `radius_m?`, `cast_shadows?`; children: none
-- `game::collider` — props: `shape`, `size?`; children: none
-- `game::movement` — props: `style?`, `speed?`, `jump_speed?`, `sprint_mul?`, `ref?`; children: none
-- `game::attribute` — props: `name`, `value?`, `max?`; children: none
-- `game::mode` — props: `id`, `possess?`; children: `spawn`, `encounter`, `objective`
-- `game::pawn` — props: none; children: none
-- `game::controller` — props: `scheme?`; children: none
-- `game::camera` — props: `mode?`, `distance_m?`, `shoulder_offset_m?`, `follow?`; children: none
-- `game::ability` — props: `name`, `key`, `cooldown?`, `cost?`, `cost_attr?`, `ref?`; children: `particle_emitter`, `dynamic_light`, `camera_impulse`, `audio`
-- `game::particle_emitter` — props: `kind`, `count?`; children: none
-- `game::dynamic_light` — props: `radius_m?`, `intensity?`, `color?`; children: none
-- `game::camera_impulse` — props: `strength?`; children: none
-- `game::post_process` — props: `stage`, `enabled?`; children: none
-- `game::overlay` — props: `toggle`; children: none
-- `game::asset` — props: `name`, `path`, `kind`; children: none
-- `game::material` — props: `name`, `albedo?`, `normal?`, `roughness?`, `metallic?`, `ao?`, `emissive?`, `tiling?`; children: none
-- `game::zone` — props: `name`, `kind`; children: `entity`, `spawn`, `light`, `signal`, `group`
-- `game::weapon` — props: `name`, `slot?`, `fire_mode`, `ref?`, `damage?`, `fire_rate?`, `magazine?`, `reload?`, `spread?`; children: `projectile`, `particle_emitter`, `dynamic_light`, `camera_impulse`, `audio`
-- `game::projectile` — props: `kind`, `speed?`, `lifetime?`, `splash_radius?`, `color?`, `size?`; children: none
-- `game::ammo` — props: `name`, `amount?`, `max?`; children: none
-- `game::damage` — props: `amount`, `type_ident`; children: none
-- `game::pickup` — props: `kind`, `ref`, `amount?`; children: none
-- `game::hud` — props: `show_crosshair?`, `show_ammo?`, `show_health?`, `score_label?`; children: none
-- `game::npc` — props: `archetype`, `faction`; children: none
-- `game::perception` — props: `sight_m?`, `hear_m?`, `fov_deg?`; children: none
-- `game::behavior` — props: `tree`, `default_tactic?`; children: none
-- `game::mind` — props: `ref`, `cadence_s?`; children: none
-- `game::nav_agent` — props: `radius?`, `height?`, `max_speed?`; children: none
-- `game::encounter` — props: `id`, `wave?`; children: `spawn`
-- `game::objective` — props: `id`, `kind`, `target?`; children: none
-- `game::audio` — props: `kind`, `path?`, `ref?`, `volume?`; children: none
-- `game::environment` — props: `fog_density?`, `fog_color?`, `sky_color?`, `exposure?`; children: `clouds`, `stars`
-- `game::shadow` — props: `enabled?`, `cascade_count?`; children: none
-- `game::clouds` — props: `count?`, `altitude?`, `spread?`, `speed?`, `scale?`, `color?`, `opacity?`; children: none
-- `game::stars` — props: `count?`, `altitude?`, `size?`, `color?`, `opacity?`, `twinkle?`; children: none
-- `game::door` — props: `state?`, `auto?`; children: none
-- `game::trigger` — props: `kind`, `on`; children: none
-- `game::cover` — props: `quality`; children: none
-- `game::sprite` — props: `atlas`, `frame?`, `width?`, `height?`, `animation?`, `flip_x?`, `billboard?`; children: none
-- `game::tilemap` — props: `asset`, `tileset`, `tile_size?`, `collision_layer?`; children: none
-- `game::collectible` — props: `kind`, `value?`, `on_collect?`, `respawn?`; children: none
-- `game::interactable` — props: `kind`, `contents?`, `health?`, `on_interact?`; children: none
-- `game::patrol` — props: `behavior`, `speed?`, `bounds?`, `on_stomp?`, `on_touch?`; children: none
-- `game::warp` — props: `target`, `direction?`, `on_warp?`; children: none
-- `game::level_end` — props: `on_complete?`, `next_level?`; children: none
-- `game::state_machine` — props: `initial`, `on_stomp_state?`, `on_hit_state?`, `on_touch_state?`, `death_delay?`, `on_state_change?`; children: none
-- `game::parallax` — props: `texture`, `depth`, `y?`, `scale?`, `repeat_x?`, `tint?`; children: none
-- `game::particle_effect` — props: `id`, `preset?`, `count?`, `speed?`, `spread?`, `lifetime?`, `gravity?`, `color?`, `on_trigger?`; children: none
-- `game::floating_text` — props: `on_trigger`, `prefix?`, `color?`, `duration?`, `rise_speed?`; children: none
-- `game::generate` — props: `type`, `name`, `preset?`, `style?`, `frame_size?`, `palette?`, `animations?`, `export?`; children: none
+- `game::scene` — options: `title`, `renderer?`, `target_fps?`; children: `entity`, `prefab`, `spawn`, `data`, `asset`, `generate`, `material`, `mode`, `controller`, `camera`, `post_process`, `overlay`, `hud`, `environment`, `shadow`, `zone`, `weapon`, `encounter`, `objective`, `signal`, `group`, `tilemap`, `parallax`, `particle_effect`, `floating_text`
+- `game::entity` — options: `name`, `x?`, `y?`, `z?`, `yaw?`, `pitch?`, `roll?`, `sx?`, `sy?`, `sz?`; children: `entity`, `mesh`, `light`, `collider`, `movement`, `attribute`, `pawn`, `ability`, `weapon`, `ammo`, `damage`, `pickup`, `npc`, `perception`, `behavior`, `mind`, `nav_agent`, `door`, `trigger`, `cover`, `audio`, `signal`, `group`, `spawn`, `sprite`, `collectible`, `interactable`, `patrol`, `warp`, `level_end`, `state_machine`, `particle_effect`
+- `game::prefab` — options: `name`, `x?`, `y?`, `z?`, `yaw?`, `pitch?`, `roll?`, `sx?`, `sy?`, `sz?`; children: `entity`, `mesh`, `light`, `collider`, `movement`, `attribute`, `pawn`, `ability`, `weapon`, `ammo`, `damage`, `pickup`, `npc`, `perception`, `behavior`, `mind`, `nav_agent`, `door`, `trigger`, `cover`, `audio`, `signal`, `group`, `spawn`, `sprite`, `collectible`, `interactable`, `patrol`, `warp`, `level_end`, `state_machine`, `particle_effect`
+- `game::spawn` — options: `prefab`, `x?`, `y?`, `z?`, `as_pawn?` (flag); children: none
+- `game::data` — options: `name`, `speed?`, `jump_height?`, `gravity?`, `cooldown?`, `cost?`, `damage?`, `range?`, `fire_rate?`, `magazine?`, `reload?`, `spread?`, `pellet_count?`, `charge_time?`, `splash_radius?`, `cadence_s?`, `persona?`, `aggression?`, `morale?`, `health?`, `armor?`; children: none
+- `game::signal` — options: `name`, `on?`; children: none
+- `game::group` — options: `name`; children: none
+- `game::mesh` — options: `shape?`, `asset?`, `material?`, `size?`, `color?`; children: none
+- `game::light` — options: `kind`, `intensity?`, `color?`, `radius_m?`, `cast_shadows?`; children: none
+- `game::collider` — options: `shape`, `size?`; children: none
+- `game::movement` — options: `style?`, `speed?`, `jump_speed?`, `sprint_mul?`, `ref?`; children: none
+- `game::attribute` — options: `name`, `value?`, `max?`; children: none
+- `game::mode` — options: `id`, `possess?`; children: `spawn`, `encounter`, `objective`
+- `game::pawn` — options: none; children: none
+- `game::controller` — options: `scheme?`; children: none
+- `game::camera` — options: `mode?`, `distance_m?`, `shoulder_offset_m?`, `follow?`; children: none
+- `game::ability` — options: `name`, `key`, `cooldown?`, `cost?`, `cost_attr?`, `ref?`; children: `particle_emitter`, `dynamic_light`, `camera_impulse`, `audio`
+- `game::particle_emitter` — options: `kind`, `count?`; children: none
+- `game::dynamic_light` — options: `radius_m?`, `intensity?`, `color?`; children: none
+- `game::camera_impulse` — options: `strength?`; children: none
+- `game::post_process` — options: `stage`, `enabled?`; children: none
+- `game::overlay` — options: `toggle`; children: none
+- `game::asset` — options: `name`, `path`, `kind`; children: none
+- `game::material` — options: `name`, `albedo?`, `normal?`, `roughness?`, `metallic?`, `ao?`, `emissive?`, `tiling?`; children: none
+- `game::zone` — options: `name`, `kind`; children: `entity`, `spawn`, `light`, `signal`, `group`
+- `game::weapon` — options: `name`, `slot?`, `fire_mode`, `ref?`, `damage?`, `fire_rate?`, `magazine?`, `reload?`, `spread?`; children: `projectile`, `particle_emitter`, `dynamic_light`, `camera_impulse`, `audio`
+- `game::projectile` — options: `kind`, `speed?`, `lifetime?`, `splash_radius?`, `color?`, `size?`; children: none
+- `game::ammo` — options: `name`, `amount?`, `max?`; children: none
+- `game::damage` — options: `amount`, `type_ident`; children: none
+- `game::pickup` — options: `kind`, `ref`, `amount?`; children: none
+- `game::hud` — options: `show_crosshair?`, `show_ammo?`, `show_health?`, `score_label?`; children: none
+- `game::npc` — options: `archetype`, `faction`; children: none
+- `game::perception` — options: `sight_m?`, `hear_m?`, `fov_deg?`; children: none
+- `game::behavior` — options: `tree`, `default_tactic?`; children: none
+- `game::mind` — options: `ref`, `cadence_s?`; children: none
+- `game::nav_agent` — options: `radius?`, `height?`, `max_speed?`; children: none
+- `game::encounter` — options: `id`, `wave?`; children: `spawn`
+- `game::objective` — options: `id`, `kind`, `target?`; children: none
+- `game::audio` — options: `kind`, `path?`, `ref?`, `volume?`; children: none
+- `game::environment` — options: `fog_density?`, `fog_color?`, `sky_color?`, `exposure?`; children: `clouds`, `stars`
+- `game::shadow` — options: `enabled?`, `cascade_count?`; children: none
+- `game::clouds` — options: `count?`, `altitude?`, `spread?`, `speed?`, `scale?`, `color?`, `opacity?`; children: none
+- `game::stars` — options: `count?`, `altitude?`, `size?`, `color?`, `opacity?`, `twinkle?`; children: none
+- `game::door` — options: `state?`, `auto?`; children: none
+- `game::trigger` — options: `kind`, `on`; children: none
+- `game::cover` — options: `quality`; children: none
+- `game::sprite` — options: `atlas`, `frame?`, `width?`, `height?`, `animation?`, `flip_x?`, `billboard?`; children: none
+- `game::tilemap` — options: `asset`, `tileset`, `tile_size?`, `collision_layer?`; children: none
+- `game::collectible` — options: `kind`, `value?`, `on_collect?`, `respawn?`; children: none
+- `game::interactable` — options: `kind`, `contents?`, `health?`, `on_interact?`; children: none
+- `game::patrol` — options: `behavior`, `speed?`, `bounds?`, `on_stomp?`, `on_touch?`; children: none
+- `game::warp` — options: `target`, `direction?`, `on_warp?`; children: none
+- `game::level_end` — options: `on_complete?`, `next_level?`; children: none
+- `game::state_machine` — options: `initial`, `on_stomp_state?`, `on_hit_state?`, `on_touch_state?`, `death_delay?`, `on_state_change?`; children: none
+- `game::parallax` — options: `texture`, `depth`, `y?`, `scale?`, `repeat_x?`, `tint?`; children: none
+- `game::particle_effect` — options: `id`, `preset?`, `count?`, `speed?`, `spread?`, `lifetime?`, `gravity?`, `color?`, `on_trigger?`; children: none
+- `game::floating_text` — options: `on_trigger`, `prefix?`, `color?`, `duration?`, `rise_speed?`; children: none
+- `game::generate` — options: `type`, `name`, `preset?`, `style?`, `frame_size?`, `palette?`, `animations?`, `export?`; children: none
 
-Closed enums: `:renderer(webgpu)`; mesh/collider `:shape(plane|box|capsule|sphere)`; mesh `:asset` XOR `:shape`; light `:kind(directional|point|spot)`; movement `:style(walk|first_person|sprint|jump)`; controller `:scheme(wasd_mouse)`; camera `:mode(third_person|first_person)`; asset `:kind(gltf|texture|audio|navmesh)`; zone `:kind(room|walkway|outdoor)`; weapon `:fire_mode(hitscan|pellet|projectile|beam)`; projectile `:kind(tracer|shell|plasma|rail)`; damage `:type_ident(bullet|pellet|plasma|rail|melee)`; pickup `:kind(weapon|ammo|health)`; npc `:archetype(suppressor|flanker|breacher)` `:faction(hostile|neutral)`; behavior `:tree(patrol_combat|guard)` `:default_tactic(suppress|flank|push|retreat)`; objective `:kind(clear_hostiles|reach)`; audio `:kind(oneshot|loop)`; door `:state(open|closed)`; trigger `:kind(enter|exit)`; cover `:quality(low|med|high)`; particle `:kind(burst|spark|smoke)`; post `:stage(taa|ssao|ssr|dof|bloom|tonemap|grain|sharpen)`.
+Closed enums: `game::scene` `:renderer(webgpu)`; `game::mesh` `:shape(plane|box|capsule|sphere)`; `game::light` `:kind(directional|point|spot)`; `game::collider` `:shape(box|capsule|plane)`; `game::movement` `:style(walk|first_person|sprint|jump|platformer)`; `game::controller` `:scheme(wasd_mouse|arrows_jump)`; `game::camera` `:mode(third_person|first_person|side_scroll)`; `game::particle_emitter` `:kind(burst|spark|smoke)`; `game::post_process` `:stage(taa|ssao|ssr|dof|bloom|tonemap|grain|sharpen)`; `game::asset` `:kind(gltf|texture|audio|navmesh)`; `game::zone` `:kind(room|walkway|outdoor)`; `game::weapon` `:fire_mode(hitscan|pellet|projectile|beam)`; `game::projectile` `:kind(tracer|shell|plasma|rail)`; `game::damage` `:type_ident(bullet|pellet|plasma|rail|melee)`; `game::pickup` `:kind(weapon|ammo|health)`; `game::npc` `:archetype(suppressor|flanker|breacher)`; `game::npc` `:faction(hostile|neutral)`; `game::behavior` `:tree(patrol_combat|guard)`; `game::behavior` `:default_tactic(suppress|flank|push|retreat)`; `game::objective` `:kind(clear_hostiles|reach)`; `game::audio` `:kind(oneshot|loop)`; `game::door` `:state(open|closed)`; `game::trigger` `:kind(enter|exit)`; `game::cover` `:quality(low|med|high)`; `game::collectible` `:kind(coin|gem|health|powerup|key|custom)`; `game::interactable` `:kind(breakable|bumpable|switchable|container)`; `game::patrol` `:behavior(walk_reverse|walk_fall|stationary|follow|flee)`; `game::warp` `:direction(down|up|left|right)`; `game::particle_effect` `:preset(burst|sparkle|debris|dust|trail)`; `game::generate` `:type(sprite|texture|material)`; `game::generate` `:preset(character|enemy|item|tile|effect)`; `game::generate` `:style(pixel_8|pixel_16|pixel_32|flat|outline)`. `game::mesh` takes `:asset` XOR `:shape`.
 
 ### Complete loop::* catalog (ADR-014)
 
@@ -257,27 +257,27 @@ surfaces are built; `silc main.silc` runs every loop once, narrates each step on
 stderr, prints each run's notices to stdout (one per line), and exits non-zero
 if any run failed.
 
-- `loop::flow` — props: none; children: one trigger, then steps
-- `loop::schedule` — props: `cron`, `tz`, `catch_up?`; children: none
-- `loop::manual` — props: none; children: none
-- `loop::on_mutation` — props: `resource`, `mutation`; children: none
-- `loop::let` — props: `as`, `value`; children: none
-- `loop::find` — props: `as`, `from`, `where?`, `order?`, `desc?` (flag), `max?`, `one?` (flag); children: none
-- `loop::read` — props: `as`, `op`, `url?`, `server?`, `tool?`, `args?`, `auth_env?`, `select?`, `retry?`; children: none
-- `loop::ask` — props: `as`, `into`, `prompt`, `from?`, `retry?`; children: `otherwise`
-- `loop::gate` — props: `that`, `reason`; children: `otherwise`
-- `loop::branch` — props: none; children: `when`, `otherwise`
-- `loop::when` — props: `that`; children: steps
-- `loop::otherwise` — props: none; children: steps
-- `loop::each` — props: `in`, `as`, `max`; children: steps
-- `loop::write` — props: `to`, `value`, `key`, `unchecked?`; children: none
-- `loop::notify` — props: `to`, `text`, `key`, `unchecked?`; children: none
-- `loop::approve` — props: `by`, `message`, `show?`, `within`, `as?`; children: `declined`, `timed_out`
-- `loop::declined` — props: none; children: steps
-- `loop::timed_out` — props: none; children: steps
-- `loop::stop` — props: `reason?`; children: none
-- `loop::fail` — props: `reason`; children: none
-- `loop::skip` — props: `reason`; children: none
+- `loop::flow` — options: none; children: one trigger, then steps
+- `loop::schedule` — options: `cron`, `tz`, `catch_up?`; children: none
+- `loop::manual` — options: none; children: none
+- `loop::on_mutation` — options: `resource`, `mutation`; children: none
+- `loop::let` — options: `as`, `value`; children: none
+- `loop::find` — options: `as`, `from`, `where?`, `order?`, `desc?` (flag), `max?`, `one?` (flag); children: none
+- `loop::read` — options: `as`, `op`, `url?`, `server?`, `tool?`, `args?`, `auth_env?`, `select?`, `retry?`; children: none
+- `loop::ask` — options: `as`, `into`, `prompt`, `from?`, `retry?`; children: `otherwise`
+- `loop::gate` — options: `that`, `reason`; children: `otherwise`
+- `loop::branch` — options: none; children: `when`, `otherwise`
+- `loop::when` — options: `that`; children: steps
+- `loop::otherwise` — options: none; children: steps
+- `loop::each` — options: `in`, `as`, `max`; children: steps
+- `loop::write` — options: `to`, `value`, `key`, `unchecked?`; children: none
+- `loop::notify` — options: `to`, `text`, `key`, `unchecked?`; children: none
+- `loop::approve` — options: `by`, `message`, `show?`, `within`, `as?`; children: `declined`, `timed_out`
+- `loop::declined` — options: none; children: steps
+- `loop::timed_out` — options: none; children: steps
+- `loop::stop` — options: `reason?`; children: none
+- `loop::fail` — options: `reason`; children: none
+- `loop::skip` — options: `reason`; children: none
 
 Rules the compiler enforces:
 
@@ -482,7 +482,7 @@ and conditionals with `when expr { … }`.
 
 ## Runnable operations (0.5.0)
 
-Author-facing executable ops today (registry in `sil-core`):
+Author-facing executable operations today (registry in `sil-core`):
 
 `service::http`, `text::score`, `llm::complete`,
 `scrape::page`, `scrape::site`, `scrape::select`, `scrape::render`,
@@ -518,7 +518,7 @@ arbitrary tensor models/shapes are not executable in 0.5.0.
 
 Stub-only namespaces (parse/route/emit, do not run): `http`, `html`,
 `numpy`, `pandas`, `ws`, `sys`, `schema`, `payload`, `json`, plus non-registry
-ops under runnable namespaces. Mixing stub-only ops into a runnable graph is a
+operations under runnable namespaces. Mixing stub-only operations into a runnable graph is a
 **compile error**.
 
 ## Generated runtime surfaces
@@ -538,7 +538,7 @@ Compiler-owned (do not invent alternatives):
 1. UI apps require an `app` declaration with non-empty `route`s; dual-surface
    web/terminal serving is synthesized (default ports 18088 / 18023). Runtime
    attaches the terminal surface only with `--terminal` (or `SILC_TERMINAL=1`).
-2. Every builtin UI node must use catalog props/events; unknown props/events fail.
+2. Every builtin UI node must use catalog options/events; unknown options/events fail.
 3. Closed enums (`:variant`, `:tone`, `:size`) reject unknown tokens.
 4. Resource `query` bindings must reference real resource query methods.
 5. Do not mix `text::score` and `llm::complete`.
@@ -546,7 +546,7 @@ Compiler-owned (do not invent alternatives):
    `llm::complete` for grounded SilcLM summaries.
 7. Do not mix `doc::*` with `text::score`. Document extract needs
    `:into(Contract)` plus a matching `resource`.
-8. Do not mix executable and stub-only ops in one runnable graph.
+8. Do not mix executable and stub-only operations in one runnable graph.
 9. Default ports: web `18088`, terminal `18023`, API `8080`. Override with
    `SILC_HTTP_PORT` / `SILC_TERMINAL_PORT` / service `:port` as needed.
 10. Tensor pipelines require MiniLM, CPU, and exactly 384 normalized `num32`
@@ -561,7 +561,7 @@ Compiler-owned (do not invent alternatives):
 4. Use Contracts + `resource Name for Contract` capabilities for persistence.
 5. Do not create a `stdlib/` directory or escape into React/OpenTUI/CSS.
 6. Do not invent new compiler portal kinds to make an app run.
-7. Stay inside the UI catalog and runnable op set above.
+7. Stay inside the UI catalog and runnable operation set above.
 8. Validate with `silc build`; report errors instead of patching `.runtime/`.
 <!-- END SILC_AGENTS_TEMPLATE -->
 

@@ -28,12 +28,15 @@ chat: [ADR-005](ADR-005-local-llm-complete.md). Recursive authoring assist
 (`silc assist` / `sil-rlm`): [ADR-008](ADR-008-recursive-silclm-assist.md).
 Decision index: [ADR-INDEX.md](ADR-INDEX.md).
 
-The exhaustive 0.5.0 authoring and UI API contract (language constructs,
-executable operations, and the 38-primitive dual-surface catalog) lives in
+The normative language surface lives in [SILC-LANGUAGE.md](SILC-LANGUAGE.md)
+and the vocabulary in [GLOSSARY.md](GLOSSARY.md). The exhaustive 0.5.0 authoring
+and UI API contract (language constructs, executable operations, and the
+dual-surface primitive catalog) lives in
 [`crates/silc/templates/AGENTS.md`](../crates/silc/templates/AGENTS.md) and is
-mirrored in the root [README](../README.md). Compiler sources
-(`UI_COMPONENT_CATALOG`, `EXECUTABLE_OPS`) remain authoritative; documentation
-conformance tests fail on drift.
+summarized in the root [README](../README.md). Compiler sources
+(`UI_COMPONENT_CATALOG`, `GAME_NODE_CATALOG`, `LOOP_NODE_CATALOG`,
+`EXECUTABLE_OPS`) remain authoritative; documentation conformance tests fail on
+drift, including on hard-coded catalog counts in prose.
 
 ## Compiler pipeline vocabulary
 
@@ -62,10 +65,12 @@ invariants, and participates in several workflows. The initial subjects are:
 | Subject | Owns |
 | --- | --- |
 | `Contract` | Schemas, fields, annotations, type compatibility, and memory-layout invariants |
-| `Module` | Services, processors, sinks, tasks, properties, and functions |
-| `Component` | Typed props, reactive state, slots, events, handlers, queries, and render templates |
+| `Module` | Services, processors, and tasks with `==>` pipelines (author `sink` was removed in 0.4.0; the `Sink` kind survives only as internal legacy, see ADR-009) |
+| `Component` | Typed options, reactive state, slots, events, handlers, queries, and render templates |
 | `Resource` | Typed query/mutation methods and persistent collection semantics |
 | `App` | Explicit routes and dual-surface application entrypoints |
+| `Game` | One WebGPU scene tree from the closed `game::*` catalog (ADR-012) |
+| `Loop` | Scheduled, approval-gated work from the closed `loop::*` catalog (ADR-014) |
 | `Constraint` | Typed execution limits, preferences, normalization, and validation |
 | `Pipeline` | Ordered intent steps, value flow, step compatibility, and references |
 | `Target` | Runtime capabilities and the resolved Go/Python/Bun assignment (Bun executes emitted TypeScript) |
@@ -74,15 +79,23 @@ These subjects live together in `sil-core`, with one Rust module per subject:
 
 ```text
 crates/sil-core/src/
-├── contract.rs
-├── component.rs
-├── expr.rs
+├── contract.rs        # Contract, Subset, Field
+├── component.rs       # Component, UiNode, handlers, queries
+├── ui.rs              # UI_COMPONENT_CATALOG + template validation
 ├── resource.rs
 ├── app.rs
+├── game.rs            # Game + GAME_NODE_CATALOG
+├── loops.rs           # Loop + LOOP_NODE_CATALOG + loop validation
 ├── module.rs
-├── constraint.rs
 ├── pipeline.rs
+├── operation.rs       # EXECUTABLE_OPS, KNOWN_NAMESPACES, graph classification
+├── scrape_catalog.rs  # scrape::* option values
+├── model_catalog.rs   # silclm / MiniLM pinned model ids
+├── constraint.rs
+├── expr.rs
+├── types.rs
 ├── target.rs
+├── program.rs         # Program aggregate + validate()
 └── lib.rs
 ```
 
@@ -104,6 +117,7 @@ when it transforms or coordinates subjects without owning their definitions:
 | `sil-ipc` | Implement the cross-runtime transport boundary |
 | `sil-training` | Prompt banking and compiler-backed candidate validation |
 | `sil-rlm` | Closed-tool recursive assist loop ([ADR-008](ADR-008-recursive-silclm-assist.md)); not a language subject |
+| `sil-ide` / `sil-lsp` | Editor semantics and the language server; read catalogs, never redefine them |
 | `silc` | Keep CLI composition thin and orchestrate the workflow |
 
 This distinction prevents phase-owned duplicate models such as parser
@@ -122,6 +136,8 @@ sil-lexer ──► sil-parser
              ├── Component
              ├── Resource
              ├── App
+             ├── Game
+             ├── Loop
              ├── Module
              ├── Constraint
              ├── Pipeline
@@ -195,7 +211,7 @@ subject; target-specific rendering belongs to `sil-codegen`.
 
 UI intent lives in `component …` render templates and the `ui`
 primitive catalog. Authors never emit HTML, CSS, React, Tailwind, OpenTUI, or
-package manifests. Components own typed props, local state, slots, emitted
+package manifests. Components own typed options, local state, slots, emitted
 events, handlers, and resource query bindings. `app …` maps routes to
 components; dual-surface web and terminal serving is **synthesized** by the
 compiler ([ADR-009](ADR-009-compiler-synthesized-runtime.md)). Authors do not
@@ -259,6 +275,8 @@ Silc buffers as Arrow for external analytical tools.
 | `sil-ipc` | Silc shared-memory ABI and UDS runtime boundary |
 | `sil-rlm` | Recursive assist loop for `silc assist` |
 | `sil-training` | Training / benchmark harness |
+| `sil-ide` | Editor semantics shared by hover/resolve: symbol docs, catalog lookups |
+| `sil-lsp` | Language server binary over `sil-ide` (bundled by `editors/vscode-silc`) |
 
 ## Project layout and execution
 
@@ -338,9 +356,10 @@ splitting does not.
 - Deepen OpenTUI terminal fidelity (dialogs, dense tables, chat polish) while preserving surface parity
 - Add typed field views atop the implemented mmap/UDS ABI
 - Add program-level crash recovery and deployment bundles
-- Native `.silc` editor grammar (tree-sitter / TextMate) so highlighting does not
-  depend on temporary Raku TextMate association for `*.silc`
+- Unify the three catalog spec families (`ComponentSpec`, `GameNodeSpec`,
+  `LoopNodeSpec`) behind one node model and derive routing from a typed
+  operation registry (see [GLOSSARY.md](GLOSSARY.md) for the target vocabulary)
 
-See [`examples/README.md`](../examples/README.md) for standalone example apps
-(`chatApp`, `inventoryApp`, `scraperApp`, `pipelineApp`). Stub routing fixtures
+See [`examples/README.md`](../examples/README.md) for the standalone example
+apps. Stub routing fixtures
 used by compiler tests live under `crates/*/tests/fixtures/`.

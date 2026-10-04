@@ -611,6 +611,7 @@ then provisions pinned engines on first use.
 | [`examples/whatToDoTodayApp/`](examples/whatToDoTodayApp/) | Scheduled daily `loop`, no authored UI: Moz MCP reads → silclm brief → 3 to 5 item to-do list; the synthesized `/loops` inbox is the whole interface | 18088 | 18023 |
 | [`examples/chatApp/`](examples/chatApp/) | Multi-session local chat via silclm | 18090 | 18091 |
 | [`examples/inventoryApp/`](examples/inventoryApp/) | CRUD + browse/admin + grounded assistant | 18096 | 18097 |
+| [`examples/hotelSignupApp/`](examples/hotelSignupApp/) | Smallest two-route app: sign-up form + ledger table | 18088 | 18023 |
 | [`examples/blogApp/`](examples/blogApp/) | Seeded blog; year/month filters; admin modal CRUD; grounded search | 18120 | 18121 |
 | [`examples/rfiChaseApp/`](examples/rfiChaseApp/) | Weekday `loop`: overdue RFIs → silclm draft → PM approval → keyed reminder | 18088 | — |
 
@@ -631,8 +632,8 @@ the `loop` subject for scheduled, approval-gated, model-assisted work
 Every UI `app` synthesizes **both** surfaces automatically — compiler-owned
 `ui::web` (React/Tailwind) and `ui::terminal` (OpenTUI). Authors declare routes
 only; they never write `method serve()`, `ui::web`, or `ui::terminal` as program
-operations. The full UI primitive catalog (39 dual-surface builtins), closed
-prop enums, and agent rules live in
+operations. The full UI primitive catalog, closed option enums, and agent rules
+live in
 [`crates/silc/templates/AGENTS.md`](crates/silc/templates/AGENTS.md).
 
 **Shipped for apps:**
@@ -653,7 +654,7 @@ namespace does not limit the kernel to entertainment games.
 **What you can declare:**
 - `game::scene` — root with title, renderer, target FPS
 - `game::entity` — transform node with mesh, collider, light children
-- `game::prefab` / `game::spawn` — reusable templates with override props
+- `game::prefab` / `game::spawn` — reusable templates with override options
 - `game::weapon` — hitscan, pellet, projectile, or beam fire modes
 - `game::npc` / `game::perception` / `game::nav_agent` — hostile AI with nav mesh
 - `game::ability` — cooldowns, attribute costs, particle/light/impulse cues
@@ -697,7 +698,7 @@ run resumed after a crash or an approval replays instead of redoing work. See
 
 ### Executable operations
 
-Author-facing ops that run today:
+Author-facing operations that run today:
 
 `service::http`, `text::score`, `llm::complete`,
 `scrape::page`, `scrape::site`, `scrape::select`, `scrape::render`,
@@ -820,8 +821,8 @@ parse, validate, and route before they run.
 
 Silc ships a VS Code / Cursor extension that provides syntax highlighting and a
 Rust language server (`sil-lsp`) for semantic hover on `.silc` sources — resource
-methods, query bindings, contracts and fields, components, props and state, UI
-primitives, executable ops, keywords, operators, and builtin types.
+methods, query bindings, contracts and fields, components, options and state, UI
+primitives, executable operations, keywords, operators, and builtin types.
 
 Install it with the bundled script:
 
@@ -886,6 +887,8 @@ Pre-1.0 SemVer 0.x: breaking language/compiler changes bump the minor.
 
 | Doc | Topic |
 | --- | --- |
+| [docs/SILC-LANGUAGE.md](docs/SILC-LANGUAGE.md) | Normative language surface (declarations, nodes, options, operations) |
+| [docs/GLOSSARY.md](docs/GLOSSARY.md) | One meaning per term; retired vocabulary |
 | [docs/ADR-INDEX.md](docs/ADR-INDEX.md) | Decision index |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Subject model and crate layout |
 | [docs/intent-vs-subjects.md](docs/intent-vs-subjects.md) | Intent authoring vs subject architecture |
@@ -901,6 +904,7 @@ Pre-1.0 SemVer 0.x: breaking language/compiler changes bump the minor.
 | [docs/ADR-010-tensor-minilm-pipeline.md](docs/ADR-010-tensor-minilm-pipeline.md) | MiniLM embedding pipeline |
 | [docs/ADR-011-document-extract.md](docs/ADR-011-document-extract.md) | `doc::*` upload + extract |
 | [docs/ADR-012-webgpu-game-subject.md](docs/ADR-012-webgpu-game-subject.md) | WebGPU game kernel |
+| [docs/ADR-013-procedural-asset-generation.md](docs/ADR-013-procedural-asset-generation.md) | Procedural asset generation (`game::generate`) |
 | [docs/ADR-014-loop-subject.md](docs/ADR-014-loop-subject.md) | Loop subject: scheduled, approval-gated, model-assisted work |
 | [docs/SILC-IPC-ABI-v1.md](docs/SILC-IPC-ABI-v1.md) | Shared buffer ABI |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
