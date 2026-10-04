@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -964,4 +965,58 @@ func TestTrimOldestKeepsNewestItemsOfLargestList(t *testing.T) {
 	if fmt.Sprint(trimOldest([]any{"x", "y"})) != "[y]" {
 		t.Fatal("flat lists drop the first item")
 	}
+}
+
+func TestKernelDBLockRefusesSecondLiveKernel(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "app.db")
+	first, err := acquireKernelDBLock(dbPath)
+	if err != nil {
+		t.Fatalf("first lock: %v", err)
+	}
+	defer first.Close()
+
+	_, err = acquireKernelDBLock(dbPath)
+	if err == nil {
+		t.Fatal("expected second live kernel to be refused")
+	}
+	if !strings.Contains(err.Error(), "live loop kernel") {
+		t.Fatalf("unexpected refuse error: %v", err)
+	}
+}
+
+func TestKernelDBLockAllowsRestartAfterCleanRelease(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "app.db")
+	first, err := acquireKernelDBLock(dbPath)
+	if err != nil {
+		t.Fatalf("first lock: %v", err)
+	}
+	first.Close()
+
+	second, err := acquireKernelDBLock(dbPath)
+	if err != nil {
+		t.Fatalf("restart after clean release: %v", err)
+	}
+	second.Close()
+}
+
+func TestKernelDBLockReleasedWhenHolderExits(t *testing.T) {
+	dir := t.TempDir()
+	dbPath := filepath.Join(dir, "data", "app.db")
+	lockPath := dbPath + ".kernel.lock"
+
+	// Simulate a crashed previous kernel: write a stale PID file without holding flock.
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(lockPath, []byte("1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := acquireKernelDBLock(dbPath)
+	if err != nil {
+		t.Fatalf("stale lock file must not block restart: %v", err)
+	}
+	got.Close()
 }

@@ -27,6 +27,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 	_ "time/tzdata"
 
@@ -2263,6 +2264,70 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
+// kernelDBLock is an exclusive flock on `<db>.kernel.lock`. When held, a second
+// kernel must refuse the same app.db. The kernel releases the lock on exit
+// (including crash), so stale locks from dead processes never block a restart.
+type kernelDBLock struct {
+	f *os.File
+}
+
+func acquireKernelDBLock(dbPath string) (*kernelDBLock, error) {
+	lockPath := dbPath + ".kernel.lock"
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		return nil, err
+	}
+	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return nil, err
+	}
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		holder := strings.TrimSpace(readLockPID(f))
+		_ = f.Close()
+		if holder == "" {
+			return nil, fmt.Errorf("app.db already has a live loop kernel (lock %s); stop that process before starting another", lockPath)
+		}
+		return nil, fmt.Errorf("app.db already has a live loop kernel (pid %s, lock %s); stop that process before starting another", holder, lockPath)
+	}
+	if err := f.Truncate(0); err != nil {
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		_ = f.Close()
+		return nil, err
+	}
+	if _, err := f.Seek(0, 0); err != nil {
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		_ = f.Close()
+		return nil, err
+	}
+	if _, err := fmt.Fprintf(f, "%d\n", os.Getpid()); err != nil {
+		_ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+		_ = f.Close()
+		return nil, err
+	}
+	_ = f.Sync()
+	return &kernelDBLock{f: f}, nil
+}
+
+func readLockPID(f *os.File) string {
+	if _, err := f.Seek(0, 0); err != nil {
+		return ""
+	}
+	buf := make([]byte, 64)
+	n, err := f.Read(buf)
+	if err != nil && err != io.EOF {
+		return ""
+	}
+	return string(buf[:n])
+}
+
+func (l *kernelDBLock) Close() {
+	if l == nil || l.f == nil {
+		return
+	}
+	_ = syscall.Flock(int(l.f.Fd()), syscall.LOCK_UN)
+	_ = l.f.Close()
+	l.f = nil
+}
+
 func main() {
 	planPath := envOr("SILC_LOOP_PLAN", "loop/plan.json")
 	dbPath := envOr("SILC_DB_PATH", "data/app.db")
@@ -2275,6 +2340,12 @@ func main() {
 		fmt.Fprintln(os.Stderr, "silc loop:", err)
 		os.Exit(1)
 	}
+	dbLock, err := acquireKernelDBLock(dbPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "silc loop:", err)
+		os.Exit(1)
+	}
+	defer dbLock.Close()
 	db, err := sql.Open("sqlite", "file:"+dbPath+"?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "silc loop:", err)
