@@ -212,7 +212,7 @@
       }
     ]
   },
-  "hash": "9c6486707c568c15600a8acb5a533a2775557ca5744428db1b81f9328ec0bc34",
+  "hash": "dadb6224c86c98d5c96d5ba0e6be3076543d817a47e8c9535ebd04202c9cc67b",
   "loops": [
     {
       "bounds": {
@@ -559,6 +559,258 @@
       "tz": "UTC"
     }
   ],
+  "mcp": {
+    "auth_env": "SILC_MCP_TOKEN",
+    "path": "/mcp",
+    "provenance": "compiler-owned MCP server from resources + loops (THO-123)",
+    "tools": [
+      {
+        "description": "Read rows from Rfis via GET /api/rfis (resource Rfis.list)",
+        "http_method": "GET",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {},
+          "type": "object"
+        },
+        "kind": "query",
+        "loop": null,
+        "method": "list",
+        "name": "rfis_list",
+        "path": "/api/rfis",
+        "table": "rfis"
+      },
+      {
+        "description": "Create a row in Rfis via POST /api/rfis (resource Rfis.create)",
+        "http_method": "POST",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "assignee": {
+              "type": "string"
+            },
+            "due": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "last_reminded": {
+              "type": "string"
+            },
+            "number": {
+              "type": "string"
+            },
+            "pm": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "number",
+            "title",
+            "status",
+            "due",
+            "assignee",
+            "pm",
+            "last_reminded"
+          ],
+          "type": "object"
+        },
+        "kind": "mutation",
+        "loop": null,
+        "method": "create",
+        "name": "rfis_create",
+        "path": "/api/rfis",
+        "table": "rfis"
+      },
+      {
+        "description": "Update a row in Rfis via PUT /api/rfis/:id (resource Rfis.update)",
+        "http_method": "PUT",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "assignee": {
+              "type": "string"
+            },
+            "due": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "last_reminded": {
+              "type": "string"
+            },
+            "number": {
+              "type": "string"
+            },
+            "pm": {
+              "type": "string"
+            },
+            "status": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "number",
+            "title",
+            "status",
+            "due",
+            "assignee",
+            "pm",
+            "last_reminded"
+          ],
+          "type": "object"
+        },
+        "kind": "mutation",
+        "loop": null,
+        "method": "update",
+        "name": "rfis_update",
+        "path": "/api/rfis/:id",
+        "table": "rfis"
+      },
+      {
+        "description": "Read rows from Reminders via GET /api/reminders (resource Reminders.list)",
+        "http_method": "GET",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {},
+          "type": "object"
+        },
+        "kind": "query",
+        "loop": null,
+        "method": "list",
+        "name": "reminders_list",
+        "path": "/api/reminders",
+        "table": "reminders"
+      },
+      {
+        "description": "Create a row in Reminders via POST /api/reminders (resource Reminders.create)",
+        "http_method": "POST",
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "body": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "rfi": {
+              "type": "string"
+            },
+            "subject": {
+              "type": "string"
+            },
+            "to": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "rfi",
+            "to",
+            "subject",
+            "body"
+          ],
+          "type": "object"
+        },
+        "kind": "mutation",
+        "loop": null,
+        "method": "create",
+        "name": "reminders_create",
+        "path": "/api/reminders",
+        "table": "reminders"
+      },
+      {
+        "description": "Start loop RfiChase now (same as Run now in /loops). No-overlap: returns the in-flight run when one is active.",
+        "http_method": null,
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "requested_by": {
+              "description": "Who requested the run",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "kind": "run_now",
+        "loop": "RfiChase",
+        "method": null,
+        "name": "rfi_chase_run",
+        "path": null,
+        "table": null
+      },
+      {
+        "description": "Recent runs and notices for loop RfiChase (outcome of run_now without scraping /loops).",
+        "http_method": null,
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "limit": {
+              "description": "Max rows per list (default 20)",
+              "type": "number"
+            }
+          },
+          "type": "object"
+        },
+        "kind": "loop_recent",
+        "loop": "RfiChase",
+        "method": null,
+        "name": "rfi_chase_recent",
+        "path": null,
+        "table": null
+      },
+      {
+        "description": "Start loop OpenRfiDigest now (same as Run now in /loops). No-overlap: returns the in-flight run when one is active.",
+        "http_method": null,
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "requested_by": {
+              "description": "Who requested the run",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "kind": "run_now",
+        "loop": "OpenRfiDigest",
+        "method": null,
+        "name": "open_rfi_digest_run",
+        "path": null,
+        "table": null
+      },
+      {
+        "description": "Recent runs and notices for loop OpenRfiDigest (outcome of run_now without scraping /loops).",
+        "http_method": null,
+        "inputSchema": {
+          "additionalProperties": false,
+          "properties": {
+            "limit": {
+              "description": "Max rows per list (default 20)",
+              "type": "number"
+            }
+          },
+          "type": "object"
+        },
+        "kind": "loop_recent",
+        "loop": "OpenRfiDigest",
+        "method": null,
+        "name": "open_rfi_digest_recent",
+        "path": null,
+        "table": null
+      }
+    ]
+  },
   "plan_version": 1,
   "resource_tables": [
     "rfis",

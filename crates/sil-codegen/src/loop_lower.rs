@@ -692,6 +692,11 @@ pub fn lower_loop_plan(program: &Program, compiler_version: &str) -> serde_json:
         },
         "resource_tables": program.resources.iter().map(|r| r.table_name()).collect::<Vec<_>>(),
     });
+    // Tool list is part of plan identity so a resumed run cannot drift onto a
+    // changed MCP surface (THO-123).
+    if let Some(mcp) = crate::mcp_serve::mcp_manifest_section(program) {
+        plan["mcp"] = mcp;
+    }
     let canonical = serde_json::to_string(&plan).unwrap_or_default();
     let hash = format!("{:x}", Sha256::digest(canonical.as_bytes()));
     plan["hash"] = json!(hash);

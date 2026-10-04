@@ -1,0 +1,66 @@
+#!/usr/bin/env silc
+# Talk-today: list talk topics and run a scheduled loop from /loops or MCP.
+@version("0.6.0")
+
+contract Talk {
+    has Str $.id;
+    has Str $.title;
+    has Str $.source;
+    has Str $.url;
+    has Str $.notes;
+}
+
+resource Talks for Talk {
+    query list;
+    mutation create;
+    seed Talk.new(
+        :id("talk-001"),
+        :title("Shipping intent-first compilers"),
+        :source("dev.to"),
+        :url("https://dev.to/example/shipping-intent-first"),
+        :notes("")
+    );
+}
+
+loop TalkToday {
+    loop::flow(
+        loop::schedule(:cron("0 8 * * 1-5"), :tz("UTC"), :catch_up("4h")),
+        loop::find(:as(topics), :from(Talks.list), :max(20)),
+        loop::branch(
+            loop::when(:that($topics.count == 0), loop::stop(:reason("no talks yet"))),
+            loop::otherwise(
+                loop::notify(
+                    :to("host"),
+                    :text("{$topics.count} talk topics are ready for today."),
+                    :key("talk-today:{$today}")
+                )
+            )
+        )
+    )
+}
+
+component TalkBoard {
+    query $.talks = Talks.list();
+
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("Talk today"))),
+            :side_panel(ui::side_panel(
+                ui::nav_item(:label("Talks"), :to("/"), :active),
+                ui::nav_item(:label("Loops"), :to("/loops"))
+            )),
+            ui::section(
+                :title("Topics"),
+                ui::table(
+                    :rows($.talks),
+                    :columns(["title", "source", "url", "notes"]),
+                    :empty_text("No talks yet.")
+                )
+            )
+        )
+    }
+}
+
+app TalkApp {
+    route "/" => TalkBoard;
+}
