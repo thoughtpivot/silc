@@ -125,7 +125,7 @@ API contract (options / events / slots / children).
 
 #### Shell and navigation
 
-- `ui::page` — options: none; events: none; slots: `app_bar`→`app_bar`, `side_panel`→`side_panel`, `footer`→`footer`; children: anyOf(`stack`, `row`, `grid`, `card`, `heading`, `text`, `form`, `text_input`, `textarea`, `file_input`, `radio_group`, `select`, `checkbox`, `switch`, `field`, `button`, `toolbar`, `chat`, `chat_history`, `search_input`, `filter_bar`, `collection`, `list`, `table`, `badge`, `alert`, `divider`, `section`, `description_list`, `tabs`, `dialog`, `loading`, `empty`, `nav_item`); surfaces: web+terminal
+- `ui::page` — options: none; events: none; slots: `app_bar`→`app_bar`, `side_panel`→`side_panel`, `footer`→`footer`; children: anyOf(`stack`, `row`, `grid`, `card`, `heading`, `text`, `form`, `text_input`, `textarea`, `file_input`, `radio_group`, `select`, `checkbox`, `switch`, `field`, `button`, `toolbar`, `chat`, `chat_history`, `search_input`, `filter_bar`, `collection`, `list`, `table`, `badge`, `alert`, `divider`, `section`, `description_list`, `tabs`, `dialog`, `loading`, `empty`, `embed`, `nav_item`); surfaces: web+terminal
 - `ui::app_bar` — options: `title` (required); events: none; slots: none; children: none; surfaces: web+terminal
 - `ui::side_panel` — options: none; events: none; slots: none; children: anyOf(`nav_item`); surfaces: web+terminal
 - `ui::nav_item` — options: `label` (required), `to?`, `active?` (flag); events: `click`; slots: none; children: none; surfaces: web+terminal
@@ -179,6 +179,8 @@ API contract (options / events / slots / children).
 - `ui::dialog` — options: `open` (required), `title?`; events: `confirm`, `cancel`; slots: none; children: any; surfaces: web+terminal
 - `ui::loading` — options: `text?`; events: none; slots: none; children: none; surfaces: web+terminal
 - `ui::empty` — options: `text?`; events: none; slots: none; children: none; surfaces: web+terminal
+- `ui::embed` — options: `src` (required), `title?`; events: none; slots: none; children: none; surfaces: web+terminal
+  - Web: sandboxed iframe (`allow-scripts`, never with `allow-same-origin`); terminal: card with title, full URL, and “Open in a browser”. Not a canvas over telnet; no `srcdoc` / postMessage bridge (ADR-017).
 
 ### Complete game::* catalog (ADR-012)
 
@@ -368,7 +370,10 @@ resource Products for Product {
 ```
 
 Derived HTTP (compiler-owned): `GET/POST /api/{table}`,
-`GET/PUT/DELETE /api/{table}/:id`.
+`GET/PUT/DELETE /api/{table}/:id`. Programs with an `app` (or a loop that
+gets a web surface) also synthesize `POST /mcp`: one MCP tool per resource
+query/mutation, plus `*_run` / `*_recent` for each `schedule` or `manual`
+loop. Auth is the bearer token in `SILC_MCP_TOKEN` (never in source).
 
 ### Resource seeds (idempotent)
 
@@ -530,6 +535,7 @@ Compiler-owned (do not invent alternatives):
 - `POST /upload` — multipart file upload when `doc::extract` is present
 - `POST /complete` — chat / `*.complete()` processors
 - `GET|POST|PUT|DELETE /api/{table}` — resource queries/mutations
+- `POST /mcp` — streamable-HTTP MCP server (`tools/list`, `tools/call`); bearer token from `SILC_MCP_TOKEN`
 - Web: React app served by Bun (`silc main.silc`)
 - Terminal: OpenTUI + telnet CLI when run with `--terminal` / `SILC_TERMINAL=1`
 
@@ -564,6 +570,7 @@ Compiler-owned (do not invent alternatives):
 7. Stay inside the UI catalog and runnable operation set above.
 8. Validate with `silc build`; report errors instead of patching `.runtime/`.
 <!-- END SILC_AGENTS_TEMPLATE -->
+
 
 ## App-specific notes (pipelineApp)
 

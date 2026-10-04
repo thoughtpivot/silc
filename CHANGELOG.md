@@ -6,6 +6,13 @@ Entries before 0.5.0 are reconstructed from the commit history.
 
 ## Unreleased
 
+### Added
+
+- Synthesized MCP server on `POST /mcp` for programs with an `app` (or a loop
+  web surface). Tools come from resource queries/mutations and schedule/manual
+  loops (`talks_list`, `talk_today_run`, …). Auth is `SILC_MCP_TOKEN`. The plan
+  hash covers the tool list; `silc build` prints it.
+
 ### Changed
 
 - Silc 0.6.0. `@version("0.5.0")` sources are rejected. When a 0.5.0 program still writes a kernel node as `game::`, the diagnostic lists exactly those renames (`game::mesh` → `scene::mesh`).
@@ -40,6 +47,10 @@ Entries before 0.5.0 are reconstructed from the commit history.
 
 ### Added
 
+- `ui::embed` — dual-surface URL viewport (`:src` required, `:title?`). Web
+  lowers to a sandboxed iframe; terminal lowers to a title/URL/“Open in a
+  browser” card (THO-119, [ADR-017](docs/ADR-017-ui-embed.md)).
+- `examples/core/embedLoopApp`: one program with `ui::embed`, blank-Str `loop::ask` (“no more items”), and a live loop kernel on `app.db` (THO-119/120/121).
 - [docs/SILC-LANGUAGE.md](docs/SILC-LANGUAGE.md): the normative language
   surface, including the list of known irregularities scheduled for 0.6.0.
 - [docs/GLOSSARY.md](docs/GLOSSARY.md): one meaning per term and the retired
@@ -52,6 +63,12 @@ Entries before 0.5.0 are reconstructed from the commit history.
 
 ### Fixed
 
+- THO-120: `loop::ask` contract checking accepts blank and whitespace-only strings as valid `Str`. Non-string JSON values still fail, and the error names the actual JSON type (number, object, array, bool, null).
+- THO-121: exiting `silc` tears down the worker tree (Go loop kernel, Bun, CPython)
+  so children are not reparented to pid 1. Workers join a dedicated process group and
+  receive `PR_SET_PDEATHSIG` on Linux. A second loop kernel refuses an `app.db` that
+  already has a live kernel via an exclusive flock on `app.db.kernel.lock`; stale
+  locks from dead processes do not block restart.
 - ADR-002 / ADR-009 no longer state `@version("0.4.0")` as the required pragma.
 - ARCHITECTURE.md lists the actual `sil-core` modules, the `Game` and `Loop`
   subjects, and the `sil-ide` / `sil-lsp` crates.

@@ -2,11 +2,12 @@
 
 - **Status:** Accepted (0.2.0 dual-surface; 0.4.0 synthesized serving)
 - **Date:** 2026-07-25
-- **Updated:** 2026-07-27
+- **Updated:** 2026-10-04
 - **Related:** [ADR-001](ADR-001-runtime-and-ipc.md),
   [ADR-002](ADR-002-silc-surface-syntax.md),
   [ADR-004](ADR-004-runtime-strengths.md),
   [ADR-009](ADR-009-compiler-synthesized-runtime.md),
+  [ADR-017](ADR-017-ui-embed.md),
   [ARCHITECTURE.md](ARCHITECTURE.md)
 - **Superseded by (partial):** [ADR-009](ADR-009-compiler-synthesized-runtime.md)
   for author-declared `ui::web` / `ui::terminal` / `method serve()` mechanics.
@@ -79,7 +80,7 @@ Unknown closed tokens are compile errors. `:field` stays an option pattern;
 
 ### Complete UI primitive catalog
 
-Do **not** duplicate the 38-line catalog in this ADR. Source of truth:
+Do **not** duplicate the full catalog in this ADR. Source of truth:
 
 - `UI_COMPONENT_CATALOG` in [`crates/sil-core/src/ui.rs`](../crates/sil-core/src/ui.rs)
 - Canonical rendered lines in [`crates/silc/templates/AGENTS.md`](../crates/silc/templates/AGENTS.md)
@@ -87,6 +88,14 @@ Do **not** duplicate the 38-line catalog in this ADR. Source of truth:
 - Drift fails `docs_conformance` tests
 
 Every builtin is dual-surface (`web+terminal`).
+
+### Addendum: `ui::embed` (2026-10-04)
+
+`ui::embed` hosts an author-supplied URL. Web lowers to a sandboxed iframe;
+terminal lowers to a title/URL/“Open in a browser” card. Full sandbox tokens,
+WebGPU-in-iframe findings, and non-goals live in
+[ADR-017](ADR-017-ui-embed.md). This addendum does **not** change ADR-012’s ban
+on mixing `game` with `app` / `component` / `resource`.
 
 ### Page slots and child rules
 

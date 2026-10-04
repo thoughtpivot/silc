@@ -50,6 +50,7 @@ const LAYOUT_CHILDREN: &[&str] = &[
     "dialog",
     "loading",
     "empty",
+    "embed",
     "nav_item",
 ];
 
@@ -1197,6 +1198,31 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
         surfaces: BOTH,
         role: NodeRole::Plain,
     },
+    ComponentSpec {
+        name: "embed",
+        description: "Viewport for an author-supplied URL. On web it lowers to a sandboxed iframe; on terminal it lowers to a card with the title, full URL, and \"Open in a browser\". Not a game host and not a postMessage bridge.",
+        props: &[
+            PropSpec {
+                name: "src",
+                kind: PropKind::Expr,
+                required: true,
+                description: "",
+                closed_values: &[],
+            },
+            PropSpec {
+                name: "title",
+                kind: PropKind::Expr,
+                required: false,
+                description: "",
+                closed_values: &[],
+            },
+        ],
+        slots: &[],
+        children: ChildPolicy::None,
+        events: &[],
+        surfaces: BOTH,
+        role: NodeRole::Plain,
+    },
 ];
 
 pub fn lookup_component(name: &str) -> Option<&'static ComponentSpec> {
@@ -1291,6 +1317,7 @@ fn shared_prop_doc(prop: &str) -> Option<&'static str> {
         "persona" => "Named persona or agent identity that shapes how an assisted control behaves. Keep personas stable so scores and completions stay comparable.",
         "accept" => "MIME / extension filter for `ui::file_input` (for example `\".pdf,.docx\"` or `\"image/*\"`). Narrows the OS file picker.",
         "multiple" => "When set on `ui::file_input`, allows selecting more than one file in a single picker interaction.",
+        "src" => "Author-supplied URL for `ui::embed`. May be a string literal or a component state binding such as `$.game_url`. The compiler does not fetch or inline the URL.",
         _ => return None,
     })
 }
@@ -1376,6 +1403,16 @@ const PROP_DOC_OVERRIDES: &[(&str, &str, &str)] = &[
         "empty",
         "text",
         "Optional explanation shown in the empty state. Tell the user what is missing and, when useful, what action fills it.",
+    ),
+    (
+        "embed",
+        "src",
+        "Required URL the embed hosts. Pass a literal or bind component state (`:src($.game_url)`). Web lowers to iframe `src`; terminal shows the URL as text.",
+    ),
+    (
+        "embed",
+        "title",
+        "Optional heading for the embed. Web uses it as the iframe title (fallback: the URL); terminal uses it as the card heading (fallback: \"Embedded page\").",
     ),
 ];
 
@@ -1661,7 +1698,7 @@ mod tests {
             format_component_catalog_line(button),
             "- `ui::button` — options: `label` (required), `variant?`, `size?`, `submit?` (flag), `active?`, `disabled?` (flag); events: `click`; slots: none; children: none; surfaces: web+terminal"
         );
-        assert_eq!(UI_COMPONENT_CATALOG.len(), 39);
+        assert_eq!(UI_COMPONENT_CATALOG.len(), 40);
         for spec in UI_COMPONENT_CATALOG {
             let line = format_component_catalog_line(spec);
             assert!(line.starts_with(&format!("- `ui::{}` — ", spec.name)));
@@ -1671,7 +1708,7 @@ mod tests {
 
     #[test]
     fn every_catalog_entry_has_nonempty_description() {
-        assert_eq!(UI_COMPONENT_CATALOG.len(), 39);
+        assert_eq!(UI_COMPONENT_CATALOG.len(), 40);
         for spec in UI_COMPONENT_CATALOG {
             assert!(
                 !spec.description.trim().is_empty(),
@@ -1735,5 +1772,86 @@ mod tests {
             ],
         );
         assert!(validate_builtin_node(&alert).is_ok());
+    }
+
+    #[test]
+    fn embed_requires_src_and_rejects_unknown_options() {
+        let missing = node("embed", vec![]);
+        assert!(validate_builtin_node(&missing)
+            .unwrap_err()
+            .contains("missing required option `:src`"));
+
+        let ok = node(
+            "embed",
+            vec![
+                ("src", Expr::String("http://127.0.0.1:18140/".into())),
+                ("title", Expr::String("Firefly Run".into())),
+            ],
+        );
+        assert!(validate_builtin_node(&ok).is_ok());
+
+        let bound = node("embed", vec![("src", Expr::Var("game_url".into()))]);
+        assert!(validate_builtin_node(&bound).is_ok());
+
+        let unknown = node(
+            "embed",
+            vec![
+                ("src", Expr::String("http://127.0.0.1:18140/".into())),
+                ("html", Expr::String("<b>x</b>".into())),
+            ],
+        );
+        assert!(validate_builtin_node(&unknown)
+            .unwrap_err()
+            .contains("unknown option `:html`"));
+    }
+
+    #[test]
+    fn embed_is_legal_inside_dialog_and_page() {
+        let embed = UiTemplate::Node(node(
+            "embed",
+            vec![
+                ("src", Expr::String("http://127.0.0.1:18140/".into())),
+                ("title", Expr::String("Firefly Run".into())),
+            ],
+        ));
+        let dialog = UiTemplate::Node(UiNode {
+            component: "dialog".into(),
+            component_span: Default::default(),
+            prop_spans: vec![],
+            props: vec![
+                ("open".into(), Expr::Var("game_open".into())),
+                ("title".into(), Expr::String("Firefly Run".into())),
+            ],
+            events: vec![],
+            slots: vec![],
+            children: vec![embed.clone()],
+            span: Span::default(),
+        });
+        assert!(validate_template(&dialog).is_ok());
+
+        let page = UiTemplate::Node(UiNode {
+            component: "page".into(),
+            component_span: Default::default(),
+            prop_spans: vec![],
+            props: vec![],
+            events: vec![],
+            slots: vec![],
+            children: vec![embed],
+            span: Span::default(),
+        });
+        assert!(validate_template(&page).is_ok());
+        assert!(crate::catalog::child_allowed(
+            lookup_component("page").unwrap().children,
+            "embed"
+        ));
+    }
+
+    #[test]
+    fn embed_catalog_line_is_stable() {
+        let embed = lookup_component("embed").unwrap();
+        assert_eq!(
+            format_component_catalog_line(embed),
+            "- `ui::embed` — options: `src` (required), `title?`; events: none; slots: none; children: none; surfaces: web+terminal"
+        );
     }
 }

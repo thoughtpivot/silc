@@ -62,6 +62,7 @@ Authors may declare:
 | --- | --- |
 | `app` with routes | Dual-surface web (React/Tailwind) + terminal (OpenTUI); default ports 18088 / 18023; override via `SILC_HTTP_PORT` / `SILC_TERMINAL_PORT` |
 | `resource Name for Contract` capabilities (+ optional `seed`) | HTTP CRUD + SQLite table wiring + idempotent seed inserts |
+| `app` or loop web surface + resources/loops | Streamable-HTTP MCP server at `POST /mcp` (tools from queries/mutations and schedule/manual loops; bearer token from `SILC_MCP_TOKEN`) |
 | Processor + Contract (`text::score`, `llm::complete`, `tensor::infer`) | Go/SQLite sink and IPC/store staging |
 | Pipeline-only graph | Ingress via `silc run --input-json` / `--input`; larger mmap payload slots when needed |
 

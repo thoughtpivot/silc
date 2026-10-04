@@ -571,9 +571,9 @@ Compiler-owned (do not invent alternatives):
 8. Validate with `silc build`; report errors instead of patching `.runtime/`.
 <!-- END SILC_AGENTS_TEMPLATE -->
 
+## App-specific notes (embedLoopApp)
 
-## App-specific notes (vdcWalkthrough)
-
-- A `scene` root. Kernel nodes are `scene::`. `game::pawn` and `game::mode` are the gameplay layer used only to possess a viewer.
-- Replace `public/assets/project.glb` with an exported GLTF model. The compiler does not ship a construction asset.
-- This program has no `app` and no terminal surface. Run it with `silc main.silc` (web/WebGPU).
+- Single program: UI `app` + scheduled/manual `loop`s. Do not add a `game`/`scene` root — ADR-012 forbids mixing those with `app`; `ui::embed` is the dual-surface URL viewport instead (ADR-017 / THO-119).
+- `NextSlot.item` is intentionally allowed to be blank (`""`). That signals “no more items” to `CollectSlots`; the loop kernel treats blank Str as valid (THO-120).
+- `Heartbeat` keeps a live Go loop kernel on `.runtime/app.db` while the app serves, so the exclusive `app.db.kernel.lock` from THO-121 applies. Do not start a second kernel against the same database.
+- Example ports: web `18150`, terminal `18151` (`SILC_HTTP_PORT` / `SILC_TERMINAL_PORT`).

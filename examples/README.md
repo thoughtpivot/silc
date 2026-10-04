@@ -43,6 +43,7 @@ row in the table below.
 | [`arenaGameApp/`](core/arenaGameApp/) | WebGPU scene kernel plus a gameplay layer (Babylon adapter) | 18140 | — |
 | [`platformGameApp/`](core/platformGameApp/) | WebGPU platformer (sprites, collectibles, patrols, level end) | 18140 | — |
 | [`mcpLoopApp/`](core/mcpLoopApp/) | Generic MCP loop command: one `mcp::call`, a silclm brief, one keyed note. README also shows the inbox-only and app modes | — | — |
+| [`embedLoopApp/`](core/embedLoopApp/) | `ui::embed` + blank-Str `loop::ask` + live loop kernel on `app.db` (THO-119/120/121) | 18150 | 18151 |
 
 ## Domains
 

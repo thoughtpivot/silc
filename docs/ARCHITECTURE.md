@@ -236,7 +236,10 @@ then lowers each loop to a content-addressed plan. A compiler-owned Go loop
 kernel runs the plan with receipts and an append-only event log so runs resume
 by replay. `loop::ask` reaches silclm in CPython through an `ASK` control
 frame, `loop::read(:op("mcp::call"))` calls MCP tools over streamable HTTP, and
-Bun serves a synthesized `/loops` inbox on both surfaces.
+Bun serves a synthesized `/loops` inbox on both surfaces. The same web host also
+exposes a synthesized `POST /mcp` server (tools from resources and
+schedule/manual loops; auth via `SILC_MCP_TOKEN`) so agents can attach without
+speaking the compiler-owned REST routes.
 
 Codegen consumes one component graph and emits equal web and terminal adapters.
 Web lowers to compiler-owned React/Tailwind templates. Terminal lowers to a
