@@ -1130,8 +1130,28 @@ func firstJSONObject(s string) string {
 	return ""
 }
 
+// jsonTypeName names the JSON value kind for contract type errors.
+func jsonTypeName(v any) string {
+	switch v.(type) {
+	case nil:
+		return "null"
+	case bool:
+		return "bool"
+	case float64:
+		return "number"
+	case string:
+		return "string"
+	case []any:
+		return "array"
+	case map[string]any:
+		return "object"
+	default:
+		return fmt.Sprintf("%T", v)
+	}
+}
+
 // checkContract parses a model reply and requires every contract field with the right type.
-// A blank string is not a Str: the model must put real text in every field.
+// A blank string (including whitespace-only) is a valid Str; UUID still needs non-empty text.
 func checkContract(fields []FieldSpec, reply string) (map[string]any, error) {
 	match := firstJSONObject(reply)
 	if match == "" {
@@ -1146,16 +1166,29 @@ func checkContract(fields []FieldSpec, reply string) (map[string]any, error) {
 		v, present := obj[f.Name]
 		optional := strings.HasSuffix(f.Type, "?")
 		ty := strings.TrimSuffix(f.Type, "?")
-		if !present || v == nil {
+		if !present {
 			if optional {
 				out[f.Name] = nil
 				continue
 			}
 			return nil, fmt.Errorf("field %q is missing", f.Name)
 		}
+		if v == nil {
+			if optional {
+				out[f.Name] = nil
+				continue
+			}
+			return nil, fmt.Errorf("field %q must be %s, got null", f.Name, ty)
+		}
 		ok := false
 		switch ty {
-		case "Str", "UUID":
+		case "Str":
+			s, isStr := v.(string)
+			ok = isStr
+			if isStr {
+				v = strings.TrimSpace(s)
+			}
+		case "UUID":
 			s, isStr := v.(string)
 			ok = isStr && strings.TrimSpace(s) != ""
 			if isStr {
@@ -1176,7 +1209,7 @@ func checkContract(fields []FieldSpec, reply string) (map[string]any, error) {
 			ok = isStr || isObj
 		}
 		if !ok {
-			return nil, fmt.Errorf("field %q must be %s", f.Name, ty)
+			return nil, fmt.Errorf("field %q must be %s, got %s", f.Name, ty, jsonTypeName(v))
 		}
 		out[f.Name] = v
 	}

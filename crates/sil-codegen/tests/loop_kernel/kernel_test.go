@@ -467,7 +467,8 @@ func TestGateAndWhereFailClosedOnMissingFields(t *testing.T) {
 
 func TestAskRetriesThenFailsTheItem(t *testing.T) {
 	h := newHarness(t, mondayEight)
-	h.asker.replies = []string{"Sure! Here is a reminder.", `{"subject":"only a subject"}`, `{"subject":"","body":"x"}`}
+	// Blank subject is a valid Str; force a type error so retries still exhaust.
+	h.asker.replies = []string{"Sure! Here is a reminder.", `{"subject":"only a subject"}`, `{"subject":1,"body":"x"}`}
 	h.tick()
 	if h.asker.calls != 3 {
 		t.Fatalf("ask retries twice after the first try, got %d calls", h.asker.calls)
@@ -780,8 +781,18 @@ func TestMcpReadRetriesThenFailsWhenServerIsDown(t *testing.T) {
 	}
 }
 
-func TestAskRejectsBlankContractField(t *testing.T) {
-	for _, summary := range []string{`{"facts":"x","focus":" "}`, `{"facts":"","focus":"y"}`, `{"facts":"x"}`} {
+func TestAskAcceptsBlankStrAndRejectsWrongTypes(t *testing.T) {
+	// Blank facts is a valid Str; with a non-empty focus the digest gate still passes.
+	h, _ := newDigest(t, "2026-10-02T15:00:00Z", "digest_plan.json")
+	h.asker.replies = []string{`{"facts":"","focus":"y"}`, goodAction}
+	h.runNow("DailyDigest", "req-1")
+	run := h.runsOf("DailyDigest")[0]
+	if run["outcome"] != "succeeded" {
+		t.Fatalf("blank Str facts should be accepted: %v", run)
+	}
+
+	// Missing fields and non-string values still fail the Summary contract.
+	for _, summary := range []string{`{"facts":"x"}`, `{"facts":1,"focus":"y"}`, `{"facts":"x","focus":{"k":1}}`} {
 		h, _ := newDigest(t, "2026-10-02T15:00:00Z", "digest_plan.json")
 		h.asker.replies = []string{summary, goodAction}
 		h.runNow("DailyDigest", "req-1")
@@ -847,7 +858,7 @@ func TestMcpCallSpeaksStreamableHttp(t *testing.T) {
 	}
 }
 
-func TestCheckContractTakesFirstObjectAndRejectsBlanks(t *testing.T) {
+func TestCheckContractTakesFirstObjectAndAcceptsBlankStr(t *testing.T) {
 	fields := []FieldSpec{{Name: "first", Type: "Str"}, {Name: "fourth", Type: "Str"}}
 	reply := "Sure.\n{\"first\":\"Ship the release\",\"fourth\":\"Book the room\"}\nJustification: the {focus} is real."
 	got, err := checkContract(fields, reply)
@@ -858,8 +869,35 @@ func TestCheckContractTakesFirstObjectAndRejectsBlanks(t *testing.T) {
 		t.Fatalf("got %v", got)
 	}
 	blank := "{\"first\":\"Ship the release\",\"fourth\":\"\"}"
-	if _, err := checkContract(fields, blank); err == nil || !strings.Contains(err.Error(), "fourth") {
-		t.Fatalf("blank Str should fail, got %v", err)
+	got, err = checkContract(fields, blank)
+	if err != nil {
+		t.Fatalf("blank Str should be valid, got %v", err)
+	}
+	if got["first"] != "Ship the release" || got["fourth"] != "" {
+		t.Fatalf("blank Str got %v", got)
+	}
+	whitespace := "{\"first\":\"  \",\"fourth\":\"Book the room\"}"
+	got, err = checkContract(fields, whitespace)
+	if err != nil {
+		t.Fatalf("whitespace-only Str should be valid, got %v", err)
+	}
+	if got["first"] != "" || got["fourth"] != "Book the room" {
+		t.Fatalf("whitespace-only Str got %v", got)
+	}
+	for _, tc := range []struct {
+		reply string
+		want  string
+	}{
+		{`{"first":1,"fourth":"ok"}`, `field "first" must be Str, got number`},
+		{`{"first":{"a":1},"fourth":"ok"}`, `field "first" must be Str, got object`},
+		{`{"first":["a"],"fourth":"ok"}`, `field "first" must be Str, got array`},
+		{`{"first":true,"fourth":"ok"}`, `field "first" must be Str, got bool`},
+		{`{"first":null,"fourth":"ok"}`, `field "first" must be Str, got null`},
+	} {
+		_, err := checkContract(fields, tc.reply)
+		if err == nil || err.Error() != tc.want {
+			t.Fatalf("reply %s: want %q, got %v", tc.reply, tc.want, err)
+		}
 	}
 	if _, err := checkContract(fields, "no object here"); err == nil {
 		t.Fatal("expected a missing-object error")
