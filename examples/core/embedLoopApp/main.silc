@@ -1,0 +1,126 @@
+#!/usr/bin/env silc
+# embedLoopApp — one program that exercises ui::embed, blank-Str loop::ask, and a live loop kernel.
+@version("0.6.0")
+
+contract Slot {
+    has Str $.id;
+    has Str $.item;
+    has Str $.note;
+    has Str $.day;
+}
+
+# Blank `item` ("") is a valid Str: it means "no more items", not a type error (THO-120).
+contract NextSlot {
+    has Str $.item;
+    has Str $.note;
+}
+
+resource Slots for Slot {
+    query list;
+    mutation create;
+}
+
+# Manual collector: ask for the next backlog item; empty item ends the run.
+loop CollectSlots {
+    loop::flow(
+        loop::manual(),
+        loop::find(:as(existing), :from(Slots.list), :max(50)),
+        loop::ask(
+            :as(slot),
+            :into(NextSlot),
+            :from($existing),
+            :retry(2),
+            :prompt("Today is {$calendar.today}. Review the existing slots. Propose one more backlog item name in item, or return an empty string for item when there are no more items. Put a short note in note."),
+            loop::otherwise(loop::fail(:reason("could not read next slot")))
+        ),
+        loop::branch(
+            loop::when(
+                :that($slot.item == ""),
+                loop::stop(:reason("no more items"))
+            ),
+            loop::otherwise(
+                loop::write(
+                    :to(Slots.create),
+                    :key("slot:{$now}"),
+                    :value(Slot.new(
+                        :item($slot.item),
+                        :note($slot.note),
+                        :day($calendar.today)
+                    ))
+                ),
+                loop::notify(
+                    :to("collector"),
+                    :text("Queued {$slot.item}"),
+                    :key("slot:{$now}")
+                )
+            )
+        )
+    )
+}
+
+# Scheduled pulse so a serving app keeps a live loop kernel on app.db (THO-121).
+loop Heartbeat {
+    loop::flow(
+        loop::schedule(:cron("0 0 1 1 *"), :tz("UTC"), :catch_up("1h")),
+        loop::find(:as(all), :from(Slots.list), :max(10)),
+        loop::notify(
+            :to("ops"),
+            :text("embedLoopApp heartbeat; {$all.count} slots"),
+            :key("heartbeat:{$today}")
+        )
+    )
+}
+
+component Board {
+    has state Bool $.docs_open = true;
+    has state Str $.docs_url = "https://example.com/";
+    query $.slots = Slots.list();
+
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("Embed Loop"))),
+            :side_panel(ui::side_panel(
+                ui::nav_item(:label("Board"), :to("/"), :active),
+                ui::nav_item(:label("Loops"), :to("/loops"))
+            )),
+            ui::stack(
+                ui::section(
+                    :title("Reference"),
+                    :description("ui::embed hosts an external URL. Web lowers to a sandboxed iframe; terminal shows the title, full URL, and Open in a browser."),
+                    ui::dialog(
+                        :open($.docs_open),
+                        :title("Reference site"),
+                        :on(confirm(on_close_docs)),
+                        :on(cancel(on_close_docs)),
+                        ui::embed(
+                            :src($.docs_url),
+                            :title("Example reference")
+                        )
+                    ),
+                    ui::embed(
+                        :src("https://example.com/"),
+                        :title("Example reference")
+                    )
+                ),
+                ui::section(
+                    :title("Backlog slots"),
+                    :description("CollectSlots asks for the next item. An empty item string means no more items — that is a valid Str, not a type error."),
+                    ui::table(
+                        :rows($.slots),
+                        :columns(["item", "note", "day"]),
+                        :empty_text("No slots yet. Run CollectSlots from /loops."),
+                        :sortable
+                    )
+                )
+            )
+        )
+    }
+
+    method on_close_docs() {
+        $.docs_open = false;
+    }
+}
+
+app EmbedLoopApp {
+    route "/" => Board;
+}
