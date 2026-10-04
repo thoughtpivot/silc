@@ -28,59 +28,83 @@ impl Corpus {
         corpus.insert("agents", include_str!("../../silc/templates/AGENTS.md"));
         corpus.insert(
             "example/chatApp/main.silc",
-            include_str!("../../../examples/chatApp/main.silc"),
+            include_str!("../../../examples/core/chatApp/main.silc"),
         );
         corpus.insert(
             "example/chatApp/AGENTS.md",
-            include_str!("../../../examples/chatApp/AGENTS.md"),
+            include_str!("../../../examples/core/chatApp/AGENTS.md"),
         );
         corpus.insert(
             "example/inventoryApp/main.silc",
-            include_str!("../../../examples/inventoryApp/main.silc"),
+            include_str!("../../../examples/core/inventoryApp/main.silc"),
         );
         corpus.insert(
             "example/inventoryApp/AGENTS.md",
-            include_str!("../../../examples/inventoryApp/AGENTS.md"),
+            include_str!("../../../examples/core/inventoryApp/AGENTS.md"),
         );
         corpus.insert(
             "example/scraperApp/main.silc",
-            include_str!("../../../examples/scraperApp/main.silc"),
+            include_str!("../../../examples/core/scraperApp/main.silc"),
         );
         corpus.insert(
             "example/scraperApp/AGENTS.md",
-            include_str!("../../../examples/scraperApp/AGENTS.md"),
+            include_str!("../../../examples/core/scraperApp/AGENTS.md"),
         );
         corpus.insert(
             "example/pipelineApp/main.silc",
-            include_str!("../../../examples/pipelineApp/main.silc"),
+            include_str!("../../../examples/core/pipelineApp/main.silc"),
         );
         corpus.insert(
             "example/pipelineApp/AGENTS.md",
-            include_str!("../../../examples/pipelineApp/AGENTS.md"),
+            include_str!("../../../examples/core/pipelineApp/AGENTS.md"),
         );
         corpus.insert(
             "example/blogApp/main.silc",
-            include_str!("../../../examples/blogApp/main.silc"),
+            include_str!("../../../examples/core/blogApp/main.silc"),
         );
         corpus.insert(
             "example/blogApp/AGENTS.md",
-            include_str!("../../../examples/blogApp/AGENTS.md"),
+            include_str!("../../../examples/core/blogApp/AGENTS.md"),
         );
         corpus.insert(
             "example/dataExtractorApp/main.silc",
-            include_str!("../../../examples/dataExtractorApp/main.silc"),
+            include_str!("../../../examples/core/dataExtractorApp/main.silc"),
         );
         corpus.insert(
             "example/dataExtractorApp/AGENTS.md",
-            include_str!("../../../examples/dataExtractorApp/AGENTS.md"),
+            include_str!("../../../examples/core/dataExtractorApp/AGENTS.md"),
         );
         corpus.insert(
             "example/arenaGameApp/main.silc",
-            include_str!("../../../examples/arenaGameApp/main.silc"),
+            include_str!("../../../examples/core/arenaGameApp/main.silc"),
         );
         corpus.insert(
             "example/arenaGameApp/AGENTS.md",
-            include_str!("../../../examples/arenaGameApp/AGENTS.md"),
+            include_str!("../../../examples/core/arenaGameApp/AGENTS.md"),
+        );
+        corpus.insert(
+            "example/hotelSignupApp/main.silc",
+            include_str!("../../../examples/core/hotelSignupApp/main.silc"),
+        );
+        corpus.insert(
+            "example/hotelSignupApp/AGENTS.md",
+            include_str!("../../../examples/core/hotelSignupApp/AGENTS.md"),
+        );
+        corpus.insert(
+            "example/platformGameApp/main.silc",
+            include_str!("../../../examples/core/platformGameApp/main.silc"),
+        );
+        corpus.insert(
+            "example/platformGameApp/AGENTS.md",
+            include_str!("../../../examples/core/platformGameApp/AGENTS.md"),
+        );
+        corpus.insert(
+            "example/mcpLoopApp/main.silc",
+            include_str!("../../../examples/core/mcpLoopApp/main.silc"),
+        );
+        corpus.insert(
+            "example/mcpLoopApp/AGENTS.md",
+            include_str!("../../../examples/core/mcpLoopApp/AGENTS.md"),
         );
         // The `silc init` starter: the smallest known-good program, used as the
         // skeleton to adapt when assist creates a file from scratch.
@@ -309,7 +333,7 @@ mod tests {
         assert!(c
             .get("example/arenaGameApp/main.silc")
             .unwrap()
-            .contains("game::scene"));
+            .contains("scene::scene"));
         assert!(c.get("example/arenaGameApp/AGENTS.md").is_some());
         assert!(c.len() >= 17);
     }
@@ -341,7 +365,7 @@ mod tests {
         let mut agents = fs::File::create(dir.path().join("AGENTS.md")).unwrap();
         writeln!(agents, "# Project agents").unwrap();
         let target = dir.path().join("main.silc");
-        fs::write(&target, "@version(\"0.5.0\")\n").unwrap();
+        fs::write(&target, "@version(\"0.6.0\")\n").unwrap();
         let mut c = Corpus::new();
         let path = c.load_project_agents(&target).unwrap();
         assert!(path.ends_with("AGENTS.md"));

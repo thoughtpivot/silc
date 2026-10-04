@@ -1,13 +1,13 @@
-//! Executable operation registry for Silc 0.5.0 runnable programs.
+//! Executable operation registry for Silc 0.6.0 runnable programs.
 
 use crate::app::App;
 use crate::component::Component;
 use crate::expr::Expr;
+use crate::game::{GameCapabilities, DEFAULT_GAME_FPS, DEFAULT_GAME_PORT};
 use crate::model_catalog::{
     validate_embedding_model_id, validate_model_id, DEFAULT_EMBEDDING_MODEL_ID, DEFAULT_MODEL_ID,
     DEFAULT_TENSOR_INPUT_FIELD, DEFAULT_TENSOR_OUTPUT_FIELD, MINILM_EMBEDDING_DIM,
 };
-use crate::game::{GameCapabilities, DEFAULT_GAME_FPS, DEFAULT_GAME_PORT};
 use crate::module::{Module, ModuleKind};
 use crate::pipeline::PipelineStep;
 use crate::program::Program;
@@ -17,28 +17,18 @@ use crate::scrape_catalog::{
 };
 use crate::types::TypeExpr;
 
-/// Author-facing operations Silc 0.5.0 can codegen and run.
-/// Runtime-owned surfaces (`ui::web`/`ui::terminal`), IPC/store, and resource CRUD
-/// pipelines are synthesized by the compiler and must not appear in source.
-pub const EXECUTABLE_OPS: &[(&str, &str)] = &[
-    ("service", "http"),
-    ("text", "score"),
-    ("llm", "complete"),
-    ("scrape", "page"),
-    ("scrape", "site"),
-    ("scrape", "select"),
-    ("scrape", "render"),
-    ("scrape", "extract"),
-    ("doc", "extract"),
-    ("tensor", "tokenize"),
-    ("tensor", "infer"),
-];
+/// Author-facing operations Silc can codegen and run.
+/// Derived from [`crate::registry::OPERATION_CATALOG`]. `mcp::call` is real but
+/// only legal nested under `loop::read`, so it is absent from this list.
+pub fn executable_ops() -> Vec<(&'static str, &'static str)> {
+    crate::registry::executable_ops()
+}
 
 const SUPPORTED_OPS_HELP: &str =
     "`app` routes (dual-surface UI synthesized), `game` (WebGPU scene synthesized), `resource Name for Contract` capabilities, optional text::score or llm::complete, scrape::*, doc::extract, tensor::tokenize/infer pipeline, or service::http API-only";
 
 const TENSOR_CPU_ONLY: &str =
-    "tensor::infer is CPU-only in Silc 0.5.0; remove :prefer(CUDA) (default/CPU accepted)";
+    "tensor::infer is CPU-only in Silc 0.6.0; remove :prefer(CUDA) (default/CPU accepted)";
 
 const SCRAPE_MIGRATE_HINT: &str =
     "use scrape::page / scrape::site / scrape::select instead of http::get / html::* (see ADR-006)";
@@ -81,9 +71,9 @@ impl ProcessorOp {
     pub fn as_str(self) -> &'static str {
         match self {
             ProcessorOp::None => "none",
-            ProcessorOp::Score => "text.score",
-            ProcessorOp::LlmComplete => "llm.complete",
-            ProcessorOp::TensorInfer => "tensor.infer",
+            ProcessorOp::Score => "text::score",
+            ProcessorOp::LlmComplete => "llm::complete",
+            ProcessorOp::TensorInfer => "tensor::infer",
         }
     }
 
@@ -210,7 +200,7 @@ pub struct ExecutableGraph {
     pub model_ref: Option<String>,
     /// Closed embedding output dimension when `processor_op` is `TensorInfer`.
     pub embedding_dim: Option<u32>,
-    /// Tensor runtime device (`CPU` only in Silc 0.5.0).
+    /// Tensor runtime device (`CPU` only in Silc 0.6.0).
     pub tensor_device: Option<String>,
     /// Contract field read by the tensor pipeline (default `raw_content`).
     pub tensor_input_field: Option<String>,
@@ -297,15 +287,14 @@ impl ExecutableGraph {
 }
 
 pub fn is_executable_op(namespace: &str, name: &str) -> bool {
-    EXECUTABLE_OPS
-        .iter()
-        .any(|(ns, n)| *ns == namespace && *n == name)
+    crate::registry::is_executable(namespace, name)
 }
 
 /// Every namespace recognized by the classifier (runnable, compiler-owned, or stub).
 pub const KNOWN_NAMESPACES: &[&str] = &[
-    "ui", "game", "http", "html", "service", "text", "llm", "ipc", "store", "resource", "scrape",
-    "doc", "tensor", "numpy", "pandas", "ws", "sys", "schema", "payload", "json",
+    "ui", "game", "scene", "loop", "mcp", "http", "html", "service", "text", "llm", "ipc", "store",
+    "resource", "scrape", "doc", "tensor", "numpy", "pandas", "ws", "sys", "schema", "payload",
+    "json",
 ];
 
 fn is_known_namespace(ns: &str) -> bool {
@@ -341,20 +330,6 @@ pub fn scan_author_calls(program: &Program, mut f: impl FnMut(&str, &str)) {
     for module in &program.modules {
         for method in &module.methods {
             for step in &method.pipeline.steps {
-                if let PipelineStep::Call {
-                    namespace: Some(ns),
-                    name,
-                    ..
-                } = step
-                {
-                    f(ns, name);
-                }
-            }
-        }
-    }
-    for app in &program.apps {
-        if let Some(serve) = &app.serve {
-            for step in &serve.pipeline.steps {
                 if let PipelineStep::Call {
                     namespace: Some(ns),
                     name,
@@ -409,7 +384,7 @@ pub fn classify_program(program: &Program) -> Result<ExecutionMode, String> {
             ));
         }
         return Err(format!(
-            "cannot mix stub-only and executable operations; supported runnable ops: {SUPPORTED_OPS_HELP}"
+            "cannot mix stub-only and executable operations; supported runnable operations: {SUPPORTED_OPS_HELP}"
         ));
     }
     if saw_exec || declaration_runnable {
@@ -420,11 +395,11 @@ pub fn classify_program(program: &Program) -> Result<ExecutionMode, String> {
                         namespace: Some(ns),
                         name,
                         ..
-                } = step
+                    } = step
                     {
                         if is_v1_exec_namespace(ns) && !is_executable_op(ns, name) {
                             return Err(format!(
-                                "operation `{ns}::{name}` is not executable in Silc 0.5.0"
+                                "operation `{ns}::{name}` is not executable in Silc 0.6.0"
                             ));
                         }
                     }
@@ -604,7 +579,7 @@ fn infer_game_graph(program: &Program) -> Result<Option<ExecutableGraph>, String
     }
     if !program.modules.is_empty() {
         return Err(
-            "game programs cannot declare service/processor/sink modules; scene intent lives under `game::scene`"
+            "game programs cannot declare service/processor/sink modules; scene intent lives under `scene::scene`"
                 .into(),
         );
     }
@@ -616,7 +591,7 @@ fn infer_game_graph(program: &Program) -> Result<Option<ExecutableGraph>, String
 
     let game = program.games[0].clone();
     if game.root.name != "scene" {
-        return Err("game root must be `game::scene(...)`".into());
+        return Err("game root must be `scene::scene(...)`".into());
     }
 
     let title = game
@@ -695,12 +670,6 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
         .iter()
         .filter(|m| m.kind == ModuleKind::Processor)
         .collect();
-    let sinks: Vec<&Module> = program
-        .modules
-        .iter()
-        .filter(|m| m.kind == ModuleKind::Sink)
-        .collect();
-
     let mut saw_ui_web = false;
     let mut saw_terminal = false;
     let mut saw_score = false;
@@ -946,11 +915,6 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
             scan_pipeline(&method.pipeline.steps)?;
         }
     }
-    for app in &program.apps {
-        if let Some(serve) = &app.serve {
-            scan_pipeline(&serve.pipeline.steps)?;
-        }
-    }
     for resource in &program.resources {
         for method in &resource.methods {
             scan_pipeline(&method.pipeline.steps)?;
@@ -987,11 +951,27 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
         }
     }
 
-    if has_scrape && saw_score {
-        return Err("cannot mix scrape::* with text::score in one program".into());
+    let mut caps = Vec::new();
+    if has_scrape {
+        caps.push(crate::registry::Capability::Scrape);
     }
-    if has_doc && saw_score {
-        return Err("cannot mix doc::* with text::score in one program".into());
+    if has_doc {
+        caps.push(crate::registry::Capability::DocExtract);
+    }
+    if saw_score {
+        caps.push(crate::registry::Capability::TextScore);
+    }
+    if saw_llm || crate::loops::loops_use_ask(program) {
+        caps.push(crate::registry::Capability::LocalModel);
+    }
+    if saw_infer {
+        caps.push(crate::registry::Capability::Embedding);
+    }
+    if !program.loops.is_empty() {
+        caps.push(crate::registry::Capability::Loop);
+    }
+    if let Some(message) = crate::registry::compatibility_message(&caps) {
+        return Err(message.into());
     }
     if has_doc {
         let into = doc
@@ -1083,26 +1063,14 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
         }
         if !prefer.eq_ignore_ascii_case("CPU") {
             return Err(format!(
-                "unsupported tensor::infer :prefer({prefer}); Silc 0.5.0 accepts CPU only"
+                "unsupported tensor::infer :prefer({prefer}); Silc 0.6.0 accepts CPU only"
             ));
         }
     }
 
     let loop_ask = crate::loops::loops_use_ask(program);
-    if loop_ask && saw_score {
-        return Err("cannot mix text::score and loop::ask in one program".into());
-    }
-    if !program.loops.is_empty() && (saw_infer || has_scrape) {
-        return Err("loops cannot be combined with scrape::* or tensor::* pipelines in Silc 0.5.0; use loop::read for pages".into());
-    }
 
-    let processor_op = if saw_score && saw_llm {
-        return Err("cannot mix text::score and llm::complete in one program".into());
-    } else if (saw_score || saw_llm) && saw_infer {
-        return Err(
-            "cannot mix text::score/llm::complete with tensor::infer in one program".into(),
-        );
-    } else if saw_score {
+    let processor_op = if saw_score {
         ProcessorOp::Score
     } else if saw_llm {
         ProcessorOp::LlmComplete
@@ -1132,7 +1100,13 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
                 Some(DEFAULT_TENSOR_OUTPUT_FIELD.into()),
             )
         } else if loop_ask {
-            (Some(crate::model_catalog::DEFAULT_MODEL_ID.to_string()), None, None, None, None)
+            (
+                Some(crate::model_catalog::DEFAULT_MODEL_ID.to_string()),
+                None,
+                None,
+                None,
+                None,
+            )
         } else {
             (None, None, None, None, None)
         };
@@ -1143,12 +1117,6 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
         if processors.len() != 1 {
             return Err(
                 "programs using text::score, llm::complete, or tensor::infer need exactly one processor"
-                    .into(),
-            );
-        }
-        if !sinks.is_empty() {
-            return Err(
-                "author `sink` modules are not supported in Silc 0.5.0; remove them — the compiler synthesizes SQLite persistence"
                     .into(),
             );
         }
@@ -1196,7 +1164,7 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
     if has_ui && services.len() > 1 {
         return Err("UI programs may declare at most one service module".into());
     }
-    if has_api && !has_ui && (processors.len() + sinks.len()) > 0 {
+    if has_api && !has_ui && !processors.is_empty() {
         return Err("API-only programs cannot declare processor or sink modules".into());
     }
 
@@ -1259,11 +1227,7 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
             .first()
             .map(|m| m.name.clone())
             .unwrap_or_default(),
-        sink: if synthesized_sink.is_empty() {
-            sinks.first().map(|m| m.name.clone()).unwrap_or_default()
-        } else {
-            synthesized_sink
-        },
+        sink: synthesized_sink,
         http_port: if has_ui || saw_ui_web {
             http_port
         } else {
@@ -1517,7 +1481,7 @@ mod tests {
 
     #[test]
     fn processor_op_tensor_infer_helpers() {
-        assert_eq!(ProcessorOp::TensorInfer.as_str(), "tensor.infer");
+        assert_eq!(ProcessorOp::TensorInfer.as_str(), "tensor::infer");
         assert!(ProcessorOp::TensorInfer.needs_tensor());
         assert!(!ProcessorOp::TensorInfer.needs_llm());
         assert!(!ProcessorOp::Score.needs_tensor());
@@ -1583,27 +1547,6 @@ mod tests {
         }
         let graph = infer_graph(&program).unwrap().expect("graph");
         assert_eq!(graph.tensor_device.as_deref(), Some("CPU"));
-    }
-
-    #[test]
-    fn rejects_author_sink_modules() {
-        let mut program = runnable_tensor_pipeline();
-        program.modules.push(Module {
-            name: "EmbeddingDb".into(),
-            kind: ModuleKind::Sink,
-            traits: vec![TraitArg {
-                name: "storage".into(),
-                value: "SQLite".into(),
-            }],
-            fields: vec![],
-            methods: vec![],
-            span: Span::default(),
-        });
-        let err = infer_graph(&program).unwrap_err();
-        assert!(
-            err.contains("sink") && err.contains("synthesizes"),
-            "expected author sink rejection, got {err}"
-        );
     }
 
     #[test]

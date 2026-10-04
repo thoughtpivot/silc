@@ -1,6 +1,5 @@
-//! Application subject: routes and dual-surface serve entry.
+//! Application subject: routes. Serving is synthesized; authors do not declare it.
 
-use crate::module::Method;
 use crate::types::Span;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -14,7 +13,6 @@ pub struct Route {
 pub struct App {
     pub name: String,
     pub routes: Vec<Route>,
-    pub serve: Option<Method>,
     pub span: Span,
 }
 

@@ -1,10 +1,10 @@
-//! Recursive-descent parser for Silc 0.5.0 grammar.
+//! Recursive-descent parser for Silc 0.6.0 grammar.
 
 use sil_core::{
     App, CompField, Component, Contract, EmitDecl, EventBinding, Expr, Field, Game, GameNode,
-    Handler, Loop, LoopNode, Method, Module, ModuleKind, Param, Pipeline, PipelineStep, Program, QueryBinding,
-    Resource, ResourceKind, ResourceMethod, ResourceSeed, Route, SlotDecl, Span, Subset,
-    SubsetPredicate, TraitArg, TypeExpr, UiNode, UiTemplate,
+    Handler, Loop, LoopNode, Method, Module, ModuleKind, Param, Pipeline, PipelineStep, Program,
+    QueryBinding, Resource, ResourceKind, ResourceMethod, ResourceSeed, Route, SlotDecl, Span,
+    Subset, SubsetPredicate, TraitArg, TypeExpr, UiNode, UiTemplate,
 };
 use sil_lexer::{lex, SpannedToken, Token};
 
@@ -89,6 +89,13 @@ impl Parser {
                 Some(Token::Game) => {
                     self.parse_subject_into(&mut program, ClassKind::Game, "game")?
                 }
+                Some(Token::Scene) => {
+                    self.parse_subject_into(&mut program, ClassKind::Game, "scene")?
+                }
+                Some(Token::Loop) => {
+                    let lp = self.parse_loop_decl()?;
+                    program.loops.push(lp);
+                }
                 Some(Token::Service) => self.parse_subject_into(
                     &mut program,
                     ClassKind::Module(ModuleKind::Service),
@@ -101,22 +108,18 @@ impl Parser {
                 )?,
                 Some(Token::Sink) => {
                     return Err(self.error_here(
-                        "author `sink` declarations are not supported in Silc 0.5.0; remove the sink — persistence is synthesized from the processor",
+                        "author `sink` declarations are not supported in Silc 0.6.0; remove the sink — persistence is synthesized from the processor",
                     ))
                 }
-                Some(Token::Task) => self.parse_subject_into(
-                    &mut program,
-                    ClassKind::Module(ModuleKind::Task),
-                    "task",
-                )?,
-                Some(Token::Class) => return Err(self.legacy_class_error()),
-                Some(Token::Ident(word)) if word == "loop" => {
-                    let lp = self.parse_loop_decl()?;
-                    program.loops.push(lp);
+                Some(Token::Task) => {
+                    return Err(self.error_here(
+                        "`task` was removed in Silc 0.6.0; declare a `service` and route by the operation",
+                    ))
                 }
+                Some(Token::Class) => return Err(self.legacy_class_error()),
                 _ => {
                     return Err(self.error_here(
-                        "unsupported construct; expected `subset`, `contract`, `component`, `resource`, `app`, `game`, `loop`, `service`, `processor`, or `task`",
+                        "unsupported construct; expected `subset`, `contract`, `component`, `resource`, `app`, `game`, `scene`, `loop`, `service`, or `processor`",
                     ))
                 }
             }
@@ -183,9 +186,14 @@ impl Parser {
                 _ => None,
             })
             .unwrap_or("contract");
+        if kind == "task" {
+            return self.error_here(
+                "legacy `class` declarator is not supported in Silc 0.6.0; `task` was removed — declare a `service` and route by the operation",
+            );
+        }
         let replacement = format!("{kind} {name} {{ ... }}");
         self.error_here(&format!(
-            "legacy `class` declarator is not supported in Silc 0.5.0; use `{replacement}`"
+            "legacy `class` declarator is not supported in Silc 0.6.0; use `{replacement}`"
         ))
     }
 
@@ -250,7 +258,7 @@ impl Parser {
             }
             ClassKind::Game => {
                 let root = self.parse_game_node()?;
-                self.expect_simple(Token::RBrace, "`}` after game")?;
+                self.expect_simple(Token::RBrace, &format!("`}}` after {keyword}"))?;
                 program.games.push(Game {
                     name,
                     root,
@@ -364,7 +372,7 @@ impl Parser {
         let mut emits = Vec::new();
         let mut queries = Vec::new();
         let mut handlers = Vec::new();
-        let mut methods = Vec::new();
+        let methods = Vec::new();
         let mut render: Option<UiTemplate> = None;
 
         while !matches!(self.peek(), Some(Token::RBrace)) {
@@ -466,10 +474,11 @@ impl Parser {
                         let is_pipeline = self.looks_like_pipeline_body();
                         self.pos = saved;
                         if is_pipeline {
-                            methods.push(self.parse_pipeline_method()?);
-                        } else {
-                            handlers.push(self.parse_handler_method()?);
+                            return Err(self.error_here(
+                                "component methods are handlers, not pipelines; put `==>` chains on a service or processor",
+                            ));
                         }
+                        handlers.push(self.parse_handler_method()?);
                     }
                 }
                 None => return Err(self.error_here("unterminated component body")),
@@ -486,7 +495,6 @@ impl Parser {
             col: start.col,
         })?;
 
-        let _ = &methods; // reserved for pipeline-style methods if needed
         Ok(Component {
             name,
             props,
@@ -651,7 +659,7 @@ impl Parser {
             }
             if matches!(self.peek(), Some(Token::Colon)) {
                 self.advance();
-                let (key, key_span) = self.expect_ident_spanned("prop/slot/event name")?;
+                let (key, key_span) = self.expect_ident_spanned("option/slot/event name")?;
                 if key == "on" {
                     // :on(click(handler)) or :on(add => handler)
                     self.expect_simple(Token::LParen, "`(` after :on")?;
@@ -691,7 +699,7 @@ impl Parser {
                         prop_spans.push(key_span);
                     } else {
                         let expr = self.parse_expr()?;
-                        self.expect_simple(Token::RParen, "`)` after prop")?;
+                        self.expect_simple(Token::RParen, "`)` after option")?;
                         props.push((key, expr));
                         prop_spans.push(key_span);
                     }
@@ -823,7 +831,7 @@ impl Parser {
                 }
                 Some(Token::Has) => {
                     return Err(self.error_here(
-                        "resource metadata fields are not supported in Silc 0.5.0; use `resource Name for Contract` and capability declarations (`query list;`)",
+                        "resource metadata fields are not supported in Silc 0.6.0; use `resource Name for Contract` and capability declarations (`query list;`)",
                     ));
                 }
                 _ => return Err(self.error_here("expected `query`, `mutation`, `seed`, or `}`")),
@@ -899,7 +907,7 @@ impl Parser {
         if matches!(self.peek(), Some(Token::LParen)) || matches!(self.peek(), Some(Token::LBrace))
         {
             return Err(self.error_here(
-                "resource method bodies are not supported in Silc 0.5.0; declare capabilities only (e.g. `query list;` / `mutation create;`)",
+                "resource method bodies are not supported in Silc 0.6.0; declare capabilities only (e.g. `query list;` / `mutation create;`)",
             ));
         }
         Err(self.error_here("expected `;` after resource capability name"))
@@ -929,7 +937,7 @@ impl Parser {
                 }
                 Some(Token::Method) => {
                     return Err(self.error_here(
-                        "app `method serve()` is not supported in Silc 0.5.0; declare routes only — dual-surface web/terminal serving is synthesized by the compiler",
+                        "app `method serve()` is not supported in Silc 0.6.0; declare routes only — dual-surface web/terminal serving is synthesized by the compiler",
                     ));
                 }
                 _ => return Err(self.error_here("expected `route` or `}`")),
@@ -938,27 +946,39 @@ impl Parser {
         Ok(App {
             name,
             routes,
-            serve: None,
             span: self.finish_span(start),
         })
     }
 
     fn at_game_node(&self) -> bool {
-        matches!(self.peek(), Some(Token::Ident(n)) if n == "game")
-            || matches!(self.peek(), Some(Token::Game))
+        match self.peek() {
+            Some(Token::Game) | Some(Token::Scene) => true,
+            Some(Token::Ident(n)) => n == "game" || n == "scene",
+            _ => false,
+        }
     }
 
     fn parse_game_node(&mut self) -> Result<GameNode, ParseError> {
         let start = self.current_span();
-        match self.peek() {
+        let namespace = match self.peek() {
             Some(Token::Ident(n)) if n == "game" => {
                 self.advance();
+                "game"
             }
             Some(Token::Game) => {
                 self.advance();
+                "game"
             }
-            _ => return Err(self.error_here("expected `game` namespace")),
-        }
+            Some(Token::Ident(n)) if n == "scene" => {
+                self.advance();
+                "scene"
+            }
+            Some(Token::Scene) => {
+                self.advance();
+                "scene"
+            }
+            _ => return Err(self.error_here("expected `scene::` or `game::`")),
+        };
         self.expect_simple(Token::DoubleColon, "`::` after game")?;
         let (name, name_span) = self.expect_ident_spanned("game node name")?;
         self.expect_simple(Token::LParen, "`(` after game node")?;
@@ -973,7 +993,7 @@ impl Parser {
             if matches!(self.peek(), Some(Token::Colon)) {
                 self.advance();
                 // Prop names may reuse reserved words (`:slot`, `:state`, `:route`, …).
-                let (key, key_span) = self.expect_ident_like_spanned("game prop name")?;
+                let (key, key_span) = self.expect_ident_like_spanned("game option name")?;
                 if matches!(self.peek(), Some(Token::LParen)) {
                     self.advance();
                     if matches!(self.peek(), Some(Token::RParen)) {
@@ -986,7 +1006,7 @@ impl Parser {
                         children.push(child);
                     } else {
                         let expr = self.parse_game_prop_expr()?;
-                        self.expect_simple(Token::RParen, "`)` after game prop")?;
+                        self.expect_simple(Token::RParen, "`)` after game option")?;
                         props.push((key, expr));
                         prop_spans.push(key_span);
                     }
@@ -997,12 +1017,13 @@ impl Parser {
             } else if self.at_game_node() {
                 children.push(self.parse_game_node()?);
             } else {
-                return Err(self.error_here("expected `:prop(...)` or `game::node(...)`"));
+                return Err(self.error_here("expected `:option(...)` or `game::node(...)`"));
             }
         }
         self.expect_simple(Token::RParen, "`)` after game node")?;
         Ok(GameNode {
             name,
+            namespace: namespace.into(),
             name_span,
             props,
             prop_spans,
@@ -1026,8 +1047,60 @@ impl Parser {
     }
 
     fn at_loop_node(&self) -> bool {
-        matches!(self.peek(), Some(Token::Ident(n)) if n == "loop")
-            && matches!(self.tokens.get(self.pos + 1).map(|t| &t.token), Some(Token::DoubleColon))
+        matches!(self.peek(), Some(Token::Loop))
+            && matches!(
+                self.tokens.get(self.pos + 1).map(|t| &t.token),
+                Some(Token::DoubleColon)
+            )
+    }
+
+    /// `scrape::page(...)` or `mcp::call(...)` nested inside `loop::read`.
+    fn at_nested_read_op(&self) -> bool {
+        let ns = match self.peek() {
+            Some(Token::Ident(n)) if n == "scrape" || n == "mcp" => true,
+            _ => false,
+        };
+        ns && matches!(
+            self.tokens.get(self.pos + 1).map(|t| &t.token),
+            Some(Token::DoubleColon)
+        )
+    }
+
+    fn parse_nested_read_op(&mut self) -> Result<(String, Vec<(String, Expr)>), ParseError> {
+        let ns = self.expect_ident("read operation namespace")?;
+        self.expect_simple(Token::DoubleColon, "`::` in read operation")?;
+        let name = self.expect_ident("read operation name")?;
+        self.expect_simple(Token::LParen, "`(` after read operation")?;
+        let mut props = Vec::new();
+        while !matches!(self.peek(), Some(Token::RParen)) {
+            if matches!(self.peek(), Some(Token::Comma)) {
+                self.advance();
+                continue;
+            }
+            if !matches!(self.peek(), Some(Token::Colon)) {
+                return Err(
+                    self.error_here("expected `:option(...)` inside the nested read operation")
+                );
+            }
+            self.advance();
+            let key = self.expect_ident_like_spanned("read option name")?.0;
+            let expr = if matches!(self.peek(), Some(Token::LParen)) {
+                self.advance();
+                if matches!(self.peek(), Some(Token::RParen)) {
+                    self.advance();
+                    Expr::Bool(true)
+                } else {
+                    let expr = self.parse_game_prop_expr()?;
+                    self.expect_simple(Token::RParen, "`)` after read option")?;
+                    expr
+                }
+            } else {
+                Expr::Bool(true)
+            };
+            props.push((key, expr));
+        }
+        self.expect_simple(Token::RParen, "`)` after nested read operation")?;
+        Ok((format!("{ns}::{name}"), props))
     }
 
     fn parse_loop_node(&mut self) -> Result<LoopNode, ParseError> {
@@ -1049,7 +1122,7 @@ impl Parser {
             }
             if matches!(self.peek(), Some(Token::Colon)) {
                 self.advance();
-                let (key, key_span) = self.expect_ident_like_spanned("loop prop name")?;
+                let (key, key_span) = self.expect_ident_like_spanned("loop option name")?;
                 if matches!(self.peek(), Some(Token::LParen)) {
                     self.advance();
                     if matches!(self.peek(), Some(Token::RParen)) {
@@ -1057,7 +1130,7 @@ impl Parser {
                         props.push((key, Expr::Bool(true)));
                     } else {
                         let expr = self.parse_game_prop_expr()?;
-                        self.expect_simple(Token::RParen, "`)` after loop prop")?;
+                        self.expect_simple(Token::RParen, "`)` after loop option")?;
                         props.push((key, expr));
                     }
                 } else {
@@ -1066,8 +1139,18 @@ impl Parser {
                 prop_spans.push(key_span);
             } else if self.at_loop_node() {
                 children.push(self.parse_loop_node()?);
+            } else if self.at_nested_read_op() {
+                let (op, nested) = self.parse_nested_read_op()?;
+                props.push(("op".into(), Expr::String(op)));
+                prop_spans.push(start);
+                for (key, expr) in nested {
+                    props.push((key, expr));
+                    prop_spans.push(start);
+                }
             } else {
-                return Err(self.error_here("expected `:prop(...)` or `loop::node(...)`"));
+                return Err(self.error_here(
+                    "expected `:option(...)`, `loop::node(...)`, or a nested read operation (`scrape::page(...)`, `mcp::call(...)`)",
+                ));
             }
         }
         self.expect_simple(Token::RParen, "`)` after loop node")?;
@@ -1241,6 +1324,14 @@ impl Parser {
                     _ => unreachable!(),
                 };
                 Ok(Expr::Bool(name == "true"))
+            }
+            Some(Token::Loop) => {
+                self.advance();
+                Ok(Expr::Ident("loop".into()))
+            }
+            Some(Token::Scene) => {
+                self.advance();
+                Ok(Expr::Ident("scene".into()))
             }
             Some(Token::Ident(_)) => {
                 let name = self.expect_ident("identifier")?;
@@ -1454,6 +1545,25 @@ impl Parser {
                     .map(|t| Span::new(t.start, t.end, t.line, t.col))
                     .unwrap_or(span);
                 Ok((s, span))
+            }
+            // `loop` is a root keyword and also a field name (`$.loop`) and a
+            // closed value (`scene::audio(:kind(loop))`).
+            Token::Loop => {
+                let span = self
+                    .tokens
+                    .get(self.pos.saturating_sub(1))
+                    .map(|t| Span::new(t.start, t.end, t.line, t.col))
+                    .unwrap_or(span);
+                Ok(("loop".into(), span))
+            }
+            // `scene` is a root keyword and the root node name (`scene::scene`).
+            Token::Scene => {
+                let span = self
+                    .tokens
+                    .get(self.pos.saturating_sub(1))
+                    .map(|t| Span::new(t.start, t.end, t.line, t.col))
+                    .unwrap_or(span);
+                Ok(("scene".into(), span))
             }
             _ => Err(self.error_here(&format!("expected {what}"))),
         }
@@ -1766,8 +1876,18 @@ fn parse_step(tokens: &[SpannedToken]) -> Result<PipelineStep, String> {
                     vec![]
                 };
                 let span = Span::cover(
-                    Span::new(tokens[0].start, tokens[0].end, tokens[0].line, tokens[0].col),
-                    Span::new(tokens[2].start, tokens[2].end, tokens[2].line, tokens[2].col),
+                    Span::new(
+                        tokens[0].start,
+                        tokens[0].end,
+                        tokens[0].line,
+                        tokens[0].col,
+                    ),
+                    Span::new(
+                        tokens[2].start,
+                        tokens[2].end,
+                        tokens[2].line,
+                        tokens[2].col,
+                    ),
                 );
                 return Ok(PipelineStep::Call {
                     namespace: Some(ns),
@@ -1784,7 +1904,12 @@ fn parse_step(tokens: &[SpannedToken]) -> Result<PipelineStep, String> {
         // name(...) without namespace
         if matches!(tokens.get(1).map(|t| &t.token), Some(Token::LParen)) {
             let args = parse_call_args(&tokens[2..])?;
-            let span = Span::new(tokens[0].start, tokens[0].end, tokens[0].line, tokens[0].col);
+            let span = Span::new(
+                tokens[0].start,
+                tokens[0].end,
+                tokens[0].line,
+                tokens[0].col,
+            );
             return Ok(PipelineStep::Call {
                 namespace: None,
                 name: ns,
@@ -1824,6 +1949,8 @@ fn ident_like_name(token: &Token) -> Option<String> {
         Token::Resource => Some("resource".into()),
         Token::App => Some("app".into()),
         Token::Game => Some("game".into()),
+        Token::Loop => Some("loop".into()),
+        Token::Scene => Some("scene".into()),
         Token::Service => Some("service".into()),
         Token::Processor => Some("processor".into()),
         Token::Sink => Some("sink".into()),
@@ -1946,7 +2073,7 @@ mod tests {
     #[test]
     fn parses_component_and_app() {
         let src = r#"
-@version("0.5.0")
+@version("0.6.0")
 contract Product {
     has Str $.name;
     has num64 $.price;
@@ -1983,13 +2110,13 @@ app ShopApp {
         assert_eq!(program.components.len(), 2);
         assert_eq!(program.apps.len(), 1);
         assert_eq!(program.apps[0].routes[0].component, "ShopPage");
-        assert!(program.apps[0].serve.is_none());
+        assert!(program.apps[0].routes.iter().any(|r| r.path == "/"));
     }
 
     #[test]
     fn parses_intent_declarations() {
         let src = r#"
-@version("0.5.0")
+@version("0.6.0")
 contract Record { has Str $.id; }
 component Page { method render() { ui::page() } }
 resource Records for Record {
@@ -2001,7 +2128,6 @@ app Demo {
 }
 service Api {}
 processor Worker {}
-task Cleanup {}
 "#;
         let program = parse(src).expect("parse intent declarations");
         assert_eq!(program.contracts.len(), 1);
@@ -2010,13 +2136,20 @@ task Cleanup {}
         assert_eq!(program.resources[0].contract.as_deref(), Some("Record"));
         assert_eq!(program.resources[0].methods.len(), 2);
         assert_eq!(program.apps.len(), 1);
-        assert_eq!(program.modules.len(), 3);
+        assert_eq!(program.modules.len(), 2);
+    }
+
+    #[test]
+    fn rejects_removed_task_declarator() {
+        let src = "@version(\"0.6.0\")\ntask Cleanup {}\n";
+        let err = parse(src).expect_err("task removed");
+        assert!(err.message.contains("removed"), "{err}");
     }
 
     #[test]
     fn parses_resource_seeds() {
         let src = r#"
-@version("0.5.0")
+@version("0.6.0")
 contract Article {
     has Str $.id;
     has Str $.title;
@@ -2038,7 +2171,7 @@ resource Articles for Article {
     #[test]
     fn rejects_seed_wrong_contract() {
         let src = r#"
-@version("0.5.0")
+@version("0.6.0")
 contract Article { has Str $.id; }
 contract Other { has Str $.id; }
 resource Articles for Article {
@@ -2053,7 +2186,7 @@ resource Articles for Article {
     #[test]
     fn validate_rejects_seed_without_id() {
         let src = r#"
-@version("0.5.0")
+@version("0.6.0")
 contract Article {
     has Str $.id;
     has Str $.title;
@@ -2074,7 +2207,7 @@ app Demo { route "/" => Page; }
     fn rejects_author_sink_with_migration_diagnostic() {
         let err = parse("sink Db is storage(SQLite) {}").unwrap_err();
         assert!(err.message.contains("sink"), "error: {err}");
-        assert!(err.message.contains("0.5.0"), "error: {err}");
+        assert!(err.message.contains("0.6.0"), "error: {err}");
     }
 
     #[test]
@@ -2086,13 +2219,14 @@ app Demo { route "/" => Page; }
             ("class Demo is app {}", "app Demo { ... }"),
             ("class Api is service {}", "service Api { ... }"),
             ("class Worker is processor {}", "processor Worker { ... }"),
-            ("class Cleanup is task {}", "task Cleanup { ... }"),
         ];
         for (source, replacement) in cases {
             let err = parse(source).unwrap_err();
             assert!(err.message.contains("legacy `class`"), "error: {err}");
             assert!(err.message.contains(replacement), "error: {err}");
         }
+        let task_err = parse("class Cleanup is task {}").unwrap_err();
+        assert!(task_err.message.contains("removed"), "{task_err}");
         let sink_err = parse("class Db is sink is storage(SQLite) {}").unwrap_err();
         assert!(sink_err.message.contains("legacy `class`"), "{sink_err}");
     }
@@ -2100,7 +2234,7 @@ app Demo { route "/" => Page; }
     #[test]
     fn parses_subset_where_contains() {
         let src = r#"
-@version("0.5.0")
+@version("0.6.0")
 subset Uri of Str where { .contains("://") }
 contract Item {
     has Uri $.url;
@@ -2127,7 +2261,7 @@ subset Uri of Str where { .len > 0 }
     #[test]
     fn validate_rejects_bad_subset_literal() {
         let src = r#"
-@version("0.5.0")
+@version("0.6.0")
 subset Uri of Str where { .contains("://") }
 contract Product {
     has Uri $.url;
@@ -2152,11 +2286,11 @@ app App {
     #[test]
     fn parses_minimal_game_scene() {
         let src = r#"
-@version("0.5.0")
+@version("0.6.0")
 game Foo {
-    game::scene(
+    scene::scene(
         :title("T"),
-        game::overlay(:toggle("F1"))
+        scene::overlay(:toggle("F1"))
     )
 }
 "#;
@@ -2165,7 +2299,10 @@ game Foo {
         assert_eq!(program.games[0].name, "Foo");
         assert_eq!(program.games[0].root.name, "scene");
         assert_eq!(
-            program.games[0].root.prop("title").and_then(|e| e.as_string_literal()),
+            program.games[0]
+                .root
+                .prop("title")
+                .and_then(|e| e.as_string_literal()),
             Some("T")
         );
         assert_eq!(program.games[0].root.children.len(), 1);
@@ -2178,26 +2315,73 @@ game Foo {
         let mut parser = Parser::new(lex(r#"$a != "" && $b != "" || $c < 1 + 2 * 3"#).unwrap());
         let expr = parser.parse_expr().unwrap();
         let rendered = format!("{expr:?}");
-        let Expr::BinOp { op: sil_core::BinOp::Or, left, right } = expr else {
+        let Expr::BinOp {
+            op: sil_core::BinOp::Or,
+            left,
+            right,
+        } = expr
+        else {
             panic!("`||` should be the root: {rendered}");
         };
-        let Expr::BinOp { op: sil_core::BinOp::And, left: and_l, right: and_r } = *left else {
+        let Expr::BinOp {
+            op: sil_core::BinOp::And,
+            left: and_l,
+            right: and_r,
+        } = *left
+        else {
             panic!("`&&` should be under `||`: {rendered}");
         };
-        assert!(matches!(*and_l, Expr::BinOp { op: sil_core::BinOp::Ne, .. }), "{rendered}");
-        assert!(matches!(*and_r, Expr::BinOp { op: sil_core::BinOp::Ne, .. }), "{rendered}");
-        let Expr::BinOp { op: sil_core::BinOp::Lt, right: sum, .. } = *right else {
+        assert!(
+            matches!(
+                *and_l,
+                Expr::BinOp {
+                    op: sil_core::BinOp::Ne,
+                    ..
+                }
+            ),
+            "{rendered}"
+        );
+        assert!(
+            matches!(
+                *and_r,
+                Expr::BinOp {
+                    op: sil_core::BinOp::Ne,
+                    ..
+                }
+            ),
+            "{rendered}"
+        );
+        let Expr::BinOp {
+            op: sil_core::BinOp::Lt,
+            right: sum,
+            ..
+        } = *right
+        else {
             panic!("`<` should be the right of `||`: {rendered}");
         };
-        let Expr::BinOp { op: sil_core::BinOp::Add, right: product, .. } = *sum else {
+        let Expr::BinOp {
+            op: sil_core::BinOp::Add,
+            right: product,
+            ..
+        } = *sum
+        else {
             panic!("`+` under `<`: {rendered}");
         };
-        assert!(matches!(*product, Expr::BinOp { op: sil_core::BinOp::Mul, .. }), "{rendered}");
+        assert!(
+            matches!(
+                *product,
+                Expr::BinOp {
+                    op: sil_core::BinOp::Mul,
+                    ..
+                }
+            ),
+            "{rendered}"
+        );
     }
 
     #[test]
     fn parses_rfi_chase_loops() {
-        let src = include_str!("../../../examples/rfiChaseApp/main.silc");
+        let src = include_str!("../../../examples/domains/aec/rfiChaseApp/main.silc");
         let program = parse(src).expect("parse");
         assert_eq!(program.loops.len(), 2);
         let chase = &program.loops[0];
@@ -2217,11 +2401,11 @@ game Foo {
     #[test]
     fn loop_stays_an_identifier_outside_top_level() {
         let src = r#"
-@version("0.5.0")
+@version("0.6.0")
 game Foo {
-    game::scene(
+    scene::scene(
         :title("T"),
-        game::entity(:name("a"), game::audio(:asset("x"), :kind(loop)))
+        scene::entity(:name("a"), scene::audio(:asset("x"), :kind(loop)))
     )
 }
 "#;
@@ -2231,7 +2415,7 @@ game Foo {
 
     #[test]
     fn rejects_loop_without_namespace_root() {
-        let err = parse("@version(\"0.5.0\")\nloop Foo { flow() }").unwrap_err();
+        let err = parse("@version(\"0.6.0\")\nloop Foo { flow() }").unwrap_err();
         assert!(err.message.contains("loop::"), "{}", err.message);
     }
 }

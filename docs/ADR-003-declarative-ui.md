@@ -49,6 +49,8 @@ catalog primitives and author-defined app components, not compiler modes.
 
 ### Historical (0.2.0–0.3.0)
 
+> **Superseded.** This block records an authoring mechanic that Silc no longer accepts. Do not write `method serve()`, `ui::web`, or `ui::terminal`. [ADR-009](ADR-009-compiler-synthesized-runtime.md) is the current rule: authors declare routes, and the compiler synthesizes both surfaces.
+
 Earlier releases required authors to write:
 
 ```silc
@@ -61,7 +63,7 @@ method serve() {
 That authoring mechanic is superseded by ADR-009. The dual-surface **parity**
 requirement is unchanged.
 
-### Shared prop vocabulary
+### Shared option vocabulary
 
 | Concern | Shape | Closed values / notes |
 | --- | --- | --- |
@@ -72,10 +74,10 @@ requirement is unchanged.
 | Size | `:size(...)` | `sm` \| `md` \| `lg` |
 | Capability flags | bare flags | `:disabled`, `:sortable`, `:searchable`, `:selectable`, `:dense`, `:active`, `:submit`, `:dismissible`, `:collapsible` |
 
-Unknown closed tokens are compile errors. `:field` stays a prop pattern;
+Unknown closed tokens are compile errors. `:field` stays an option pattern;
 `ui::field` is optional chrome around a control.
 
-### Complete UI primitive catalog (38)
+### Complete UI primitive catalog
 
 Do **not** duplicate the 38-line catalog in this ADR. Source of truth:
 

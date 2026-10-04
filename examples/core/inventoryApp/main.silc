@@ -1,0 +1,216 @@
+#!/usr/bin/env silc
+# Standalone inventory app: browse, admin CRUD, and silclm grounded on live stock.
+@version("0.6.0")
+
+contract InventoryItem {
+    has Str $.id;
+    has Str $.name;
+    has Str $.category;
+    has Str $.location;
+    has Str $.quantity;
+    has Str $.reorder_level;
+    has Str $.notes;
+}
+
+contract ChatRecord {
+    has Str $.prompt;
+    has Str $.reply;
+}
+
+resource InventoryItems for InventoryItem {
+    query list;
+    mutation create;
+    mutation update;
+    mutation delete;
+}
+
+component ItemCard {
+    has InventoryItem $.item;
+    emit remove(InventoryItem);
+
+    method render() {
+        ui::card(
+            ui::heading(:text($.item.name), :level(3)),
+            ui::text(:text($.item.category)),
+            ui::text(:text($.item.location)),
+            ui::text(:text($.item.quantity)),
+            ui::text(:text($.item.reorder_level)),
+            ui::text(:text($.item.notes)),
+            ui::button(
+                :label("Delete"),
+                :variant(destructive),
+                :on(click(on_remove))
+            )
+        )
+    }
+
+    method on_remove() {
+        emit remove($.item);
+    }
+}
+
+component BrowsePage {
+    has state Str $.category_filter = "All";
+    query $.items = InventoryItems.list();
+
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("Inventory"))),
+            :side_panel(ui::side_panel(
+                ui::nav_item(:label("Browse"), :to("/"), :active),
+                ui::nav_item(:label("Admin"), :to("/admin")),
+                ui::nav_item(:label("Assistant"), :to("/assistant"))
+            )),
+            ui::stack(
+                ui::section(
+                    :title("Stock browser"),
+                    :description("Filter by category, or ask the Assistant about live inventory.")
+                ),
+                ui::alert(
+                    :tone(info),
+                    :text("Browse mirrors Admin and Assistant — same inventory_items resource on web and OpenTUI.")
+                ),
+                ui::filter_bar(
+                    ui::radio_group(
+                        :field(category_filter),
+                        :options(["All", "Electronics", "Hardware", "Supplies", "Other"]),
+                        :label("Category")
+                    )
+                ),
+                ui::table(
+                    :rows($.items),
+                    :columns(["name", "category", "location", "quantity", "reorder_level", "notes"]),
+                    :empty_text("No inventory items yet. Add some in Admin."),
+                    :filter_field(category_filter),
+                    :filter_column("category"),
+                    :sortable,
+                    :searchable
+                )
+            )
+        )
+    }
+}
+
+component AdminPage {
+    has state Str $.name = "";
+    has state Str $.category = "Electronics";
+    has state Str $.location = "";
+    has state Str $.quantity = "0";
+    has state Str $.reorder_level = "0";
+    has state Str $.notes = "";
+    query $.items = InventoryItems.list();
+
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("Inventory Admin"))),
+            :side_panel(ui::side_panel(
+                ui::nav_item(:label("Browse"), :to("/")),
+                ui::nav_item(:label("Admin"), :to("/admin"), :active),
+                ui::nav_item(:label("Assistant"), :to("/assistant"))
+            )),
+            ui::stack(
+                ui::section(
+                    :title("Add item"),
+                    :description("Create an inventory record shared by Browse and the Assistant."),
+                    ui::form(:on(submit(on_create)),
+                        ui::text_input(:field(name), :label("Name")),
+                        ui::radio_group(
+                            :field(category),
+                            :options(["Electronics", "Hardware", "Supplies", "Other"]),
+                            :label("Category")
+                        ),
+                        ui::text_input(:field(location), :label("Location / aisle")),
+                        ui::text_input(:field(quantity), :label("Quantity")),
+                        ui::text_input(:field(reorder_level), :label("Reorder level")),
+                        ui::textarea(:field(notes), :label("Notes")),
+                        ui::toolbar(
+                            ui::button(:label("Create"), :variant(primary), :submit)
+                        )
+                    )
+                ),
+                ui::section(
+                    :title("Catalog"),
+                    :description("Review and remove current inventory records."),
+                    when !$.items {
+                        ui::empty(:text("Catalog is empty."))
+                    },
+                    for $.items -> $item {
+                        ItemCard(:item($item), :on(remove => on_delete))
+                    }
+                )
+            )
+        )
+    }
+
+    method on_create() {
+        InventoryItems.create(InventoryItem.new(
+            :name($.name),
+            :category($.category),
+            :location($.location),
+            :quantity($.quantity),
+            :reorder_level($.reorder_level),
+            :notes($.notes)
+        ));
+        InventoryItems.list();
+        $.name = "";
+        $.category = "Electronics";
+        $.location = "";
+        $.quantity = "0";
+        $.reorder_level = "0";
+        $.notes = "";
+    }
+
+    method on_delete(InventoryItem $item) {
+        InventoryItems.delete($item);
+        InventoryItems.list();
+    }
+}
+
+component AssistantPage {
+    has state Str $.prompt = "";
+    query $.items = InventoryItems.list();
+
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("Inventory Assistant"))),
+            :side_panel(ui::side_panel(
+                ui::nav_item(:label("Browse"), :to("/")),
+                ui::nav_item(:label("Admin"), :to("/admin")),
+                ui::nav_item(:label("Assistant"), :to("/assistant"), :active)
+            )),
+            ui::stack(
+                ui::section(
+                    :title("Ask about inventory"),
+                    :description("Use natural language to inspect current stock and reorder needs."),
+                    ui::alert(
+                        :tone(info),
+                        :text("silclm answers using a live snapshot of inventory_items.")
+                    ),
+                    ui::chat(
+                        :value($.prompt),
+                        :context($.items),
+                        :persona("You are the Inventory Assistant for this Silc inventory app, built on silclm. You help users understand stock levels, categories, quantities, and reorder needs from the live inventory snapshot."),
+                        :placeholder("Which items are below reorder level?"),
+                        :on(send(on_send))
+                    )
+                )
+            )
+        )
+    }
+
+    method on_send() {
+        Assistant.complete();
+    }
+}
+
+app InventoryApp {
+    route "/" => BrowsePage;
+    route "/admin" => AdminPage;
+    route "/assistant" => AssistantPage;
+}
+
+processor Assistant {
+    method complete(ChatRecord $record) {
+        $record.prompt ==> llm::complete()
+    }
+}

@@ -25,7 +25,8 @@ fn wait_http(port: u16, timeout: Duration) {
     let start = Instant::now();
     while start.elapsed() < timeout {
         if let Ok(mut stream) = TcpStream::connect(("127.0.0.1", port)) {
-            let _ = stream.write_all(b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
+            let _ = stream
+                .write_all(b"GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n");
             let mut buf = Vec::new();
             let _ = stream.read_to_end(&mut buf);
             if String::from_utf8_lossy(&buf).contains("\"ok\":true") {
@@ -39,8 +40,8 @@ fn wait_http(port: u16, timeout: Duration) {
 
 #[test]
 fn data_extractor_app_emits_upload_pipeline() {
-    let example =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/dataExtractorApp/main.silc");
+    let example = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../examples/core/dataExtractorApp/main.silc");
     let build = Command::new(silc_bin())
         .args(["build", example.to_str().unwrap()])
         .env("SILC_HTTP_PORT", "18132")
@@ -55,11 +56,14 @@ fn data_extractor_app_emits_upload_pipeline() {
     );
 
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../examples/dataExtractorApp/.runtime/main");
+        .join("../../examples/core/dataExtractorApp/.runtime/main");
     let worker = std::fs::read_to_string(root.join("typescript/worker.ts")).unwrap();
     assert!(worker.contains("HAS_DOC = true") || worker.contains("const HAS_DOC = true"));
     assert!(worker.contains("/upload"));
-    assert!(worker.contains("DOC_TABLE = \"documents\"") || worker.contains("const DOC_TABLE = \"documents\""));
+    assert!(
+        worker.contains("DOC_TABLE = \"documents\"")
+            || worker.contains("const DOC_TABLE = \"documents\"")
+    );
     assert!(root.join("python/doc_extract_worker.py").is_file());
     assert!(root.join("python/doc_requirements.txt").is_file());
 
@@ -71,8 +75,8 @@ fn data_extractor_app_emits_upload_pipeline() {
 #[test]
 #[ignore = "starts full dual-surface runtime and installs doc extract wheels"]
 fn data_extractor_upload_persists_extracted_row() {
-    let example = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../examples/dataExtractorApp");
+    let example =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/core/dataExtractorApp");
     let port = 18134u16;
     free_port(port);
 

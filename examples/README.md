@@ -1,12 +1,14 @@
 # Silc example apps
 
-Each directory under `examples/` is a **standalone Silc 0.5.0 project** —
-the same shape `silc init` creates for end users.
+Each example is a **standalone Silc 0.6.0 project** — the same shape `silc init` creates for end users.
+
+Core programs live in `examples/core/`. Domain programs live in `examples/domains/<domain>/`. Architecture, engineering, and construction examples are under `examples/domains/aec/`.
 
 ## Layout
 
 ```text
-examples/<appName>/
+examples/core/<appName>/
+examples/domains/aec/<appName>/
   main.silc      # authored program (only .silc source that matters)
   AGENTS.md      # compiler AGENTS template + app-specific notes
   README.md      # how to build/run this app
@@ -22,26 +24,34 @@ The shared block between `<!-- BEGIN SILC_AGENTS_TEMPLATE -->` and
 [`crates/silc/templates/AGENTS.md`](../crates/silc/templates/AGENTS.md)
 byte-for-byte. App-specific notes go **after** the end marker only.
 
-Tracked examples today: `chatApp`, `inventoryApp`, `scraperApp`,
-`pipelineApp`, `blogApp`, `dataExtractorApp`, `arenaGameApp`, `platformGameApp`,
-`rfiChaseApp`, `oneThingApp`, `oneThingCliApp`, and `whatToDoTodayApp`.
+Every example directory is tracked; the conformance test in
+`crates/silc/tests/docs_conformance.rs` checks each one's `AGENTS.md` block
+and `@version`, so a new example needs no registration beyond its files and a
+row in the table below.
 
-## Current apps
+## Core
 
 | App | Purpose | Web | Terminal |
 | --- | --- | --- | --- |
-| [`chatApp/`](chatApp/) | Multi-session local chat via **silclm** | 18090 | 18091 |
-| [`inventoryApp/`](inventoryApp/) | Inventory CRUD + browse/admin + grounded silclm assistant | 18096 | 18097 |
-| [`scraperApp/`](scraperApp/) | URL + depth form; site crawl via `scrape::*`; results table | 18110 | 18111 |
-| [`pipelineApp/`](pipelineApp/) | One-shot scrape → MiniLM/ONNX → SQLite pipeline | — | — |
-| [`blogApp/`](blogApp/) | Seeded blog: home filters + grounded search + admin modal CRUD | 18120 | 18121 |
-| [`dataExtractorApp/`](dataExtractorApp/) | File upload + `doc::extract` → documents ledger | 18130 | 18131 |
-| [`arenaGameApp/`](arenaGameApp/) | WebGPU game kernel (Godot/Unity/Unreal synthesis on Babylon) | 18140 | — |
-| [`platformGameApp/`](platformGameApp/) | WebGPU platformer (side-scroll camera, arrows+jump controls) | 18140 | — |
-| [`rfiChaseApp/`](rfiChaseApp/) | Weekday `loop`: overdue RFIs → silclm draft → PM approval in `/loops` → keyed reminder | 18088 | — |
-| [`oneThingApp/`](oneThingApp/) | Daily `loop`: four Moz MCP reads → silclm brief → Dan's one sentence (needs `MOZ_MCP_TOKEN`) | 18088 | — |
-| [`oneThingCliApp/`](oneThingCliApp/) | Loop **command**: the same reads and brief, run once by `silc main.silc`; the sentence is printed to stdout and the process exits. No UI, no `/loops` (needs `MOZ_MCP_TOKEN`) | — | — |
-| [`whatToDoTodayApp/`](whatToDoTodayApp/) | Scheduled daily `loop` with no authored UI: same Moz MCP reads → silclm brief → 3 to 5 item to-do list; the synthesized `/loops` inbox (web, OpenTUI, or `/api`) is the whole interface (needs `MOZ_MCP_TOKEN`) | 18088 | 18023 |
+| [`chatApp/`](core/chatApp/) | Multi-session local chat via **silclm** | 18090 | 18091 |
+| [`inventoryApp/`](core/inventoryApp/) | Inventory CRUD + browse/admin + grounded silclm assistant | 18096 | 18097 |
+| [`hotelSignupApp/`](core/hotelSignupApp/) | Two-route sign-up form + ledger; direct `Guests.create(...)` handler style | 18088 | 18023 |
+| [`scraperApp/`](core/scraperApp/) | URL form; site crawl at depth 2 via `scrape::*`; results table | 18110 | 18111 |
+| [`pipelineApp/`](core/pipelineApp/) | One-shot scrape → MiniLM/ONNX → SQLite pipeline | — | — |
+| [`blogApp/`](core/blogApp/) | Seeded blog: home filters + grounded search + admin modal CRUD | 18120 | 18121 |
+| [`dataExtractorApp/`](core/dataExtractorApp/) | File upload + `doc::extract` → documents ledger | 18130 | 18131 |
+| [`arenaGameApp/`](core/arenaGameApp/) | WebGPU scene kernel plus a gameplay layer (Babylon adapter) | 18140 | — |
+| [`platformGameApp/`](core/platformGameApp/) | WebGPU platformer (sprites, collectibles, patrols, level end) | 18140 | — |
+| [`mcpLoopApp/`](core/mcpLoopApp/) | Generic MCP loop command: one `mcp::call`, a silclm brief, one keyed note. README also shows the inbox-only and app modes | — | — |
+
+## Domains
+
+### AEC
+
+| App | Purpose | Web | Terminal |
+| --- | --- | --- | --- |
+| [`rfiChaseApp/`](domains/aec/rfiChaseApp/) | Weekday `loop`: overdue RFIs → silclm draft → PM approval in `/loops` → keyed reminder | 18088 | — |
+| [`vdcWalkthrough/`](domains/aec/vdcWalkthrough/) | Project-environment scene: `scene::` kernel, `game::pawn` viewer | 18140 | — |
 
 ## Conventions
 
@@ -58,9 +68,12 @@ Tracked examples today: `chatApp`, `inventoryApp`, `scraperApp`,
 7. Pipeline-only programs (`pipelineApp`) run with
    `silc run main.silc --input-json '{"url":"…"}'`
    ([ADR-010](../docs/ADR-010-tensor-minilm-pipeline.md)).
-8. Game programs declare `game { game::scene(...) }` only —
-   web/WebGPU surface, no terminal ([ADR-012](../docs/ADR-012-webgpu-game-subject.md)).
-9. Loop commands (`oneThingCliApp`) have no `app` and only `loop::manual`
+8. Scene programs declare `scene Name { scene::scene(...) }`.
+   `game Name` is a one-release alias of that root.
+   Gameplay nodes stay `game::`. Web/WebGPU only, no terminal
+   ([ADR-012](../docs/ADR-012-webgpu-game-subject.md),
+   [ADR-016](../docs/ADR-016-generic-kernel-domain-layers.md)).
+9. Loop commands (`mcpLoopApp`) have no `app` and only `loop::manual`
    triggers. `silc main.silc` runs each loop once, narrates progress on stderr,
    prints the notices on stdout, and exits; nothing is served
    ([ADR-014](../docs/ADR-014-loop-subject.md)).
@@ -70,11 +83,11 @@ Tracked examples today: `chatApp`, `inventoryApp`, `scraperApp`,
 ```bash
 cargo install --path crates/silc --force   # once, from the compiler repo
 
-cd examples/chatApp
+cd examples/core/chatApp
 silc build main.silc
 silc main.silc              # web by default
 silc main.silc --terminal   # also attach OpenTUI (+ telnet fallback)
 
-cd ../oneThingCliApp
+cd ../mcpLoopApp
 silc main.silc              # a loop command: runs once, prints the result, exits
 ```

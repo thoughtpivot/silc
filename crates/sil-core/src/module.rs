@@ -9,7 +9,6 @@ use crate::types::{Span, TypeExpr};
 pub enum ModuleKind {
     Service,
     Processor,
-    Sink,
     Task,
     Unknown,
 }
@@ -19,7 +18,6 @@ impl ModuleKind {
         match name {
             "service" => ModuleKind::Service,
             "processor" => ModuleKind::Processor,
-            "sink" => ModuleKind::Sink,
             "task" => ModuleKind::Task,
             _ => ModuleKind::Unknown,
         }
@@ -29,7 +27,6 @@ impl ModuleKind {
         match self {
             ModuleKind::Service => "service",
             ModuleKind::Processor => "processor",
-            ModuleKind::Sink => "sink",
             ModuleKind::Task => "task",
             ModuleKind::Unknown => "unknown",
         }

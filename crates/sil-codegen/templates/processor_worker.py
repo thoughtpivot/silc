@@ -242,12 +242,12 @@ def process_record(record: dict) -> dict:
         )
         reply = complete(prompt, max_tokens=512, temperature=0.2)
         return {"id": record.get("id"), "reply": reply, "model": record.get("model")}
-    if PROCESSOR == "text.score":
+    if PROCESSOR == "text::score":
         text = record.get("text") or ""
         record["score"] = score_text(text)
         record["summary"] = (text[:120] + "…") if len(text) > 120 else text
         return record
-    if PROCESSOR == "llm.complete":
+    if PROCESSOR == "llm::complete":
         prompt = record.get("prompt") or record.get("text") or ""
         context = record.get("context") or ""
         persona = record.get("persona") or ""
@@ -256,7 +256,7 @@ def process_record(record: dict) -> dict:
         record.pop("context", None)
         record.pop("persona", None)
         return record
-    if PROCESSOR == "tensor.infer":
+    if PROCESSOR == "tensor::infer":
         text = record.get("raw_content") or ""
         record["vector_embedding"] = infer_embedding(text)
         return record

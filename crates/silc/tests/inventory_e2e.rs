@@ -48,8 +48,8 @@ fn read_until(stream: &mut TcpStream, needle: &str, timeout: Duration) -> String
 
 #[test]
 fn inventory_app_builds_with_chat_context() {
-    let example =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/inventoryApp/main.silc");
+    let example = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../examples/core/inventoryApp/main.silc");
     let build = Command::new(silc_bin())
         .args(["build", example.to_str().unwrap()])
         .output()
@@ -61,8 +61,8 @@ fn inventory_app_builds_with_chat_context() {
         String::from_utf8_lossy(&build.stderr)
     );
 
-    let root =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/inventoryApp/.runtime/main");
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../examples/core/inventoryApp/.runtime/main");
     let app = std::fs::read_to_string(root.join("typescript/src/App.tsx")).unwrap();
     assert!(
         app.contains("context: items"),
@@ -148,8 +148,8 @@ fn inventory_app_resources_web_and_terminal_e2e() {
     ));
     std::fs::create_dir_all(&temp).unwrap();
 
-    let example =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/inventoryApp/main.silc");
+    let example = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../examples/core/inventoryApp/main.silc");
     let build = Command::new(silc_bin())
         .args(["build", example.to_str().unwrap()])
         .output()
@@ -162,7 +162,7 @@ fn inventory_app_resources_web_and_terminal_e2e() {
     );
 
     let data_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../examples/inventoryApp/.runtime/main/data");
+        .join("../../examples/core/inventoryApp/.runtime/main/data");
     for name in ["app.db", "app.db-shm", "app.db-wal"] {
         let _ = std::fs::remove_file(data_dir.join(name));
     }

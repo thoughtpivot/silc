@@ -51,16 +51,15 @@ pub fn resolve_hover(doc: &Document, offset: u32) -> Option<HoverContent> {
                 "annotation",
                 &format!("@{name}"),
                 "Source annotation attached to the following declaration. \
-                 `@version(\"0.5.0\")` pins the Silc language version so tooling and the \
-                 compiler agree on syntax and runnable ops.",
+                 `@version(\"0.6.0\")` pins the Silc language version so tooling and the \
+                 compiler agree on syntax and runnable operations.",
                 None,
             ),
             range,
         }),
         Token::UnitLiteral(lit) => {
-            let prose = unit_literal_doc(lit).unwrap_or(
-                "Unit literal combining a magnitude with a closed Silc unit suffix.",
-            );
+            let prose = unit_literal_doc(lit)
+                .unwrap_or("Unit literal combining a magnitude with a closed Silc unit suffix.");
             Some(HoverContent {
                 markdown: md("unit literal", lit, prose, None),
                 range,
@@ -117,6 +116,8 @@ fn namespace_from_token(token: &Token) -> Option<&str> {
     match token {
         Token::Ident(ns) => Some(ns.as_str()),
         Token::Game => Some("game"),
+        Token::Scene => Some("scene"),
+        Token::Loop => Some("loop"),
         Token::Service => Some("service"),
         Token::Processor => Some("processor"),
         Token::App => Some("app"),
@@ -136,6 +137,8 @@ fn keyword_from_token(token: &Token) -> Option<&'static str> {
         Token::Resource => "resource",
         Token::App => "app",
         Token::Game => "game",
+        Token::Scene => "scene",
+        Token::Loop => "loop",
         Token::Service => "service",
         Token::Processor => "processor",
         Token::Sink => "sink",
@@ -162,10 +165,21 @@ fn keyword_from_token(token: &Token) -> Option<&'static str> {
 
 fn resolve_ident_context(doc: &Document, idx: usize) -> Option<HoverContent> {
     let token = &doc.tokens[idx];
-    let Token::Ident(name) = &token.token else {
-        // Also handle `$name` where caret is on the ident after `$`.
-        return None;
+    // `scene::scene` and `:kind(loop)` use keyword tokens as names.
+    let name_buf = match &token.token {
+        Token::Ident(name) => name.clone(),
+        other
+            if idx >= 1
+                && matches!(
+                    doc.tokens[idx - 1].token,
+                    Token::DoubleColon | Token::LParen | Token::Colon
+                ) =>
+        {
+            keyword_from_token(other)?.to_string()
+        }
+        _ => return None,
     };
+    let name = name_buf.as_str();
     let range = HoverRange::from_span(
         &doc.source,
         Span::new(token.start, token.end, token.line, token.col),
@@ -192,7 +206,7 @@ fn resolve_ident_context(doc: &Document, idx: usize) -> Option<HoverContent> {
                     });
                 }
             }
-            if ns == "game" {
+            if ns == "game" || ns == "scene" {
                 if let Some(spec) = lookup_game_node(name) {
                     let props: Vec<String> = spec
                         .props
@@ -205,14 +219,21 @@ fn resolve_ident_context(doc: &Document, idx: usize) -> Option<HoverContent> {
                             }
                         })
                         .collect();
+                    let real = sil_core::node_namespace(name);
                     let detail = format!(
-                        "{}\n\n`game::{}({})`",
+                        "{}\n\n`{}::{}({})`",
                         spec.description,
+                        real,
                         spec.name,
                         props.join(", ")
                     );
+                    let kind = if real == "scene" {
+                        "scene node"
+                    } else {
+                        "game node"
+                    };
                     return Some(HoverContent {
-                        markdown: md("game node", &format!("game::{name}"), &detail, None),
+                        markdown: md(kind, &format!("{real}::{name}"), &detail, None),
                         range: ns_range,
                     });
                 }
@@ -233,14 +254,19 @@ fn resolve_ident_context(doc: &Document, idx: usize) -> Option<HoverContent> {
             }
             if let Some(text) = executable_op_doc(ns, name) {
                 return Some(HoverContent {
-                    markdown: md("executable op", &format!("{ns}::{name}"), &text, None),
+                    markdown: md(
+                        "executable operation",
+                        &format!("{ns}::{name}"),
+                        &text,
+                        None,
+                    ),
                     range: ns_range,
                 });
             }
             if !is_executable_op(ns, name) {
                 return Some(HoverContent {
                     markdown: md(
-                        "namespace op",
+                        "namespace operation",
                         &format!("{ns}::{name}"),
                         &stub_op_doc(ns, name),
                         None,
@@ -309,7 +335,7 @@ fn resolve_ident_context(doc: &Document, idx: usize) -> Option<HoverContent> {
         }
     }
 
-    // Closed enum / event value inside :prop(value) or :on(event(...))
+    // Closed enum / event value inside :option(value) or :on(event(...))
     if idx >= 2 && matches!(doc.tokens[idx - 1].token, Token::LParen) {
         if let Some(content) = resolve_paren_ident(doc, idx, name, range.clone()) {
             return Some(content);
@@ -511,12 +537,7 @@ fn preceding_base_name(doc: &Document, idx: usize) -> Option<String> {
     }
 }
 
-fn resolve_var(
-    doc: &Document,
-    offset: u32,
-    name: &str,
-    range: HoverRange,
-) -> Option<HoverContent> {
+fn resolve_var(doc: &Document, offset: u32, name: &str, range: HoverRange) -> Option<HoverContent> {
     let scope = scope_at(doc, offset);
     if let Some(ty) = scope.get(name) {
         // Query binding?
@@ -559,8 +580,8 @@ fn resolve_var(
                     )
                 } else {
                     (
-                        "prop",
-                        "Incoming component prop supplied by the parent. Treat it as \
+                        "option",
+                        "Incoming component option supplied by the parent. Treat it as \
                          read-only inside this component; lift writes to the parent or to \
                          local `state`.",
                     )
@@ -647,7 +668,7 @@ fn resolve_ui_prop(
                     );
                     return Some(HoverContent {
                         markdown: md(
-                            "ui prop",
+                            "ui option",
                             prop,
                             &format!(
                                 "{prose}\n\n| | |\n|---|---|\n| **Component** | `ui::{comp}` |\n| **Required** | `{req}` |"
@@ -658,7 +679,11 @@ fn resolve_ui_prop(
                     });
                 }
                 if let Some(slot) = spec.slots.iter().find(|s| s.name == prop) {
-                    let req = if slot.required { "required" } else { "optional" };
+                    let req = if slot.required {
+                        "required"
+                    } else {
+                        "optional"
+                    };
                     let prose = slot_doc(prop).unwrap_or(
                         "Named content slot on this UI primitive. Parents fill the slot with a child tree.",
                     );
@@ -740,18 +765,18 @@ fn resolve_game_prop(
     let mut i = idx;
     while i > 0 {
         i -= 1;
-        if matches!(doc.tokens[i].token, Token::Ident(_))
-            && i >= 2
+        if i >= 2
             && matches!(doc.tokens[i - 1].token, Token::DoubleColon)
-            && matches!(doc.tokens[i - 2].token, Token::Game)
+            && is_scene_namespace(&doc.tokens[i - 2].token)
         {
-            let Token::Ident(node) = &doc.tokens[i].token else {
-                break;
+            let Some(node) = node_name_token(&doc.tokens[i].token) else {
+                continue;
             };
-            if let Some(spec) = lookup_game_node(node) {
+            let node = node.to_string();
+            if let Some(spec) = lookup_game_node(&node) {
                 if let Some(p) = spec.props.iter().find(|p| p.name == prop) {
                     let req = if p.required { "required" } else { "optional" };
-                    let prose = game_prop_doc(node, prop).unwrap_or(p.description);
+                    let prose = game_prop_doc(&node, prop).unwrap_or(p.description);
                     let closed = if p.closed_values.is_empty() {
                         String::new()
                     } else {
@@ -760,12 +785,18 @@ fn resolve_game_prop(
                             p.closed_values.join("` \\| `")
                         )
                     };
+                    let kind = if sil_core::node_namespace(&node) == "scene" {
+                        "scene option"
+                    } else {
+                        "game option"
+                    };
                     return Some(HoverContent {
                         markdown: md(
-                            "game prop",
+                            kind,
                             prop,
                             &format!(
-                                "{prose}\n\n| | |\n|---|---|\n| **Node** | `game::{node}` |\n| **Kind** | `{:?}` |\n| **Required** | `{req}` |{closed}",
+                                "{prose}\n\n| | |\n|---|---|\n| **Node** | `{}::{node}` |\n| **Kind** | `{:?}` |\n| **Required** | `{req}` |{closed}",
+                                sil_core::node_namespace(&node),
                                 p.kind
                             ),
                             None,
@@ -797,7 +828,7 @@ fn resolve_loop_prop(
                 if depth == 0
                     && i >= 2
                     && matches!(doc.tokens[i - 1].token, Token::DoubleColon)
-                    && matches!(&doc.tokens[i - 2].token, Token::Ident(ns) if ns == "loop") =>
+                    && is_loop_namespace(&doc.tokens[i - 2].token) =>
             {
                 let spec = sil_core::lookup_loop_node(node)?;
                 let p = spec.props.iter().find(|p| p.name == prop)?;
@@ -812,7 +843,7 @@ fn resolve_loop_prop(
                 };
                 return Some(HoverContent {
                     markdown: md(
-                        "loop prop",
+                        "loop option",
                         prop,
                         &format!(
                             "{}\n\n| | |\n|---|---|\n| **Node** | `loop::{node}` |\n| **Kind** | `{:?}` |\n| **Required** | `{req}` |{closed}",
@@ -852,7 +883,7 @@ fn resolve_op_prop(
                 if let Some(prose) = op_prop_doc(ns, op, prop) {
                     return Some(HoverContent {
                         markdown: md(
-                            "op prop",
+                            "operation option",
                             prop,
                             &format!(
                                 "{prose}\n\n| | |\n|---|---|\n| **Operation** | `{ns}::{op}` |"
@@ -904,13 +935,13 @@ fn resolve_author_prop(
                         }
                     }
                 }
-                // Author component call: ComponentName(:prop(...))
+                // Author component call: ComponentName(:option(...))
                 if let Some(comp) = doc.program.components.iter().find(|c| c.name == *base) {
                     if let Some(field) = comp.all_fields().find(|f| f.name == prop) {
-                        let kind = if field.is_state { "state" } else { "prop" };
+                        let kind = if field.is_state { "state" } else { "option" };
                         return Some(HoverContent {
                             markdown: md(
-                                "component prop",
+                                "component option",
                                 prop,
                                 &format!(
                                     "Author-declared {kind} on component `{base}`.\n\n\
@@ -946,7 +977,7 @@ fn resolve_author_prop(
                     break;
                 }
             }
-            Token::DoubleColon | Token::Game => break,
+            Token::DoubleColon | Token::Game | Token::Scene | Token::Loop => break,
             _ => {}
         }
     }
@@ -990,18 +1021,15 @@ fn resolve_paren_ident(
         if let Some(node) = enclosing_game_node(doc, idx) {
             if let Some(spec) = lookup_game_node(node) {
                 if let Some(p) = spec.props.iter().find(|p| p.name == *prop) {
-                    if p.closed_values.contains(&name)
-                        || game_closed_value_doc(name).is_some()
-                    {
-                        let prose = game_closed_value_doc(name).unwrap_or(
-                            "Closed ident token for this game prop.",
-                        );
+                    if p.closed_values.contains(&name) || game_closed_value_doc(name).is_some() {
+                        let prose = game_closed_value_doc(name)
+                            .unwrap_or("Closed ident token for this game option.");
                         return Some(HoverContent {
                             markdown: md(
                                 "game value",
                                 name,
                                 &format!(
-                                    "{prose}\n\n| | |\n|---|---|\n| **Node** | `game::{node}` |\n| **Prop** | `:{prop}` |"
+                                    "{prose}\n\n| | |\n|---|---|\n| **Node** | `game::{node}` |\n| **Option** | `:{prop}` |"
                                 ),
                                 None,
                             ),
@@ -1034,17 +1062,32 @@ fn resolve_paren_ident(
     None
 }
 
+fn is_scene_namespace(token: &Token) -> bool {
+    matches!(token, Token::Game | Token::Scene)
+        || matches!(token, Token::Ident(ns) if ns == "game" || ns == "scene")
+}
+
+fn is_loop_namespace(token: &Token) -> bool {
+    matches!(token, Token::Loop) || matches!(token, Token::Ident(ns) if ns == "loop")
+}
+
+fn node_name_token(token: &Token) -> Option<&str> {
+    match token {
+        Token::Ident(name) => Some(name.as_str()),
+        other => keyword_from_token(other),
+    }
+}
+
 fn enclosing_game_node<'a>(doc: &'a Document, idx: usize) -> Option<&'a str> {
     let mut i = idx;
     while i > 0 {
         i -= 1;
-        if matches!(doc.tokens[i].token, Token::Ident(_))
-            && i >= 2
+        if i >= 2
             && matches!(doc.tokens[i - 1].token, Token::DoubleColon)
-            && matches!(doc.tokens[i - 2].token, Token::Game)
+            && is_scene_namespace(&doc.tokens[i - 2].token)
         {
-            if let Token::Ident(node) = &doc.tokens[i].token {
-                return Some(node.as_str());
+            if let Some(node) = node_name_token(&doc.tokens[i].token) {
+                return Some(node);
             }
         }
     }
@@ -1079,11 +1122,7 @@ fn shared_event_fallback(event: &str) -> Option<&'static str> {
         .or_else(|| event_doc("dialog", event))
 }
 
-fn resolve_declaration_name(
-    doc: &Document,
-    name: &str,
-    range: HoverRange,
-) -> Option<HoverContent> {
+fn resolve_declaration_name(doc: &Document, name: &str, range: HoverRange) -> Option<HoverContent> {
     let program = &doc.program;
     if let Some(resource) = program.resources.iter().find(|r| r.name == name) {
         let methods = resource
@@ -1092,10 +1131,7 @@ fn resolve_declaration_name(
             .map(|m| m.name.as_str())
             .collect::<Vec<_>>()
             .join(", ");
-        let contract = resource
-            .contract
-            .clone()
-            .unwrap_or_else(|| "_".into());
+        let contract = resource.contract.clone().unwrap_or_else(|| "_".into());
         return Some(HoverContent {
             markdown: md(
                 "resource",
@@ -1139,8 +1175,8 @@ fn resolve_declaration_name(
                 name,
                 &format!(
                     "UI component that renders on web and terminal. It currently declares \
-                     {} prop(s), {} state field(s), {} quer(ies), and {} handler(s).\n\n\
-                     Props arrive from parents; state is local and mutable; queries are \
+                     {} option(s), {} state field(s), {} quer(ies), and {} handler(s).\n\n\
+                     Options arrive from parents; state is local and mutable; queries are \
                      read-only bindings to resources.",
                     component.props.len(),
                     component.state.len(),
@@ -1229,10 +1265,9 @@ fn resolve_declaration_name(
             }
             // Prefer field hover only when span matches.
             if f.span.start != 0
-                && doc
-                    .tokens
-                    .iter()
-                    .any(|t| t.start == f.span.start && matches!(&t.token, Token::Ident(n) if n == name))
+                && doc.tokens.iter().any(|t| {
+                    t.start == f.span.start && matches!(&t.token, Token::Ident(n) if n == name)
+                })
             {
                 // Check if current token is this field declaration
                 // We don't have idx here; compare via range reconstructed from f.span
@@ -1312,18 +1347,19 @@ fn enclosing_component<'a>(doc: &'a Document, offset: u32) -> Option<&'a Compone
     doc.program
         .components
         .iter()
-        .filter(|c| c.span.contains_offset(offset) || (c.span.start <= offset && offset <= c.span.end))
+        .filter(|c| {
+            c.span.contains_offset(offset) || (c.span.start <= offset && offset <= c.span.end)
+        })
         .max_by_key(|c| c.span.start)
 }
 
-fn enclosing_handler<'a>(
-    component: &'a Component,
-    offset: u32,
-) -> Option<&'a sil_core::Handler> {
+fn enclosing_handler<'a>(component: &'a Component, offset: u32) -> Option<&'a sil_core::Handler> {
     component
         .handlers
         .iter()
-        .filter(|h| h.span.contains_offset(offset) || (h.span.start <= offset && offset <= h.span.end))
+        .filter(|h| {
+            h.span.contains_offset(offset) || (h.span.start <= offset && offset <= h.span.end)
+        })
         .max_by_key(|h| h.span.start)
 }
 
@@ -1370,8 +1406,8 @@ fn collect_for_bindings(
             item_name,
             body,
         } => {
-            let item_ty = expr_elem_type(items, outer)
-                .unwrap_or_else(|| TypeExpr::Named("Any".into()));
+            let item_ty =
+                expr_elem_type(items, outer).unwrap_or_else(|| TypeExpr::Named("Any".into()));
             into.insert(item_name.clone(), item_ty);
             collect_for_bindings(body, outer, into);
         }
@@ -1419,7 +1455,7 @@ fn md(kind: &str, name: &str, body: &str, footer: Option<&str>) -> String {
         out.push_str("\n\n");
         out.push_str(f);
     }
-    out.push_str("\n\n---\n*Silc 0.5.0*");
+    out.push_str("\n\n---\n*Silc 0.6.0*");
     out
 }
 
@@ -1462,7 +1498,11 @@ component Page {
 "#;
         let h = hover_on(src, "list()");
         assert!(h.markdown.contains("list"), "{}", h.markdown);
-        assert!(h.markdown.contains("[Article]") || h.markdown.contains("Article"), "{}", h.markdown);
+        assert!(
+            h.markdown.contains("[Article]") || h.markdown.contains("Article"),
+            "{}",
+            h.markdown
+        );
         assert!(h.markdown.contains("GET /api/articles"), "{}", h.markdown);
     }
 
@@ -1480,7 +1520,11 @@ component Page {
         let offset = src.find("$.articles").unwrap() as u32 + 2; // on 'a' of articles
         let d = doc(src);
         let h = resolve_hover(&d, offset).expect("hover");
-        assert!(h.markdown.contains("query binding") || h.markdown.contains("articles"), "{}", h.markdown);
+        assert!(
+            h.markdown.contains("query binding") || h.markdown.contains("articles"),
+            "{}",
+            h.markdown
+        );
         assert!(h.markdown.contains("Articles.list"), "{}", h.markdown);
     }
 
@@ -1502,12 +1546,9 @@ component Page {
             h.markdown
         );
         // Catalog signature still present, but must not be the only body content.
-        assert!(h.markdown.contains("props:"), "{}", h.markdown);
+        assert!(h.markdown.contains("options:"), "{}", h.markdown);
         let body = h.markdown.split("---").next().unwrap_or(&h.markdown);
-        assert!(
-            body.len() > 120,
-            "ui::table hover body too short:\n{body}"
-        );
+        assert!(body.len() > 120, "ui::table hover body too short:\n{body}");
     }
 
     #[test]
@@ -1544,15 +1585,15 @@ component Page {
 }
 "#;
         let h = hover_on(src, "sortable");
-        assert!(h.markdown.contains("ui prop"), "{}", h.markdown);
+        assert!(h.markdown.contains("ui option"), "{}", h.markdown);
         assert!(
             h.markdown.contains("sort") || h.markdown.contains("column"),
             "{}",
             h.markdown
         );
         assert!(
-            !h.markdown.contains("props: `rows`"),
-            "prop hover should not dump the full catalog line:\n{}",
+            !h.markdown.contains("options: `rows`"),
+            "option hover should not dump the full catalog line:\n{}",
             h.markdown
         );
     }
@@ -1603,24 +1644,41 @@ component Page {
     fn hovers_game_entity_node() {
         let src = r#"
 game Arena {
-    game::scene(:title("Test"), :renderer(webgpu),
-        game::entity(:name("Player"), :x(0), :y(0), :z(0))
+    scene::scene(:title("Test"), :renderer(webgpu),
+        scene::entity(:name("Player"), :x(0), :y(0), :z(0))
     )
 }
 "#;
         // Hover on "entity" after "game::"
-        let offset = src.find("game::entity").unwrap() + "game::".len();
+        let offset = src.find("scene::entity").unwrap() + "scene::".len();
         let d = doc(src);
         let h = resolve_hover(&d, offset as u32).expect("hover");
         assert!(
-            h.markdown.contains("game node") && h.markdown.contains("game::entity"),
-            "expected game node hover, got:\n{}",
+            h.markdown.contains("scene node") && h.markdown.contains("scene::entity"),
+            "expected scene node hover, got:\n{}",
             h.markdown
         );
         assert!(
             h.markdown.contains("Named node in the scene tree"),
             "expected entity description, got:\n{}",
             h.markdown
+        );
+
+        let scene_off = src.find("scene::scene").unwrap() + "scene::".len();
+        let scene_hover = resolve_hover(&d, scene_off as u32).expect("scene node hover");
+        assert!(
+            scene_hover.markdown.contains("scene node")
+                && scene_hover.markdown.contains("scene::scene"),
+            "expected scene::scene node hover, got:\n{}",
+            scene_hover.markdown
+        );
+
+        let title_off = src.find(":title(").unwrap() + 1;
+        let title = resolve_hover(&d, title_off as u32).expect("title hover");
+        assert!(
+            title.markdown.contains("scene option") && title.markdown.contains("title"),
+            "expected scene option hover, got:\n{}",
+            title.markdown
         );
     }
 }

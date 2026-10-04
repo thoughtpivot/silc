@@ -1,6 +1,6 @@
 //! Documentation catalog for Silc keywords, operators, types, and operations.
 
-use sil_core::{is_executable_op, EXECUTABLE_OPS, UI_COMPONENT_CATALOG};
+use sil_core::{is_executable_op, UI_COMPONENT_CATALOG};
 
 pub fn keyword_doc(keyword: &str) -> Option<&'static str> {
     Some(match keyword {
@@ -10,15 +10,15 @@ pub fn keyword_doc(keyword: &str) -> Option<&'static str> {
              type checker and UI bindings can treat as distinct from the base."
         }
         "class" => {
-            "Legacy/alias declaration form retained for older samples. Prefer `contract` for \
-             data schemas so fields, resources, and synthesized HTTP stay aligned."
+            "Removed declaration form (`class X is …`, Silc 0.3.0). The parser rejects it with a \
+             migration diagnostic; write `contract`, `component`, `resource`, or `app` directly."
         }
         "contract" => {
             "Declares a data schema with typed `has` fields. Contracts are the source of truth \
              for resource rows, form bindings, and the shape of values that flow through queries."
         }
         "component" => {
-            "Declares a UI component with props, state, queries, handlers, and a `render` \
+            "Declares a UI component with options (`has`), state, queries, handlers, and a `render` \
              template. Components are the unit of screen composition on both web and terminal."
         }
         "resource" => {
@@ -31,9 +31,13 @@ pub fn keyword_doc(keyword: &str) -> Option<&'static str> {
              the entry that the runtime serves for both web and terminal surfaces."
         }
         "game" => {
-            "Declares a WebGPU-only game scene (`game Name { game::scene(...) }`). Distinct from \
-             dual-surface `app` routes; the compiler synthesizes a Babylon/Vite runtime from the \
-             closed `game::*` catalog (ADR-012)."
+            "Declares a WebGPU program (`game Name { scene::scene(...) }`). `game` remains a \
+             one-release alias of `scene`. Kernel nodes are `scene::`; gameplay nodes are `game::`."
+        }
+        "scene" => {
+            "Declares a real-time scene (`scene Name { scene::scene(...) }`). Kernel nodes \
+             (entity, mesh, camera, light, and the rest) live in `scene::`. Gameplay nodes \
+             (pawn, weapon, encounter, and the rest) live in `game::`."
         }
         "loop" => {
             "Declares scheduled, approval-gated work (`loop Name { loop::flow(trigger, steps...) }`). \
@@ -49,8 +53,8 @@ pub fn keyword_doc(keyword: &str) -> Option<&'static str> {
              Processors own transformational work that sits between ingress and persistence."
         }
         "sink" => {
-            "Declares a sink module for persistence side-effects. Prefer resource mutations for \
-             ordinary CRUD; sinks remain for specialized write paths outside the resource model."
+            "Removed declaration (author `sink`, Silc 0.4.0). The parser rejects it; persistence is \
+             synthesized from processors and `resource` declarations (ADR-009)."
         }
         "task" => {
             "Declares a task module for scheduled or on-demand background work. Use tasks when \
@@ -59,7 +63,7 @@ pub fn keyword_doc(keyword: &str) -> Option<&'static str> {
         "has" => {
             "Declares a typed field on a contract, module, or component (`has Type $.name`). \
              On components, pair with `state` when the field is mutable local state rather than \
-             an incoming prop."
+             an incoming option."
         }
         "method" => {
             "Declares a method body — a handler, pipeline step, or `render` template. Method \
@@ -101,7 +105,7 @@ pub fn keyword_doc(keyword: &str) -> Option<&'static str> {
         }
         "state" => {
             "Marks a component field as mutable local state (`has state Type $.name`). Unlike \
-             props and query bindings, state is owned by the component and updated from handlers."
+             options and query bindings, state is owned by the component and updated from handlers."
         }
         "when" => {
             "Conditional template branch (`when condition { … } else { … }`). Only the matching \
@@ -121,7 +125,7 @@ pub fn keyword_doc(keyword: &str) -> Option<&'static str> {
         }
         "await" => {
             "Awaits an asynchronous expression inside a handler. Use it for resource mutations, \
-             LLM calls, and other ops that must finish before subsequent statements run."
+             LLM calls, and other operations that must finish before subsequent statements run."
         }
         _ => return None,
     })
@@ -143,7 +147,7 @@ pub fn operator_doc(op: &str) -> Option<&'static str> {
              on the right is bound once per element while the body renders."
         }
         "::" => {
-            "Namespace qualifier for builtins and ops (`ui::table`, `llm::complete`, \
+            "Namespace qualifier for builtins and operations (`ui::table`, `llm::complete`, \
              `scrape::page`). The left side selects the catalog; the right side is the member."
         }
         "&&" => {
@@ -204,12 +208,12 @@ pub fn operator_doc(op: &str) -> Option<&'static str> {
              member."
         }
         "$" => {
-            "Sigil for variables, state, and props (`$article`, `$.title`). A bare `$name` is \
-             a local or parameter; `$.name` refers to component-owned state, props, or queries."
+            "Sigil for variables, state, and options (`$article`, `$.title`). A bare `$name` is \
+             a local or parameter; `$.name` refers to component-owned state, options, or queries."
         }
         ":" => {
             "Colon-pair / named argument introducer (`:label(\"Save\")`, `:sortable`). In UI \
-             trees it marks props and flags; in constructors it names fields."
+             trees it marks options and flags; in constructors it names fields."
         }
         "=" => {
             "Assignment or binding. Used for query bindings, state updates, and ordinary \
@@ -272,11 +276,22 @@ pub fn namespace_doc(ns: &str) -> Option<String> {
             count = UI_COMPONENT_CATALOG.len()
         ),
         "game" => format!(
-            "WebGPU game scene catalog ({count} nodes). Author `game::scene` and nested \
+            "WebGPU game scene catalog ({count} nodes). Author `scene::scene` and nested \
              `game::*` nodes inside a `game` declaration; the compiler lowers them to a Babylon \
              runtime manifest. Game programs are web-only (no terminal surface).",
             count = sil_core::GAME_NODE_CATALOG.len()
         ),
+        "scene" => {
+            "Real-time scene kernel. `scene::` nodes (entity, mesh, light, camera, and the \
+             rest of the kernel) describe a WebGPU world without gameplay vocabulary. Gameplay \
+             nodes stay in `game::`."
+                .into()
+        }
+        "mcp" => {
+            "MCP tool calls. `mcp::call` is nested inside `loop::read` \
+             (`loop::read(:as(x), mcp::call(:server(...), :tool(...)))`); it is not a pipeline step."
+                .into()
+        }
         "loop" => format!(
             "Loop step catalog ({count} nodes). Author `loop::flow` with one trigger \
              (`schedule`, `manual`, `on_mutation`) followed by steps such as `find`, `read`, \
@@ -310,7 +325,7 @@ pub fn namespace_doc(ns: &str) -> Option<String> {
         }
         "tensor" => {
             "Runnable tensor namespace. Author `tensor::tokenize` then `tensor::infer` for the \
-             CPU MiniLM embedding path (exactly 384 `num32` values in Silc 0.5.0)."
+             CPU MiniLM embedding path (exactly 384 `num32` values in Silc 0.6.0)."
                 .into()
         }
         "ipc" => {
@@ -320,52 +335,52 @@ pub fn namespace_doc(ns: &str) -> Option<String> {
         }
         "store" => {
             "Compiler-owned persistence namespace. SQLite wiring (`store::sqlite`, \
-             `store::commit`) is synthesized from resources; do not author these ops yourself."
+             `store::commit`) is synthesized from resources; do not author these operations yourself."
                 .into()
         }
         "resource" => {
-            "Compiler-owned resource-op namespace. Prefer declaration-style \
+            "Compiler-owned resource-operation namespace. Prefer declaration-style \
              `resource Name for Contract` with `query` / `mutation` capabilities; do not \
-             author `resource::list` / `get` / `create` / … as pipeline ops."
+             author `resource::list` / `get` / `create` / … as pipeline operations."
                 .into()
         }
         "http" => {
-            "Stub-only HTTP namespace in Silc 0.5.0. It parses and routes but does not execute; \
+            "Stub-only HTTP namespace in Silc 0.6.0. It parses and routes but does not execute; \
              prefer `scrape::*` for fetches and `service::http` for API surfaces."
                 .into()
         }
         "html" => {
-            "Stub-only HTML namespace in Silc 0.5.0. Prefer `scrape::select` / `scrape::extract` \
+            "Stub-only HTML namespace in Silc 0.6.0. Prefer `scrape::select` / `scrape::extract` \
              for structured extraction from fetched pages."
                 .into()
         }
         "numpy" | "pandas" => format!(
-            "Stub-only `{ns}` namespace in Silc 0.5.0. It parses and routes but does not \
-             execute; keep numerical / tabular work in typed contracts and runnable ops \
+            "Stub-only `{ns}` namespace in Silc 0.6.0. It parses and routes but does not \
+             execute; keep numerical / tabular work in typed contracts and runnable operations \
              such as `text::score` or `tensor::*`."
         ),
         "ws" => {
-            "Stub-only WebSocket namespace in Silc 0.5.0. It is recognized by the classifier \
-             but is not an author-runnable executable op today."
+            "Stub-only WebSocket namespace in Silc 0.6.0. It is recognized by the classifier \
+             but is not an author-runnable executable operation today."
                 .into()
         }
         "sys" => {
-            "Stub-only system namespace in Silc 0.5.0. Recognized for routing, but not \
+            "Stub-only system namespace in Silc 0.6.0. Recognized for routing, but not \
              executable; keep side effects in resources, services, and processors."
                 .into()
         }
         "schema" => {
-            "Stub-only schema namespace in Silc 0.5.0. Prefer `contract` / `subset` \
-             declarations for typed shapes rather than `schema::*` pipeline ops."
+            "Stub-only schema namespace in Silc 0.6.0. Prefer `contract` / `subset` \
+             declarations for typed shapes rather than `schema::*` pipeline operations."
                 .into()
         }
         "payload" => {
-            "Stub-only payload namespace in Silc 0.5.0. Cross-engine payloads move through \
+            "Stub-only payload namespace in Silc 0.6.0. Cross-engine payloads move through \
              synthesized IPC; do not author `payload::*` calls."
                 .into()
         }
         "json" => {
-            "Stub-only JSON namespace in Silc 0.5.0. It parses and routes but does not \
+            "Stub-only JSON namespace in Silc 0.6.0. It parses and routes but does not \
              execute; prefer typed contracts and resource/HTTP surfaces for structured data."
                 .into()
         }
@@ -375,11 +390,7 @@ pub fn namespace_doc(ns: &str) -> Option<String> {
 }
 
 pub fn executable_op_doc(namespace: &str, name: &str) -> Option<String> {
-    if !EXECUTABLE_OPS
-        .iter()
-        .any(|(ns, n)| *ns == namespace && *n == name)
-        && !is_executable_op(namespace, name)
-    {
+    if !is_executable_op(namespace, name) {
         return None;
     }
     let summary = match (namespace, name) {
@@ -431,25 +442,27 @@ pub fn executable_op_doc(namespace: &str, name: &str) -> Option<String> {
              tokenization; expect non-trivial CPU cost on larger batches."
         }
         _ => {
-            "Runnable Silc 0.5.0 operation. Legal in the module or pipeline contexts documented \
-             for its namespace; prefer the executable set over stub-only ops."
+            "Runnable Silc 0.6.0 operation. Legal in the module or pipeline contexts documented \
+             for its namespace; prefer the executable set over stub-only operations."
         }
     };
-    Some(format!("Runnable operation `{namespace}::{name}`.\n\n{summary}"))
+    Some(format!(
+        "Runnable operation `{namespace}::{name}`.\n\n{summary}"
+    ))
 }
 
-/// Documentation for colon-pair props on executable / runnable ops.
+/// Documentation for colon-pair options on executable / runnable operations.
 pub fn op_prop_doc(namespace: &str, op: &str, prop: &str) -> Option<&'static str> {
     Some(match (namespace, op, prop) {
         (_, _, "into") => {
-            "Target contract for structured extraction. The op writes fields that match the \
+            "Target contract for structured extraction. The operation writes fields that match the \
              contract shape (required for `doc::extract` and `scrape::extract`)."
         }
         (_, _, "model") => {
             "Closed model id from the Silc model catalog (for example `silclm` or `minilm-l6-v2`)."
         }
         (_, _, "prefer") => {
-            "Preferred execution device. Silc 0.5.0 accepts `CPU` for tensor inference; `CUDA` is rejected."
+            "Preferred execution device. Silc 0.6.0 accepts `CPU` for tensor inference; `CUDA` is rejected."
         }
         (_, _, "port") => {
             "TCP port for the HTTP API surface when used with `service::http`."
@@ -500,7 +513,7 @@ pub fn unit_literal_doc(lit: &str) -> Option<&'static str> {
         "cm" => "Centimeter length literal used by game near-field spacing and texel sizes.",
         "m" => "Meter length literal used by game extents, distances, and brush radii.",
         "deg" => "Degree angle literal used by game sun elevation/azimuth and wind direction.",
-        "fps" => "Frames-per-second literal used by `game::scene :target_fps`.",
+        "fps" => "Frames-per-second literal used by `scene::scene :target_fps`.",
         "px" => "Pixel size literal for screen-space quantities.",
         _ => return None,
     })
@@ -538,7 +551,7 @@ pub fn builtin_call_doc(name: &str) -> Option<&'static str> {
 pub fn stub_op_doc(namespace: &str, name: &str) -> String {
     format!(
         "Namespace operation `{namespace}::{name}`.\n\n\
-         This symbol is recognized but is not an author-runnable executable op in Silc 0.5.0. \
+         This symbol is recognized but is not an author-runnable executable operation in Silc 0.6.0. \
          Prefer scrape::*, doc::extract, llm::complete, tensor::*, text::score, or service::http inside \
          processor, service, or awaited handler pipelines."
     )
@@ -583,10 +596,37 @@ pub fn resource_method_summary(kind: &str, method: &str) -> &'static str {
 
 /// Every lexer keyword that should have a hover entry (for conformance tests).
 pub const KEYWORD_NAMES: &[&str] = &[
-    "subset", "class", "contract", "component", "resource", "app", "game", "service", "processor",
-    "sink", "task", "has", "method", "is", "of", "where", "query", "mutation", "seed", "slot",
-    "emit", "state", "when", "for", "else", "route", "await",
+    "subset",
+    "class",
+    "contract",
+    "component",
+    "resource",
+    "app",
+    "game",
+    "scene",
+    "loop",
+    "service",
+    "processor",
+    "sink",
+    "task",
+    "has",
+    "method",
+    "is",
+    "of",
+    "where",
+    "query",
+    "mutation",
+    "seed",
+    "slot",
+    "emit",
+    "state",
+    "when",
+    "for",
+    "else",
+    "route",
+    "await",
 ];
 
-pub const BUILTIN_TYPE_NAMES: &[&str] =
-    &["Str", "UUID", "num32", "num64", "int32", "int64", "Bool", "Int", "Vec"];
+pub const BUILTIN_TYPE_NAMES: &[&str] = &[
+    "Str", "UUID", "num32", "num64", "int32", "int64", "Bool", "Int", "Vec",
+];

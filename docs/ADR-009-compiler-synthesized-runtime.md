@@ -39,7 +39,7 @@ Authors may declare:
 
 | Construct | Intent |
 | --- | --- |
-| `@version("0.4.0")` | Exact source-version match with the compiler |
+| `@version("…")` | Exact source-version match with the compiler (`0.4.0` when this ADR landed; `0.5.0` today) |
 | `contract` / `subset` | Domain schemas |
 | `component` | UI units (`render()`, state, events) |
 | `resource Name for Contract { query …; mutation …; seed …; }` | Capability CRUD (no method bodies); optional idempotent seeds |

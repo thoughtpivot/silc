@@ -4,8 +4,8 @@
 //! (not `NONE`). Example caret probes cover game, UI, ops, and builtins.
 
 use sil_core::{
-    format_game_catalog_line, game_closed_value_doc, game_prop_doc, lookup_game_node,
-    EXECUTABLE_OPS, GAME_NODE_CATALOG, KNOWN_NAMESPACES, UI_COMPONENT_CATALOG,
+    executable_ops, format_game_catalog_line, game_closed_value_doc, game_prop_doc,
+    lookup_game_node, GAME_NODE_CATALOG, KNOWN_NAMESPACES, UI_COMPONENT_CATALOG,
 };
 use sil_ide::{
     builtin_type_doc, keyword_doc, resolve_hover, Document, BUILTIN_TYPE_NAMES, KEYWORD_NAMES,
@@ -18,18 +18,31 @@ fn workspace_file(rel: &str) -> String {
 
 fn hover_at(src: &str, offset: u32) -> String {
     let doc = Document::open("file://coverage.silc", 1, src);
-    resolve_hover(&doc, offset)
-        .unwrap_or_else(|| panic!("NONE hover at offset {offset} (parse_error={:?})", doc.parse_error))
+    hover_doc(&doc, offset)
+}
+
+fn hover_doc(doc: &Document, offset: u32) -> String {
+    resolve_hover(doc, offset)
+        .unwrap_or_else(|| {
+            panic!(
+                "NONE hover at offset {offset} (parse_error={:?})",
+                doc.parse_error
+            )
+        })
         .markdown
 }
 
-fn hover_on_member(src: &str, ns_member: &str) -> String {
-    // Place caret on the member after `ns::`
+fn member_offset(src: &str, ns_member: &str) -> u32 {
     let offset = src
         .find(ns_member)
         .unwrap_or_else(|| panic!("missing {ns_member}")) as u32;
     let after_ns = ns_member.find("::").map(|i| i + 2).unwrap_or(0) as u32;
-    hover_at(src, offset + after_ns)
+    offset + after_ns
+}
+
+fn hover_on_member(src: &str, ns_member: &str) -> String {
+    // Place caret on the member after `ns::`
+    hover_at(src, member_offset(src, ns_member))
 }
 
 #[test]
@@ -39,7 +52,8 @@ fn keyword_and_type_catalogs_have_docs() {
         assert!(doc.len() > 60, "{kw} doc too short");
     }
     for ty in BUILTIN_TYPE_NAMES {
-        let doc = builtin_type_doc(ty).unwrap_or_else(|| panic!("missing builtin_type_doc for {ty}"));
+        let doc =
+            builtin_type_doc(ty).unwrap_or_else(|| panic!("missing builtin_type_doc for {ty}"));
         assert!(doc.len() > 40, "{ty} doc too short");
     }
 }
@@ -93,9 +107,9 @@ fn every_game_node_and_prop_has_docs() {
 
 #[test]
 fn every_executable_op_has_specific_hover_prose() {
-    for (ns, name) in EXECUTABLE_OPS {
+    for (ns, name) in executable_ops() {
         let snippet = format!(
-            r#"@version("0.5.0")
+            r#"@version("0.6.0")
 processor P {{
     method run() {{
         {ns}::{name}();
@@ -110,19 +124,23 @@ processor P {{
             let offset = (pos + ns.len() + 2) as u32;
             if let Some(hover) = resolve_hover(&doc, offset) {
                 assert!(
-                    hover.markdown.contains("executable op")
-                        || hover.markdown.contains("Runnable"),
+                    hover.markdown.contains("executable op") || hover.markdown.contains("Runnable"),
                     "{ns}::{name} hover weak:\n{}",
                     hover.markdown
                 );
                 assert!(
-                    !hover.markdown.contains("prefer the executable set over stub-only"),
+                    !hover
+                        .markdown
+                        .contains("prefer the executable set over stub-only"),
                     "{ns}::{name} should not use generic fallback prose:\n{}",
                     hover.markdown
                 );
             } else {
                 // Keyword-ns ops must resolve even when parse fails
-                panic!("NONE hover for {ns}::{name} (parse_error={:?})", doc.parse_error);
+                panic!(
+                    "NONE hover for {ns}::{name} (parse_error={:?})",
+                    doc.parse_error
+                );
             }
         }
     }
@@ -131,7 +149,8 @@ processor P {{
 
 #[test]
 fn arena_game_node_hovers() {
-    let src = workspace_file("examples/arenaGameApp/main.silc");
+    let src = workspace_file("examples/core/arenaGameApp/main.silc");
+    let doc = Document::open("file://arena.silc", 1, &src);
     for node in [
         "scene",
         "entity",
@@ -156,19 +175,24 @@ fn arena_game_node_hovers() {
         "post_process",
         "overlay",
     ] {
-        let needle = format!("game::{node}");
-        let md = hover_on_member(&src, &needle);
+        let ns = sil_core::node_namespace(node);
+        let needle = format!("{ns}::{node}");
+        let md = hover_doc(&doc, member_offset(&src, &needle));
+        let kind = if ns == "scene" {
+            "scene node"
+        } else {
+            "game node"
+        };
         assert!(
-            md.contains("game node") && md.contains(&format!("game::{node}")),
-            "expected game node hover for {node}:\n{md}"
+            md.contains(kind) && md.contains(&needle),
+            "expected {kind} hover for {node}:\n{md}"
         );
         assert!(
             lookup_game_node(node).unwrap().description.len() > 40,
             "{node} description"
         );
         assert!(
-            md.contains(lookup_game_node(node).unwrap().description)
-                || md.len() > 80,
+            md.contains(lookup_game_node(node).unwrap().description) || md.len() > 80,
             "thin hover for {node}:\n{md}"
         );
     }
@@ -176,38 +200,45 @@ fn arena_game_node_hovers() {
 
 #[test]
 fn arena_game_prop_and_enum_hovers() {
-    let src = workspace_file("examples/arenaGameApp/main.silc");
+    let src = workspace_file("examples/core/arenaGameApp/main.silc");
+    let doc = Document::open("file://arena.silc", 1, &src);
 
     let title_off = (src.find(":title(").unwrap() + 1) as u32;
-    let md = hover_at(&src, title_off);
-    assert!(md.contains("game prop") && md.contains("title"), "{md}");
+    let md = hover_doc(&doc, title_off);
+    assert!(
+        (md.contains("scene option") || md.contains("game option")) && md.contains("title"),
+        "{md}"
+    );
 
     let as_pawn_off = (src.find(":as_pawn").unwrap() + 1) as u32;
-    let md = hover_at(&src, as_pawn_off);
-    assert!(md.contains("game prop") && md.contains("as_pawn"), "{md}");
+    let md = hover_doc(&doc, as_pawn_off);
+    assert!(
+        (md.contains("scene option") || md.contains("game option")) && md.contains("as_pawn"),
+        "{md}"
+    );
 
     let capsule_off = src.find(":shape(capsule)").unwrap() + ":shape(".len();
-    let md = hover_at(&src, capsule_off as u32);
+    let md = hover_doc(&doc, capsule_off as u32);
     assert!(
         md.contains("game value") || md.contains("capsule") || md.contains("Capsule"),
         "capsule enum hover:\n{md}"
     );
 
     let webgpu_off = src.find(":renderer(webgpu)").unwrap() + ":renderer(".len();
-    let md = hover_at(&src, webgpu_off as u32);
+    let md = hover_doc(&doc, webgpu_off as u32);
     assert!(md.contains("webgpu") || md.contains("WebGPU"), "{md}");
 
-    let game_ns = src.find("game::scene").unwrap() as u32;
-    let md = hover_at(&src, game_ns);
+    let game_ns = src.find("scene::scene").unwrap() as u32;
+    let md = hover_doc(&doc, game_ns);
     assert!(
-        md.contains("namespace") || md.contains("WebGPU"),
-        "game:: qualifier should prefer namespace doc:\n{md}"
+        md.contains("namespace") || md.contains("WebGPU") || md.contains("real-time"),
+        "scene:: qualifier should prefer the scene namespace or keyword doc:\n{md}"
     );
 }
 
 #[test]
 fn service_http_keyword_namespace_hover() {
-    let src = r#"@version("0.5.0")
+    let src = r#"@version("0.6.0")
 service Api {
     method boot() {
         service::http(:port(8080));
@@ -226,7 +257,7 @@ service Api {
 
 #[test]
 fn blog_ui_slot_variant_and_event_hovers() {
-    let src = workspace_file("examples/blogApp/main.silc");
+    let src = workspace_file("examples/core/blogApp/main.silc");
 
     if let Some(pos) = src.find(":app_bar(") {
         let md = hover_at(&src, (pos + 1) as u32);
@@ -255,7 +286,7 @@ fn blog_ui_slot_variant_and_event_hovers() {
 
 #[test]
 fn doc_extract_and_op_prop_hover() {
-    let src = workspace_file("examples/dataExtractorApp/main.silc");
+    let src = workspace_file("examples/core/dataExtractorApp/main.silc");
     if let Some(pos) = src.find("doc::extract") {
         let md = hover_at(&src, (pos + "doc::".len()) as u32);
         assert!(
@@ -270,7 +301,7 @@ fn doc_extract_and_op_prop_hover() {
     if let Some(pos) = src.find(":into(") {
         let md = hover_at(&src, (pos + 1) as u32);
         assert!(
-            md.contains("op prop") || md.contains("contract") || md.contains("into"),
+            md.contains("operation option") || md.contains("contract") || md.contains("into"),
             "into prop:\n{md}"
         );
     }
@@ -278,7 +309,7 @@ fn doc_extract_and_op_prop_hover() {
 
 #[test]
 fn unit_literal_and_vec_hover() {
-    let src = r#"@version("0.5.0")
+    let src = r#"@version("0.6.0")
 contract C {
     has Vec[num32; 384] $.embedding;
 }
@@ -296,7 +327,11 @@ component X {
     let doc = Document::open("file://units.silc", 1, src);
     let vec_off = src.find("Vec[").unwrap() as u32;
     let hover = resolve_hover(&doc, vec_off).expect("Vec hover");
-    assert!(hover.markdown.contains("Vec") || hover.markdown.contains("vector"), "{}", hover.markdown);
+    assert!(
+        hover.markdown.contains("Vec") || hover.markdown.contains("vector"),
+        "{}",
+        hover.markdown
+    );
 
     for needle in ["250ms", "90fps", "8cm"] {
         let off = src.find(needle).unwrap() as u32;
@@ -311,7 +346,7 @@ component X {
 
 #[test]
 fn navigate_submit_new_builtin_hovers() {
-    let src = r#"@version("0.5.0")
+    let src = r#"@version("0.6.0")
 contract Item { has Str $.id; has Str $.title; }
 component Page {
     method go() {
@@ -347,11 +382,17 @@ component Page {
 fn loop_nodes_props_and_keyword_hover() {
     let src = workspace_file("crates/sil-codegen/tests/fixtures/loop_digest.silc");
     let node = hover_on_member(&src, "loop::read(");
-    assert!(node.contains("loop::read") && node.contains("mcp::call"), "{node}");
+    assert!(
+        node.contains("loop::read") && node.contains("mcp::call"),
+        "{node}"
+    );
 
     let prop_offset = src.find(":auth_env(").expect("auth_env") as u32 + 1;
     let prop = hover_at(&src, prop_offset);
-    assert!(prop.contains("loop::read") && prop.contains("environment variable"), "{prop}");
+    assert!(
+        prop.contains("loop::read") && prop.contains("environment variable"),
+        "{prop}"
+    );
 
     let ns_offset = src.find("loop::schedule").expect("schedule") as u32;
     let ns = hover_at(&src, ns_offset);
@@ -362,9 +403,18 @@ fn loop_nodes_props_and_keyword_hover() {
     assert!(kw.contains("ADR-014"), "{kw}");
 
     for spec in sil_core::LOOP_NODE_CATALOG {
-        assert!(spec.description.len() > 40, "loop::{} description too short", spec.name);
+        assert!(
+            spec.description.len() > 40,
+            "loop::{} description too short",
+            spec.name
+        );
         for p in spec.props {
-            assert!(p.description.len() > 10, "loop::{} :{} description too short", spec.name, p.name);
+            assert!(
+                p.description.len() > 10,
+                "loop::{} :{} description too short",
+                spec.name,
+                p.name
+            );
         }
     }
 }

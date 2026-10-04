@@ -13,6 +13,12 @@ pub fn route_program(program: &Program) -> Vec<RouteDecision> {
     program.modules.iter().map(route_module).collect()
 }
 
+fn scrape_engine_is(ops: &[&str], engine: sil_core::Engine) -> bool {
+    ops.iter().any(|name| {
+        sil_core::lookup_operation("scrape", name).is_some_and(|op| op.engine == engine)
+    })
+}
+
 fn scrape_ops(module: &Module) -> Vec<&str> {
     module
         .methods
@@ -23,7 +29,7 @@ fn scrape_ops(module: &Module) -> Vec<&str> {
                 namespace: Some(ns),
                 name,
                 ..
-                                } if ns == "scrape" => Some(name.as_str()),
+            } if ns == "scrape" => Some(name.as_str()),
             _ => None,
         })
         .collect()
@@ -41,41 +47,17 @@ pub fn route_module(module: &Module) -> RouteDecision {
             .any(|namespace| candidates.contains(namespace))
     };
     let scrape = scrape_ops(module);
-    let has_scrape_op = |names: &[&str]| scrape.iter().any(|op| names.contains(op));
     let cuda = module.methods.iter().any(|method| {
         method.pipeline.steps.iter().any(|step| match step {
-            sil_core::PipelineStep::Call { args, ..
-                                } => args
+            sil_core::PipelineStep::Call { args, .. } => args
                 .iter()
                 .any(|arg| arg.name == "prefer" && arg.value.eq_ignore_ascii_case("CUDA")),
             _ => false,
         })
     });
-    let low_latency = module.traits.iter().any(|t| {
-        t.name == "latency"
-            && t.value
-                .trim_end_matches("ms")
-                .parse::<u64>()
-                .is_ok_and(|value| value <= 10)
-    });
-
-    let sqlite_storage = module
-        .traits
-        .iter()
-        .any(|t| t.name == "storage" && t.value.eq_ignore_ascii_case("SQLite"));
-
     // Provenance cites ADR-004 / ADR-006 runtime strength catalogs.
-    let (target, provenance) = if module.kind == ModuleKind::Sink && (low_latency || sqlite_storage)
-    {
-        (
-            Target::Go,
-            if sqlite_storage {
-                "tier1: sink+SQLite → Go (durable low-latency storage)".to_string()
-            } else {
-                "tier1: sink+latency≤10ms → Go (predictable low-latency systems path)".to_string()
-            },
-        )
-    } else if module.kind == ModuleKind::Processor
+    // Author `sink` modules are rejected by the parser; persistence is synthesized.
+    let (target, provenance) = if module.kind == ModuleKind::Processor
         && (has(&["tensor", "numpy", "pandas", "text", "llm"]) || cuda)
     {
         (
@@ -94,7 +76,9 @@ pub fn route_module(module: &Module) -> RouteDecision {
             Target::Python,
             "tier1: processor+doc → Python (document extract, ADR-011)".to_string(),
         )
-    } else if module.kind == ModuleKind::Processor && has_scrape_op(&["render", "extract"]) {
+    } else if module.kind == ModuleKind::Processor
+        && scrape_engine_is(&scrape, sil_core::Engine::Python)
+    {
         (
             Target::Python,
             "tier1: processor+scrape render/extract → Python (Playwright browser, ADR-006)"
@@ -128,7 +112,7 @@ pub fn route_module(module: &Module) -> RouteDecision {
                 namespaces.join(", ")
             ),
         )
-    } else if has_scrape_op(&["site"]) {
+    } else if scrape_engine_is(&scrape, sil_core::Engine::Go) {
         (
             Target::Go,
             format!(
@@ -136,7 +120,7 @@ pub fn route_module(module: &Module) -> RouteDecision {
                 namespaces.join(", ")
             ),
         )
-    } else if has_scrape_op(&["render", "extract"]) {
+    } else if scrape_engine_is(&scrape, sil_core::Engine::Python) {
         (
             Target::Python,
             format!(
@@ -188,10 +172,6 @@ pub fn route_module(module: &Module) -> RouteDecision {
             ModuleKind::Processor => (
                 Target::Python,
                 "fallback: processor → Python (domain analysis glue)".to_string(),
-            ),
-            ModuleKind::Sink => (
-                Target::Go,
-                "fallback: sink → Go (systems and storage paths)".to_string(),
             ),
             _ => (
                 Target::Bun,
@@ -277,8 +257,8 @@ mod tests {
                             namespace: Some("ui".into()),
                             name: "terminal".into(),
                             args: vec![],
-                                    span: Default::default(),
-                                }],
+                            span: Default::default(),
+                        }],
                     },
                 }],
                 span: Span::default(),
@@ -298,7 +278,7 @@ mod tests {
     #[test]
     fn routes_score_processor_to_python() {
         let source = r#"
-@version("0.5.0")
+@version("0.6.0")
 contract FeedbackRecord { has Str $.author; has Str $.text; }
 component Page {
     method render() { ui::page(ui::text(:text("x"))) }
@@ -323,7 +303,7 @@ processor TextAnalyzer {
     #[test]
     fn routes_llm_processor_to_python() {
         let source = r#"
-@version("0.5.0")
+@version("0.6.0")
 contract ChatRecord { has Str $.prompt; has Str $.reply; }
 component ChatPage {
     has state Str $.prompt = "";
@@ -374,7 +354,7 @@ service FeedbackApi {
     #[test]
     fn routes_scrape_site_service_to_bun() {
         let source = r#"
-@version("0.5.0")
+@version("0.6.0")
 service Crawler {
     method run() {
         seed_url ==> scrape::site(:depth(2), :same_host(true)) ==> scrape::select(:css("title"), :as(title))
@@ -390,27 +370,26 @@ service Crawler {
     }
 
     #[test]
-    fn routes_scrape_site_task_to_go() {
+    fn task_declarator_is_removed() {
         let source = r#"
-@version("0.5.0")
+@version("0.6.0")
 task Crawler {
     method run() {
         seed_url ==> scrape::site(:depth(2), :same_host(true))
     }
 }
 "#;
-        let program = sil_parser::parse(source).expect("parse scrape site task");
-        let decisions = route_program(&program);
-        assert_eq!(decisions[0].target, Target::Go);
+        let err = sil_parser::parse(source).expect_err("task is removed");
         assert!(
-            decisions[0].provenance.contains("Colly") || decisions[0].provenance.contains("scrape")
+            err.to_string().contains("removed"),
+            "expected a removal diagnostic, got {err}"
         );
     }
 
     #[test]
     fn routes_scrape_page_with_ui_service_to_bun() {
         let source = r#"
-@version("0.5.0")
+@version("0.6.0")
 component Page {
     method render() { ui::page(ui::text(:text("x"))) }
 }
@@ -432,7 +411,7 @@ service Ingest {
     #[test]
     fn routes_scrape_render_processor_to_python() {
         let source = r#"
-@version("0.5.0")
+@version("0.6.0")
 processor Browser {
     method run() {
         url ==> scrape::render() ==> scrape::extract(:into(Article))

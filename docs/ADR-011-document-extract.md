@@ -80,7 +80,7 @@ $upload ==> doc::extract(:into(Document))
 
 - Supervisor installs a doc-specific venv (`.venv-doc`) from
   `python/doc_requirements.txt` when the graph has `doc::extract`.
-- AGENTS / IDE docs list `doc::extract` and `ui::file_input`; README catalog
-  count is 39 dual-surface builtins.
+- AGENTS / IDE docs list `doc::extract` and `ui::file_input`; the UI catalog
+  count is pinned in `docs_conformance.rs`, not in prose.
 - PDF heading/table quality is weaker than DOCX/HTML; title falls back to
   first line or filename.

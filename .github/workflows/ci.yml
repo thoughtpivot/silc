@@ -44,10 +44,10 @@ jobs:
       - name: Build standalone example apps
         run: |
           cargo build -p silc
-          ./target/debug/silc build examples/chatApp/main.silc
-          ./target/debug/silc build examples/inventoryApp/main.silc
-          ./target/debug/silc build examples/scraperApp/main.silc
-          ./target/debug/silc build examples/pipelineApp/main.silc
+          cargo test -p silc --test docs_conformance -- --test-threads=1
+          find examples -name main.silc -print | sort | while read -r src; do
+            ./target/debug/silc build "$src"
+          done
 
       - name: Dual-surface end-to-end
         run: |
@@ -58,7 +58,10 @@ jobs:
 
       - name: Concurrent scored_form correctness
         run: |
-          ./target/debug/silc crates/silc/tests/fixtures/scored_form.silc > /tmp/silc-run.log 2>&1 &
+          # The e2e step above SIGKILLs its supervisor; its Bun worker can
+          # outlive it on 18080 and answer /health with no supervisor behind it.
+          lsof -ti:18080 | xargs kill -9 2>/dev/null || true
+          SILC_HTTP_PORT=18080 ./target/debug/silc crates/silc/tests/fixtures/scored_form.silc > /tmp/silc-run.log 2>&1 &
           PID=$!
           for i in $(seq 1 90); do
             if curl -sf http://127.0.0.1:18080/health >/dev/null; then break; fi
@@ -93,15 +96,14 @@ jobs:
           path: |
             ~/.silc
             ~/.cache/pip
-          key: silc-0.5.0-onnx-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('crates/sil-codegen/templates/*requirements.txt', 'crates/sil-core/src/model_catalog.rs') }}
+          key: silc-0.6.0-onnx-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('crates/sil-codegen/templates/*requirements.txt', 'crates/sil-core/src/model_catalog.rs') }}
 
       - name: Build all standalone examples
         run: |
           cargo build -p silc
-          ./target/debug/silc build examples/chatApp/main.silc
-          ./target/debug/silc build examples/inventoryApp/main.silc
-          ./target/debug/silc build examples/scraperApp/main.silc
-          ./target/debug/silc build examples/pipelineApp/main.silc
+          find examples -name main.silc -print | sort | while read -r src; do
+            ./target/debug/silc build "$src"
+          done
 
       - name: Local HTTP to ONNX to SQLite
         run: cargo test -p silc --test pipeline_e2e -- --ignored --test-threads=1

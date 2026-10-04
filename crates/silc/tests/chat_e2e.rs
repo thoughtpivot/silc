@@ -50,7 +50,7 @@ fn read_until(stream: &mut TcpStream, needle: &str, timeout: Duration) -> String
 #[test]
 fn chat_assistant_builds_dual_surface() {
     let example =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/chatApp/main.silc");
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/core/chatApp/main.silc");
     let build = Command::new(silc_bin())
         .args(["build", example.to_str().unwrap()])
         .output()
@@ -62,7 +62,7 @@ fn chat_assistant_builds_dual_surface() {
         String::from_utf8_lossy(&build.stderr)
     );
     let root =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/chatApp/.runtime/main");
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/core/chatApp/.runtime/main");
     assert!(root.join("typescript/worker.ts").is_file());
     assert!(root.join("typescript/terminal.ts").is_file());
     assert!(root.join("typescript/src/App.tsx").is_file());
@@ -105,7 +105,7 @@ fn multi_session_chat_builds_race_safe_ui() {
     let source = root.join("multi_chat.silc");
     std::fs::write(
         &source,
-        r#"@version("0.5.0")
+        r#"@version("0.6.0")
 contract ChatRecord {
     has Str $.prompt;
     has Str $.reply;
@@ -170,7 +170,7 @@ fn chat_assistant_real_completion_e2e() {
     free_port(18091);
 
     let example =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/chatApp/main.silc");
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/core/chatApp/main.silc");
     let temp = std::env::temp_dir().join(format!(
         "silc-chat-e2e-{}-{}",
         std::process::id(),

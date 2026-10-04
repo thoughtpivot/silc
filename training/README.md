@@ -59,7 +59,7 @@ provisioning). Pass `--no-emit` to stop after classify (faster; tier 2).
   "prompt_id": "prompt-scored_form",
   "prompt": "optional full prompt text",
   "task": "optional task text",
-  "completion": "```silc\n@version(\"0.5.0\")\n…\n```",
+  "completion": "```silc\n@version(\"0.6.0\")\n…\n```",
   "model": "optional-generator-id",
   "category": "form"
 }
@@ -92,7 +92,7 @@ cargo run -p sil-training -- subject-first-bench \
 Repeat `--trials` for each JSONL input. Each row uses:
 
 ```json
-{"task_id":"components","variant":"subject-first","completion":"@version(\"0.5.0\")\n…","repair_turns":0}
+{"task_id":"components","variant":"subject-first","completion":"@version(\"0.6.0\")\n…","repair_turns":0}
 ```
 
 The command reports overall and task-family first-pass rates, repair turns,

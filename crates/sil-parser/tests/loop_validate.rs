@@ -4,7 +4,7 @@
 use sil_parser::parse;
 
 const PRELUDE: &str = r#"
-@version("0.5.0")
+@version("0.6.0")
 contract Rfi {
     has Str $.id;
     has Str $.status;
@@ -70,12 +70,18 @@ fn cost_report_multiplies_through_each() {
     let report = sil_core::format_loop_cost_report(&program).unwrap();
     assert!(report.contains("Chase"), "{report}");
     assert!(report.contains("model calls 100"), "{report}");
-    assert!(report.contains("schedule \"0 8 * * 1-5\" America/New_York"), "{report}");
+    assert!(
+        report.contains("schedule \"0 8 * * 1-5\" America/New_York"),
+        "{report}"
+    );
 }
 
 #[test]
 fn rfi_chase_cost_report() {
-    let program = parse(include_str!("../../../examples/rfiChaseApp/main.silc")).unwrap();
+    let program = parse(include_str!(
+        "../../../examples/domains/aec/rfiChaseApp/main.silc"
+    ))
+    .unwrap();
     let report = sil_core::format_loop_cost_report(&program).unwrap();
     assert!(
         report.contains("model calls 600 · effects 600 (writes 400, notices 200) · approvals 200"),
@@ -138,7 +144,10 @@ fn command_program_cannot_wait_for_approval() {
             loop::timed_out(loop::skip(:reason("late")))),"#,
     );
     let manual = |body: &str| {
-        body.replace(r#"loop::schedule(:cron("0 8 * * 1-5"), :tz("America/New_York")),"#, "loop::manual(),")
+        body.replace(
+            r#"loop::schedule(:cron("0 8 * * 1-5"), :tz("America/New_York")),"#,
+            "loop::manual(),",
+        )
     };
     check(&manual(GOOD)).unwrap();
     expect_err(&manual(&approve), "this program is a command");
@@ -151,17 +160,26 @@ fn find_requires_max() {
 
 #[test]
 fn each_max_is_capped() {
-    expect_err(&GOOD.replace(":as(rfi), :max(50)", ":as(rfi), :max(20000)"), "between 1 and 10000");
+    expect_err(
+        &GOOD.replace(":as(rfi), :max(50)", ":as(rfi), :max(20000)"),
+        "between 1 and 10000",
+    );
 }
 
 #[test]
 fn effect_key_needs_a_placeholder() {
-    expect_err(&GOOD.replace(r#":key("{$rfi.id}:{$today}")"#, r#":key("same")"#), "placeholder");
+    expect_err(
+        &GOOD.replace(r#":key("{$rfi.id}:{$today}")"#, r#":key("same")"#),
+        "placeholder",
+    );
 }
 
 #[test]
 fn effect_requires_key() {
-    expect_err(&GOOD.replace(r#":key("{$rfi.id}:{$today}"), "#, ""), "requires prop `:key`");
+    expect_err(
+        &GOOD.replace(r#":key("{$rfi.id}:{$today}"), "#, ""),
+        "requires option `:key`",
+    );
 }
 
 #[test]
@@ -196,17 +214,26 @@ loop::flow(
 
 #[test]
 fn unknown_resource_is_rejected() {
-    expect_err(&GOOD.replace("Rfis.list", "Tickets.list"), "unknown resource `Tickets`");
+    expect_err(
+        &GOOD.replace("Rfis.list", "Tickets.list"),
+        "unknown resource `Tickets`",
+    );
 }
 
 #[test]
 fn find_needs_a_list_query() {
-    expect_err(&GOOD.replace("Rfis.list", "Rfis.update"), "is not a list query");
+    expect_err(
+        &GOOD.replace("Rfis.list", "Rfis.update"),
+        "is not a list query",
+    );
 }
 
 #[test]
 fn write_needs_a_declared_mutation() {
-    expect_err(&GOOD.replace("Notes.create", "Notes.update"), "not a create/update mutation");
+    expect_err(
+        &GOOD.replace("Notes.create", "Notes.update"),
+        "not a create/update mutation",
+    );
 }
 
 #[test]
@@ -255,12 +282,18 @@ fn cron_and_tz_are_checked() {
 
 #[test]
 fn unknown_binding_is_rejected() {
-    expect_err(&GOOD.replace("$rfi.assignee", "$ticket.assignee"), "unknown binding `$ticket`");
+    expect_err(
+        &GOOD.replace("$rfi.assignee", "$ticket.assignee"),
+        "unknown binding `$ticket`",
+    );
 }
 
 #[test]
 fn unknown_field_on_a_row_is_rejected() {
-    expect_err(&GOOD.replace("$rfi.assignee", "$rfi.owner"), "has no field `owner`");
+    expect_err(
+        &GOOD.replace("$rfi.assignee", "$rfi.owner"),
+        "has no field `owner`",
+    );
 }
 
 #[test]
@@ -280,13 +313,22 @@ fn duplicate_bindings_are_rejected() {
 
 #[test]
 fn calls_are_not_expressions() {
-    expect_err(&GOOD.replace(r#"$.status == "open""#, "Rfis.list()"), "calls are not allowed");
+    expect_err(
+        &GOOD.replace(r#"$.status == "open""#, "Rfis.list()"),
+        "calls are not allowed",
+    );
 }
 
 #[test]
 fn unknown_props_and_nodes_are_rejected() {
-    expect_err(&GOOD.replace(":max(50)),", ":max(50), :limit(3)),"), "unknown prop `:limit`");
-    expect_err(&GOOD.replace("loop::gate(", "loop::check("), "unknown node `loop::check`");
+    expect_err(
+        &GOOD.replace(":max(50)),", ":max(50), :limit(3)),"),
+        "unknown option `:limit`",
+    );
+    expect_err(
+        &GOOD.replace("loop::gate(", "loop::check("),
+        "unknown node `loop::check`",
+    );
 }
 
 #[test]
@@ -302,7 +344,10 @@ loop::flow(
 #[test]
 fn write_value_must_match_the_resource_contract() {
     expect_err(
-        &GOOD.replace("Note.new(:rfi($rfi.id), :text($draft.text))", "Rfi.new(:id($rfi.id))"),
+        &GOOD.replace(
+            "Note.new(:rfi($rfi.id), :text($draft.text))",
+            "Rfi.new(:id($rfi.id))",
+        ),
         ":value must be `Note.new(...)`",
     );
 }
@@ -320,7 +365,7 @@ loop::flow(
 #[test]
 fn loops_cannot_mix_with_games() {
     let src = format!(
-        "{PRELUDE}\nloop Chase {{ loop::flow(loop::manual(), loop::stop()) }}\ngame G {{ game::scene(:title(\"T\")) }}\n"
+        "{PRELUDE}\nloop Chase {{ loop::flow(loop::manual(), loop::stop()) }}\ngame G {{ scene::scene(:title(\"T\")) }}\n"
     );
     let err = parse(&src).unwrap().validate().unwrap_err();
     assert!(err.contains("cannot mix") && err.contains("game"), "{err}");
@@ -357,7 +402,10 @@ loop Chase {{
 "#
     );
     let err = parse(&src).unwrap().validate().unwrap_err();
-    assert!(err.contains("text::score and loop::ask"), "{err}");
+    assert!(
+        err.contains("cannot mix") && err.contains("text::score") && err.contains("loop::ask"),
+        "{err}"
+    );
 }
 
 const MCP_PRELUDE: &str = r#"
@@ -398,9 +446,18 @@ fn mcp_call_read_validates() {
 
 #[test]
 fn mcp_call_requires_server_and_tool() {
-    expect_mcp_err(&GOOD_MCP.replace(r#":server("https://kb.example.com/mcp"), "#, ""), "requires :server");
-    expect_mcp_err(&GOOD_MCP.replace(r#":tool("kb_jsonl_read_window"), "#, ""), "requires :tool");
-    expect_mcp_err(&GOOD_MCP.replace("https://kb.example.com/mcp", "kb.example.com/mcp"), "absolute http(s)");
+    expect_mcp_err(
+        &GOOD_MCP.replace(r#":server("https://kb.example.com/mcp"), "#, ""),
+        "requires :server",
+    );
+    expect_mcp_err(
+        &GOOD_MCP.replace(r#":tool("kb_jsonl_read_window"), "#, ""),
+        "requires :tool",
+    );
+    expect_mcp_err(
+        &GOOD_MCP.replace("https://kb.example.com/mcp", "kb.example.com/mcp"),
+        "absolute http(s)",
+    );
 }
 
 #[test]
@@ -418,31 +475,47 @@ fn mcp_call_rejects_url_and_scrape_rejects_mcp_props() {
 #[test]
 fn mcp_call_args_select_and_auth_env_are_checked() {
     expect_mcp_err(
-        &GOOD_MCP.replace(r#"KbArgs.new(:path("memory/decisions.jsonl"), :tailRecords(6))"#, r#""memory/decisions.jsonl""#),
+        &GOOD_MCP.replace(
+            r#"KbArgs.new(:path("memory/decisions.jsonl"), :tailRecords(6))"#,
+            r#""memory/decisions.jsonl""#,
+        ),
         ":args must be `Contract.new(...)`",
     );
-    expect_mcp_err(&GOOD_MCP.replace("KB_TOKEN", "kb-token"), ":auth_env must be an environment variable name");
-    expect_mcp_err(&GOOD_MCP.replace("records.parsed", "records..parsed"), ":select must be a dotted field path");
+    expect_mcp_err(
+        &GOOD_MCP.replace("KB_TOKEN", "kb-token"),
+        ":auth_env must be an environment variable name",
+    );
+    expect_mcp_err(
+        &GOOD_MCP.replace("records.parsed", "records..parsed"),
+        ":select must be a dotted field path",
+    );
 }
 
 #[test]
 fn mcp_result_and_calendar_fields_are_closed() {
     let src = GOOD_MCP.to_string();
-    let bad_field = format!(
-        "{src},\n    loop::let(:as(x), :value($kb.title))"
-    );
+    let bad_field = format!("{src},\n    loop::let(:as(x), :value($kb.title))");
     expect_mcp_err(&bad_field, "`$kb` has no field `title`");
     let bad_calendar = format!("{src},\n    loop::let(:as(x), :value($calendar.tomorrow))");
     expect_mcp_err(&bad_calendar, "`$calendar` has no field `tomorrow`");
-    expect_mcp_err(&GOOD_MCP.replace("loop::read(:as(kb)", "loop::read(:as(calendar)"), "`calendar` is reserved");
+    expect_mcp_err(
+        &GOOD_MCP.replace("loop::read(:as(kb)", "loop::read(:as(calendar)"),
+        "`calendar` is reserved",
+    );
 }
 
 #[test]
 fn mcp_fixture_validates_and_reports_costs() {
-    let program = parse(include_str!("../../sil-codegen/tests/fixtures/loop_digest.silc")).unwrap();
+    let program = parse(include_str!(
+        "../../sil-codegen/tests/fixtures/loop_digest.silc"
+    ))
+    .unwrap();
     program.validate().unwrap();
     let report = sil_core::format_loop_cost_report(&program).unwrap();
-    assert!(report.contains("DailyDigest  schedule \"0 5 * * *\" UTC, catch up 12h"), "{report}");
+    assert!(
+        report.contains("DailyDigest  schedule \"0 5 * * *\" UTC, catch up 12h"),
+        "{report}"
+    );
     assert!(
         report.contains("model calls 6 · effects 2 (writes 1, notices 1) · approvals 0 · reads 6"),
         "{report}"

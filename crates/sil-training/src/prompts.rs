@@ -63,7 +63,7 @@ pub fn build_prompt_records(agents_md: &str, tasks: &[TaskSeed]) -> Vec<PromptRe
 
 pub fn format_prompt(agents_md: &str, task: &str) -> String {
     format!(
-        r#"You are silclm, Silc's local language model. Write a complete, valid Silc 0.5.0 program for the task below.
+        r#"You are silclm, Silc's local language model. Write a complete, valid Silc 0.6.0 program for the task below.
 
 Follow the project guidance exactly. Output only a Silc program (optionally in a ```silc fence). Do not invent React, package.json, Ollama, or hand-edited `.runtime/` files.
 

@@ -73,7 +73,7 @@ GET) and `mcp::call` (one named tool per step).
 1. **First-class `loop` subject.** `loop Name { loop::flow(...) }` with a
    closed `LOOP_NODE_CATALOG` in `sil-core`. `loop` is a contextual keyword at
    top level only; it stays an ordinary identifier elsewhere (for example
-   `game::audio(:kind(loop))`).
+   `scene::audio(:kind(loop))`).
 2. **Catalog (v1).** Root `flow`; triggers `schedule`, `manual`,
    `on_mutation`; steps `let`, `find`, `read`, `ask`, `gate`, `branch`
    (`when` + required `otherwise`), `each`, `write`, `notify`, `approve`
@@ -133,11 +133,8 @@ GET) and `mcp::call` (one named tool per step).
   build or start it.
 - v1 deliberately narrows effects to Silc resources and in-app notices.
   External delivery would arrive as new catalog nodes, not as plugins.
-- Proof programs: `examples/rfiChaseApp` (finds, approvals, keyed writes) and
-  `examples/oneThingApp`, a port of a production daily-briefing workflow
-  (four Moz MCP reads, two silclm asks, a gate, one keyed write per run), and
-  `examples/whatToDoTodayApp`, the same reads reduced to a short to-do list
-  with no authored `app`: the synthesized `/loops` inbox on the terminal
-  surface (or `curl` against `/api/loop_requests`) is its only interface, and
-  `examples/oneThingCliApp`, the one-sentence brief as a loop command that
-  prints its result and exits.
+- Proof programs: `examples/domains/aec/rfiChaseApp` (finds, approvals, keyed
+  writes) and `examples/core/mcpLoopApp`, a generic MCP loop command (one
+  nested `mcp::call`, a silclm ask, a gate, one keyed write). That example's
+  README also shows the scheduled inbox-only service and the form that sits
+  beside an `app`.

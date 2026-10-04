@@ -160,10 +160,7 @@ pub fn parse_turn(text: &str) -> ParsedTurn {
 
 /// Turn a bare Silc program reply into a `draft_set` call.
 fn implicit_draft_set(text: &str) -> Option<ToolCall> {
-    if !(text.contains("```silc")
-        || text.contains("<silc>")
-        || text.contains("@version("))
-    {
+    if !(text.contains("```silc") || text.contains("<silc>") || text.contains("@version(")) {
         return None;
     }
     let mut program = extract_program(text);
@@ -581,7 +578,7 @@ mod tests {
     #[test]
     fn bare_program_becomes_draft_set() {
         let turn = parse_turn(
-            "Here is the program:\n@version(\"0.5.0\")\ncontract Note { has Str $.text; }\n",
+            "Here is the program:\n@version(\"0.6.0\")\ncontract Note { has Str $.text; }\n",
         );
         match turn {
             ParsedTurn::Tool(c) => {
@@ -656,7 +653,7 @@ mod tests {
         let mut completer = ScriptedCompleter::new(Vec::<String>::new());
         let call = ToolCall {
             name: "draft_set".into(),
-            args: json!({"source": "@version(\"0.5.0\")\n"}),
+            args: json!({"source": "@version(\"0.6.0\")\n"}),
         };
         let out = execute_tool(&call, &corpus, &mut state, &budgets, &mut completer).unwrap();
         match out {
@@ -668,7 +665,7 @@ mod tests {
 
     #[test]
     fn empty_tool_fence_skips_to_program() {
-        let program = r#"@version("0.5.0")
+        let program = r#"@version("0.6.0")
 contract Guest { has Str $.name; }
 component Home {
     has state Str $.name = "";
@@ -698,9 +695,8 @@ app App { route "/" => Home; }
 
     #[test]
     fn silc_sentinel_becomes_draft_set() {
-        let turn = parse_turn(
-            "<silc>\n@version(\"0.5.0\")\ncontract Note { has Str $.text; }\n</silc>",
-        );
+        let turn =
+            parse_turn("<silc>\n@version(\"0.6.0\")\ncontract Note { has Str $.text; }\n</silc>");
         match turn {
             ParsedTurn::Tool(c) => {
                 assert_eq!(c.name, "draft_set");
@@ -732,7 +728,9 @@ app App { route "/" => Home; }
                     msg.contains("widened") || msg.contains(":id"),
                     "expected auto-widen or seed/:id hits, got: {msg}"
                 );
-                assert!(!msg.lines().all(|l| l.contains("(no matches)") && !l.contains("widened")));
+                assert!(!msg
+                    .lines()
+                    .all(|l| l.contains("(no matches)") && !l.contains("widened")));
             }
             ToolOutcome::Finished(_) => panic!("unexpected finish"),
         }

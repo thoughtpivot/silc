@@ -19,32 +19,16 @@ pub const DEFAULT_ASK_RETRY: u64 = 1;
 pub const DEFAULT_READ_RETRY: u64 = 2;
 pub const LOOP_READ_OPS: &[&str] = &["scrape::page", "mcp::call"];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LoopPropKind {
-    /// Literal string.
-    String,
-    /// Literal string with `{$name.field}` placeholders filled at run time.
-    Template,
-    /// Bare identifier (binding name, contract, resource, closed token).
-    Ident,
-    /// Non-negative integer literal.
-    Number,
-    /// Bare flag (`:desc`).
-    Flag,
-    /// Expression over bindings (`$rfi.due < $today`).
-    Expr,
-    /// `Resource.capability` reference.
-    Ref,
-}
+use crate::catalog::{
+    ChildPolicy, NodeRole, NodeSpec, OptionKind, OptionSpec, NO_EVENTS, NO_SLOTS, NO_SURFACES,
+};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LoopPropSpec {
-    pub name: &'static str,
-    pub kind: LoopPropKind,
-    pub required: bool,
-    pub description: &'static str,
-    pub closed_values: &'static [&'static str],
-}
+/// Historical names for the shared catalog types.
+pub type LoopPropKind = OptionKind;
+pub type LoopPropSpec = OptionSpec;
+pub type LoopChildPolicy = ChildPolicy;
+pub type LoopNodeRole = NodeRole;
+pub type LoopNodeSpec = NodeSpec;
 
 const fn lp(
     name: &'static str,
@@ -77,29 +61,6 @@ const fn lp_closed(
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LoopChildPolicy {
-    None,
-    AnyOf(&'static [&'static str]),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LoopNodeRole {
-    Root,
-    Trigger,
-    Step,
-    Block,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LoopNodeSpec {
-    pub name: &'static str,
-    pub role: LoopNodeRole,
-    pub description: &'static str,
-    pub props: &'static [LoopPropSpec],
-    pub children: LoopChildPolicy,
-}
-
 pub const LOOP_TRIGGERS: &[&str] = &["schedule", "manual", "on_mutation"];
 
 pub const LOOP_STEPS: &[&str] = &[
@@ -108,8 +69,22 @@ pub const LOOP_STEPS: &[&str] = &[
 ];
 
 const FLOW_CHILDREN: &[&str] = &[
-    "schedule", "manual", "on_mutation", "let", "find", "read", "ask", "gate", "branch", "each",
-    "write", "notify", "approve", "stop", "fail", "skip",
+    "schedule",
+    "manual",
+    "on_mutation",
+    "let",
+    "find",
+    "read",
+    "ask",
+    "gate",
+    "branch",
+    "each",
+    "write",
+    "notify",
+    "approve",
+    "stop",
+    "fail",
+    "skip",
 ];
 
 const TERMINATORS: &[&str] = &["stop", "fail", "skip"];
@@ -121,7 +96,10 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
         description: "Root of a loop. The first child is exactly one trigger; the remaining children are steps that run in order.",
         props: &[],
         children: LoopChildPolicy::AnyOf(FLOW_CHILDREN),
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "schedule",
         role: LoopNodeRole::Trigger,
@@ -132,14 +110,20 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
             lp("catch_up", LoopPropKind::String, false, "How far back a missed firing still runs after downtime, e.g. \"4h\" (max 30d). Only the latest missed firing runs."),
         ],
         children: LoopChildPolicy::None,
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "manual",
         role: LoopNodeRole::Trigger,
         description: "Starts a run when a person asks for one. With an `app` (or any scheduled loop) that is Run now in the synthesized /loops inbox; when every loop is manual and there is no `app`, the program is a command: `silc main.silc` runs each loop once, prints its notices to stdout, and exits.",
         props: &[],
         children: LoopChildPolicy::None,
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "on_mutation",
         role: LoopNodeRole::Trigger,
@@ -149,7 +133,10 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
             lp_closed("mutation", LoopPropKind::Ident, true, "Which change starts a run: `create` or `update`.", &["create", "update"]),
         ],
         children: LoopChildPolicy::None,
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "let",
         role: LoopNodeRole::Step,
@@ -159,7 +146,10 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
             lp("value", LoopPropKind::Expr, true, "Expression over earlier bindings, literals, or `Contract.new(...)`."),
         ],
         children: LoopChildPolicy::None,
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "find",
         role: LoopNodeRole::Step,
@@ -174,7 +164,10 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
             lp("one", LoopPropKind::Flag, false, "Return the first matching row instead of a list; empty when nothing matches."),
         ],
         children: LoopChildPolicy::None,
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "read",
         role: LoopNodeRole::Step,
@@ -191,7 +184,10 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
             lp("retry", LoopPropKind::Number, false, "Retries after a failed fetch (default 2, max 10)."),
         ],
         children: LoopChildPolicy::None,
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "ask",
         role: LoopNodeRole::Step,
@@ -204,7 +200,10 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
             lp("retry", LoopPropKind::Number, false, "Retries when the answer does not match the contract (default 1, max 10)."),
         ],
         children: LoopChildPolicy::AnyOf(&["otherwise"]),
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "gate",
         role: LoopNodeRole::Step,
@@ -214,28 +213,40 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
             lp("reason", LoopPropKind::String, true, "Why the gate exists; recorded when it blocks."),
         ],
         children: LoopChildPolicy::AnyOf(&["otherwise"]),
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "branch",
         role: LoopNodeRole::Step,
         description: "Runs the first `loop::when` whose condition is true, else the required `loop::otherwise`. Unknown conditions are not true.",
         props: &[],
         children: LoopChildPolicy::AnyOf(&["when", "otherwise"]),
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "when",
         role: LoopNodeRole::Block,
         description: "One arm of a `loop::branch`. Its steps run when the condition is true.",
         props: &[lp("that", LoopPropKind::Expr, true, "Condition for this arm; unknown counts as false.")],
         children: LoopChildPolicy::AnyOf(LOOP_STEPS),
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "otherwise",
         role: LoopNodeRole::Block,
         description: "Fallback block for `branch`, `gate`, or `ask`. Under gate and ask it must end in stop, fail, or skip.",
         props: &[],
         children: LoopChildPolicy::AnyOf(LOOP_STEPS),
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "each",
         role: LoopNodeRole::Step,
@@ -246,7 +257,10 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
             lp("max", LoopPropKind::Number, true, "Maximum items processed (at most 10000); extra items fail the run before it starts the loop."),
         ],
         children: LoopChildPolicy::AnyOf(LOOP_STEPS),
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "write",
         role: LoopNodeRole::Step,
@@ -258,7 +272,10 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
             lp("unchecked", LoopPropKind::String, false, "Reason to let unreviewed model output reach this effect; shown in the build report."),
         ],
         children: LoopChildPolicy::None,
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "notify",
         role: LoopNodeRole::Step,
@@ -270,7 +287,10 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
             lp("unchecked", LoopPropKind::String, false, "Reason to let unreviewed model output reach this effect."),
         ],
         children: LoopChildPolicy::None,
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "approve",
         role: LoopNodeRole::Step,
@@ -283,42 +303,60 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
             lp("as", LoopPropKind::Ident, false, "Binding for the decision (`outcome`, `by`, `decided_at`, `note`)."),
         ],
         children: LoopChildPolicy::AnyOf(&["declined", "timed_out"]),
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "declined",
         role: LoopNodeRole::Block,
         description: "Runs when the approver declines; must end in stop, fail, or skip.",
         props: &[],
         children: LoopChildPolicy::AnyOf(LOOP_STEPS),
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "timed_out",
         role: LoopNodeRole::Block,
         description: "Runs when nobody decides before `:within`; must end in stop, fail, or skip.",
         props: &[],
         children: LoopChildPolicy::AnyOf(LOOP_STEPS),
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "stop",
         role: LoopNodeRole::Step,
         description: "Ends the run successfully. Inside `each` it ends the whole run, not just the item.",
         props: &[lp("reason", LoopPropKind::Template, false, "Why the run stopped; recorded on the run.")],
         children: LoopChildPolicy::None,
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "fail",
         role: LoopNodeRole::Step,
         description: "Fails the current item inside `each`, or the run outside it, with a recorded reason.",
         props: &[lp("reason", LoopPropKind::Template, true, "Failure reason shown in the runs table.")],
         children: LoopChildPolicy::None,
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "skip",
         role: LoopNodeRole::Step,
         description: "Skips the rest of the current `each` item; only valid inside `each`.",
         props: &[lp("reason", LoopPropKind::Template, true, "Why the item was skipped; recorded in the event log.")],
         children: LoopChildPolicy::None,
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
 ];
 
 pub fn lookup_loop_node(name: &str) -> Option<&'static LoopNodeSpec> {
@@ -330,8 +368,12 @@ pub fn catalog_loop_node_names() -> Vec<&'static str> {
 }
 
 pub fn loop_prop_doc(node: &str, prop: &str) -> Option<&'static str> {
-    lookup_loop_node(node)
-        .and_then(|spec| spec.props.iter().find(|p| p.name == prop).map(|p| p.description))
+    lookup_loop_node(node).and_then(|spec| {
+        spec.props
+            .iter()
+            .find(|p| p.name == prop)
+            .map(|p| p.description)
+    })
 }
 
 /// One-line AGENTS-style catalog entry for a loop node.
@@ -362,9 +404,10 @@ pub fn format_loop_catalog_line(spec: &LoopNodeSpec) -> String {
             .map(|n| format!("`{n}`"))
             .collect::<Vec<_>>()
             .join(", "),
+        LoopChildPolicy::Any => "any".to_string(),
     };
     format!(
-        "- `loop::{}` — props: {}; children: {}",
+        "- `loop::{}` — options: {}; children: {}",
         spec.name,
         if props.is_empty() {
             "none".into()
@@ -486,20 +529,19 @@ impl Loop {
 /// Parse `30m`, `4h`, `2d`, `1w` into minutes.
 pub fn parse_loop_duration(text: &str) -> Result<u64, String> {
     let text = text.trim();
-    let (num, unit) = text.split_at(text.find(|c: char| !c.is_ascii_digit()).unwrap_or(text.len()));
-    let n: u64 = num
-        .parse()
-        .map_err(|_| format!("invalid duration \"{text}\"; use forms like \"30m\", \"4h\", \"2d\""))?;
+    let (num, unit) = text.split_at(
+        text.find(|c: char| !c.is_ascii_digit())
+            .unwrap_or(text.len()),
+    );
+    let n: u64 = num.parse().map_err(|_| {
+        format!("invalid duration \"{text}\"; use forms like \"30m\", \"4h\", \"2d\"")
+    })?;
     let minutes = match unit {
         "m" => n,
         "h" => n * 60,
         "d" => n * 60 * 24,
         "w" => n * 60 * 24 * 7,
-        _ => {
-            return Err(format!(
-                "invalid duration \"{text}\"; units are m, h, d, w"
-            ))
-        }
+        _ => return Err(format!("invalid duration \"{text}\"; units are m, h, d, w")),
     };
     if minutes == 0 {
         return Err(format!("duration \"{text}\" must be greater than zero"));
@@ -518,7 +560,13 @@ pub fn validate_cron(cron: &str) -> Result<(), String> {
             "cron \"{cron}\" must have 5 fields (minute hour day-of-month month day-of-week)"
         ));
     }
-    let ranges = [(0, 59, "minute"), (0, 23, "hour"), (1, 31, "day-of-month"), (1, 12, "month"), (0, 7, "day-of-week")];
+    let ranges = [
+        (0, 59, "minute"),
+        (0, 23, "hour"),
+        (1, 31, "day-of-month"),
+        (1, 12, "month"),
+        (0, 7, "day-of-week"),
+    ];
     for (field, (lo, hi, label)) in fields.iter().zip(ranges) {
         for part in field.split(',') {
             let (range, step) = match part.split_once('/') {
@@ -546,9 +594,7 @@ pub fn validate_cron(cron: &str) -> Result<(), String> {
             };
             let (a, b) = (parse(a)?, parse(b)?);
             if a < lo || b > hi || a > b {
-                return Err(format!(
-                    "cron \"{cron}\": {label} must be within {lo}-{hi}"
-                ));
+                return Err(format!("cron \"{cron}\": {label} must be within {lo}-{hi}"));
             }
         }
     }
@@ -558,9 +604,12 @@ pub fn validate_cron(cron: &str) -> Result<(), String> {
 fn validate_tz(tz: &str) -> Result<(), String> {
     let ok = tz == "UTC"
         || (tz.contains('/')
-            && tz
-                .split('/')
-                .all(|seg| !seg.is_empty() && seg.chars().all(|c| c.is_ascii_alphanumeric() || "_+-".contains(c))));
+            && tz.split('/').all(|seg| {
+                !seg.is_empty()
+                    && seg
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || "_+-".contains(c))
+            }));
     if ok {
         Ok(())
     } else {
@@ -584,7 +633,10 @@ pub fn template_placeholders(template: &str) -> Result<Vec<Vec<String>>, String>
         let parts: Vec<String> = path.split('.').map(|s| s.trim().to_string()).collect();
         if parts.is_empty()
             || parts.iter().any(|p| {
-                p.is_empty() || !p.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+                p.is_empty()
+                    || !p
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
             })
         {
             return Err(format!(
@@ -643,7 +695,9 @@ impl LoopBounds {
         self.approvals = self.approvals.saturating_add(other.approvals);
         self.reads = self.reads.saturating_add(other.reads);
         self.rows_scanned = self.rows_scanned.saturating_add(other.rows_scanned);
-        self.unchecked_effects = self.unchecked_effects.saturating_add(other.unchecked_effects);
+        self.unchecked_effects = self
+            .unchecked_effects
+            .saturating_add(other.unchecked_effects);
     }
 
     fn max(&mut self, other: &LoopBounds) {
@@ -772,7 +826,12 @@ pub const MANUAL_EVENT_FIELDS: &[&str] = &["requested_by", "requested_at"];
 
 impl<'a> Checker<'a> {
     fn err(&self, node: &LoopNode, msg: impl AsRef<str>) -> String {
-        format!("loop `{}`: loop::{}: {}", self.lp.name, node.name, msg.as_ref())
+        format!(
+            "loop `{}`: loop::{}: {}",
+            self.lp.name,
+            node.name,
+            msg.as_ref()
+        )
     }
 
     fn contract_fields(&self, contract: &str) -> Option<Vec<(&'a str, &'a TypeExpr)>> {
@@ -791,25 +850,48 @@ impl<'a> Checker<'a> {
             .and_then(|r| r.contract.clone())
     }
 
-    fn bind(&mut self, node: &LoopNode, scope: &mut Scope, name: &str, b: Binding) -> Result<(), String> {
+    fn bind(
+        &mut self,
+        node: &LoopNode,
+        scope: &mut Scope,
+        name: &str,
+        b: Binding,
+    ) -> Result<(), String> {
         if RESERVED_BINDINGS.contains(&name) {
-            return Err(self.err(node, format!("`{name}` is reserved; choose another `:as` name")));
+            return Err(self.err(
+                node,
+                format!("`{name}` is reserved; choose another `:as` name"),
+            ));
         }
         if !self.names.insert(name.to_string()) {
-            return Err(self.err(node, format!("binding `{name}` is already declared in this loop")));
+            return Err(self.err(
+                node,
+                format!("binding `{name}` is already declared in this loop"),
+            ));
         }
         scope.insert(name.to_string(), b);
         Ok(())
     }
 
     /// Check a path `root.field...` resolves; returns its taint.
-    fn check_path(&self, node: &LoopNode, scope: &Scope, row: Option<&str>, path: &[String]) -> Result<bool, String> {
+    fn check_path(
+        &self,
+        node: &LoopNode,
+        scope: &Scope,
+        row: Option<&str>,
+        path: &[String],
+    ) -> Result<bool, String> {
         let root = path[0].as_str();
         if let Some(contract) = row {
             if let Some(fields) = self.contract_fields(contract) {
                 if fields.iter().any(|(f, _)| *f == root) {
                     if scope.contains_key(root) {
-                        return Err(self.err(node, format!("`${root}` is both a row field and a binding; rename the binding")));
+                        return Err(self.err(
+                            node,
+                            format!(
+                                "`${root}` is both a row field and a binding; rename the binding"
+                            ),
+                        ));
                     }
                     return Ok(false);
                 }
@@ -838,7 +920,13 @@ impl<'a> Checker<'a> {
     }
 
     /// Validate a value expression; returns whether it carries model output.
-    fn check_expr(&self, node: &LoopNode, scope: &Scope, row: Option<&str>, expr: &Expr) -> Result<bool, String> {
+    fn check_expr(
+        &self,
+        node: &LoopNode,
+        scope: &Scope,
+        row: Option<&str>,
+        expr: &Expr,
+    ) -> Result<bool, String> {
         match expr {
             Expr::String(_) | Expr::Number(_) | Expr::Bool(_) => Ok(false),
             Expr::Ident(name) => Err(self.err(
@@ -894,7 +982,12 @@ impl<'a> Checker<'a> {
         }
     }
 
-    fn check_template(&self, node: &LoopNode, scope: &Scope, prop: &str) -> Result<(bool, usize), String> {
+    fn check_template(
+        &self,
+        node: &LoopNode,
+        scope: &Scope,
+        prop: &str,
+    ) -> Result<(bool, usize), String> {
         let Some(expr) = node.prop(prop) else {
             return Ok((false, 0));
         };
@@ -911,13 +1004,18 @@ impl<'a> Checker<'a> {
 
     fn expr_ty(&self, scope: &Scope, expr: &Expr) -> BindTy {
         match expr {
-            Expr::Var(name) => scope.get(name).map(|b| b.ty.clone()).unwrap_or(BindTy::Value),
+            Expr::Var(name) => scope
+                .get(name)
+                .map(|b| b.ty.clone())
+                .unwrap_or(BindTy::Value),
             Expr::New { ty, .. } => BindTy::Row(ty.clone()),
             Expr::Member { base, field } => {
                 if let Expr::Var(root) = base.as_ref() {
                     if let Some(BindTy::Row(c)) = scope.get(root).map(|b| &b.ty) {
                         if let Some(fields) = self.contract_fields(c) {
-                            if let Some((_, TypeExpr::Array(inner))) = fields.iter().find(|(f, _)| f == field) {
+                            if let Some((_, TypeExpr::Array(inner))) =
+                                fields.iter().find(|(f, _)| f == field)
+                            {
                                 if let TypeExpr::Named(n) = inner.as_ref() {
                                     if self.contract_fields(n).is_some() {
                                         return BindTy::List(n.clone());
@@ -962,41 +1060,49 @@ impl<'a> Checker<'a> {
         })?;
         for prop in spec.props.iter().filter(|p| p.required) {
             if node.prop(prop.name).is_none() {
-                return Err(self.err(node, format!("requires prop `:{}`", prop.name)));
+                return Err(self.err(node, format!("requires option `:{}`", prop.name)));
             }
         }
         let mut seen = HashSet::new();
         for (pname, value) in &node.props {
             let Some(pspec) = spec.props.iter().find(|p| p.name == *pname) else {
-                return Err(self.err(node, format!("unknown prop `:{pname}`")));
+                return Err(self.err(node, format!("unknown option `:{pname}`")));
             };
             if !seen.insert(pname.as_str()) {
-                return Err(self.err(node, format!("prop `:{pname}` appears twice")));
+                return Err(self.err(node, format!("option `:{pname}` appears twice")));
             }
-            let ok = match pspec.kind {
-                LoopPropKind::String | LoopPropKind::Template => matches!(value, Expr::String(_)),
-                LoopPropKind::Ident => matches!(value, Expr::Ident(_)),
-                LoopPropKind::Number => matches!(value, Expr::Number(n) if n.parse::<u64>().is_ok()),
-                LoopPropKind::Flag => matches!(value, Expr::Bool(true)),
-                LoopPropKind::Ref => node.ref_prop(pname).is_some(),
-                LoopPropKind::Expr => true,
-            };
-            if !ok {
-                let want = match pspec.kind {
-                    LoopPropKind::String | LoopPropKind::Template => "a string",
-                    LoopPropKind::Ident => "a bare name",
-                    LoopPropKind::Number => "a whole number",
-                    LoopPropKind::Flag => "a bare flag",
-                    LoopPropKind::Ref => "`Resource.capability`",
-                    LoopPropKind::Expr => "an expression",
+            if !pspec.closed_values.is_empty() && matches!(pspec.kind, LoopPropKind::String) {
+                // `:op("mcp::call")` stays a string for one release. The nested
+                // form `mcp::call(...)` is parsed into the same string.
+                let text = match value {
+                    Expr::String(s) | Expr::Ident(s) => s.as_str(),
+                    _ => "",
                 };
-                return Err(self.err(node, format!(":{pname} must be {want}")));
-            }
-            if !pspec.closed_values.is_empty() {
-                let v = value.as_ident().unwrap_or_default();
-                if !pspec.closed_values.contains(&v) {
-                    return Err(self.err(node, format!(":{pname} must be one of {}", pspec.closed_values.join("|"))));
+                if !pspec.closed_values.contains(&text) {
+                    return Err(self.err(
+                        node,
+                        format!(":{pname} must be one of {}", pspec.closed_values.join("|")),
+                    ));
                 }
+            } else if !pspec.closed_values.is_empty() {
+                if let Err(err) = crate::catalog::check_closed_enum(value, pspec.closed_values) {
+                    let message = match err {
+                        crate::catalog::ClosedEnumError::NotAllowed(_) => format!(
+                            ":{pname} must be one of {}",
+                            pspec.closed_values.join("|")
+                        ),
+                        crate::catalog::ClosedEnumError::StringForm(value) => format!(
+                            ":{pname} takes a bare name; write `:{pname}({value})` instead of `:{pname}(\"{value}\")`"
+                        ),
+                    };
+                    return Err(self.err(node, message));
+                }
+            }
+            let ok =
+                crate::catalog::option_accepts(pspec.kind, value, node.ref_prop(pname).is_some());
+            if !ok {
+                let want = crate::catalog::option_expected(pspec.kind);
+                return Err(self.err(node, format!(":{pname} must be {want}")));
             }
         }
         match spec.children {
@@ -1016,12 +1122,16 @@ impl<'a> Checker<'a> {
                     if !allowed.contains(&child.name.as_str()) {
                         return Err(self.err(
                             node,
-                            format!("cannot contain loop::{}; allowed: {}", child.name, allowed.join(", ")),
+                            format!(
+                                "cannot contain loop::{}; allowed: {}",
+                                child.name,
+                                allowed.join(", ")
+                            ),
                         ));
                     }
                 }
             }
-            LoopChildPolicy::None => {}
+            LoopChildPolicy::None | LoopChildPolicy::Any => {}
         }
         Ok(spec)
     }
@@ -1064,26 +1174,45 @@ impl<'a> Checker<'a> {
         Ok(())
     }
 
-    fn check_block(&mut self, steps: &[LoopNode], scope: &mut Scope, in_each: bool) -> Result<(), String> {
+    fn check_block(
+        &mut self,
+        steps: &[LoopNode],
+        scope: &mut Scope,
+        in_each: bool,
+    ) -> Result<(), String> {
         if steps.is_empty() {
-            return Err(format!("loop `{}`: a block must contain at least one step", self.lp.name));
+            return Err(format!(
+                "loop `{}`: a block must contain at least one step",
+                self.lp.name
+            ));
         }
         for (i, step) in steps.iter().enumerate() {
             if LOOP_TRIGGERS.contains(&step.name.as_str()) {
-                return Err(self.err(step, "a trigger must be the first child of loop::flow, and only one is allowed"));
+                return Err(self.err(
+                    step,
+                    "a trigger must be the first child of loop::flow, and only one is allowed",
+                ));
             }
             if !LOOP_STEPS.contains(&step.name.as_str()) {
                 return Err(self.err(step, "is not a step here"));
             }
             if i + 1 < steps.len() && Self::block_terminates(&steps[..=i]) {
-                return Err(self.err(&steps[i + 1], "is unreachable; the previous step always ends the block"));
+                return Err(self.err(
+                    &steps[i + 1],
+                    "is unreachable; the previous step always ends the block",
+                ));
             }
             self.check_step(step, scope, in_each)?;
         }
         Ok(())
     }
 
-    fn check_step(&mut self, step: &LoopNode, scope: &mut Scope, in_each: bool) -> Result<(), String> {
+    fn check_step(
+        &mut self,
+        step: &LoopNode,
+        scope: &mut Scope,
+        in_each: bool,
+    ) -> Result<(), String> {
         self.check_props(step)?;
         match step.name.as_str() {
             "let" => {
@@ -1099,7 +1228,9 @@ impl<'a> Checker<'a> {
                     return Err(self.err(step, format!("unknown resource `{res}`")));
                 };
                 match resource.find_method(cap) {
-                    Some(m) if m.kind == crate::ResourceKind::Query && (cap == "list" || cap == "all") => {}
+                    Some(m)
+                        if m.kind == crate::ResourceKind::Query
+                            && (cap == "list" || cap == "all") => {}
                     _ => {
                         return Err(self.err(step, format!("`{res}.{cap}` is not a list query; declare `query list;` and use `{res}.list`")));
                     }
@@ -1108,11 +1239,17 @@ impl<'a> Checker<'a> {
                 let one = step.has_flag("one");
                 if !one {
                     if step.prop("max").is_none() {
-                        return Err(self.err(step, "requires `:max(N)` (or `:one`) so the read is bounded"));
+                        return Err(self.err(
+                            step,
+                            "requires `:max(N)` (or `:one`) so the read is bounded",
+                        ));
                     }
                     self.check_max(step, "max", MAX_LOOP_LIST)?;
                 } else if step.prop("max").is_some() {
-                    return Err(self.err(step, "`:one` already limits the result to one row; remove `:max`"));
+                    return Err(self.err(
+                        step,
+                        "`:one` already limits the result to one row; remove `:max`",
+                    ));
                 }
                 if let Some(w) = step.prop("where") {
                     self.check_expr(step, scope, Some(&contract), w)?;
@@ -1124,11 +1261,18 @@ impl<'a> Checker<'a> {
                     };
                     let fields = self.contract_fields(&contract).unwrap_or_default();
                     if !field.is_some_and(|f| fields.iter().any(|(n, _)| *n == f)) {
-                        return Err(self.err(step, format!(":order must name a `{contract}` field, e.g. `$.due`")));
+                        return Err(self.err(
+                            step,
+                            format!(":order must name a `{contract}` field, e.g. `$.due`"),
+                        ));
                     }
                 }
                 let name = step.ident_prop("as").unwrap().to_string();
-                let ty = if one { BindTy::Row(contract) } else { BindTy::List(contract) };
+                let ty = if one {
+                    BindTy::Row(contract)
+                } else {
+                    BindTy::List(contract)
+                };
                 self.bind(step, scope, &name, Binding { ty, tainted: false })?;
             }
             "read" => {
@@ -1139,7 +1283,9 @@ impl<'a> Checker<'a> {
                         return Err(self.err(step, "`mcp::call` takes :server and :tool, not :url"));
                     }
                     let Some(server) = step.string_prop("server") else {
-                        return Err(self.err(step, "`mcp::call` requires :server(\"https://.../mcp\")"));
+                        return Err(
+                            self.err(step, "`mcp::call` requires :server(\"https://.../mcp\")")
+                        );
                     };
                     if !(server.starts_with("http://") || server.starts_with("https://")) {
                         return Err(self.err(step, ":server must be an absolute http(s) URL"));
@@ -1155,18 +1301,27 @@ impl<'a> Checker<'a> {
                     }
                     if let Some(env) = step.string_prop("auth_env") {
                         let valid = !env.is_empty()
-                            && env.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+                            && env
+                                .chars()
+                                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
                             && !env.starts_with(|c: char| c.is_ascii_digit());
                         if !valid {
-                            return Err(self.err(step, ":auth_env must be an environment variable name like API_TOKEN"));
+                            return Err(self.err(
+                                step,
+                                ":auth_env must be an environment variable name like API_TOKEN",
+                            ));
                         }
                     }
                     if let Some(sel) = step.string_prop("select") {
                         let valid = sel.split('.').all(|seg| {
-                            !seg.is_empty() && seg.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                            !seg.is_empty()
+                                && seg.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
                         });
                         if !valid {
-                            return Err(self.err(step, ":select must be a dotted field path like \"records.parsed\""));
+                            return Err(self.err(
+                                step,
+                                ":select must be a dotted field path like \"records.parsed\"",
+                            ));
                         }
                     }
                     BindTy::Fields(CALL_FIELDS)
@@ -1208,7 +1363,15 @@ impl<'a> Checker<'a> {
                     self.check_block(&o.children, &mut inner, in_each)?;
                 }
                 let name = step.ident_prop("as").unwrap().to_string();
-                self.bind(step, scope, &name, Binding { ty: BindTy::Row(into), tainted: true })?;
+                self.bind(
+                    step,
+                    scope,
+                    &name,
+                    Binding {
+                        ty: BindTy::Row(into),
+                        tainted: true,
+                    },
+                )?;
             }
             "gate" => {
                 let that = step.prop("that").unwrap();
@@ -1226,9 +1389,16 @@ impl<'a> Checker<'a> {
             "branch" => {
                 let whens = step.children.iter().filter(|c| c.name == "when").count();
                 let last_is_otherwise = step.children.last().is_some_and(|c| c.name == "otherwise");
-                let otherwise_count = step.children.iter().filter(|c| c.name == "otherwise").count();
+                let otherwise_count = step
+                    .children
+                    .iter()
+                    .filter(|c| c.name == "otherwise")
+                    .count();
                 if whens == 0 || otherwise_count != 1 || !last_is_otherwise {
-                    return Err(self.err(step, "needs one or more loop::when arms followed by exactly one loop::otherwise"));
+                    return Err(self.err(
+                        step,
+                        "needs one or more loop::when arms followed by exactly one loop::otherwise",
+                    ));
                 }
                 for arm in &step.children {
                     self.check_props(arm)?;
@@ -1247,13 +1417,24 @@ impl<'a> Checker<'a> {
                     BindTy::List(c) if !c.is_empty() => BindTy::Row(c),
                     BindTy::List(_) => BindTy::Value,
                     _ => {
-                        return Err(self.err(step, ":in must be a list binding (from loop::find or a list field)"));
+                        return Err(self.err(
+                            step,
+                            ":in must be a list binding (from loop::find or a list field)",
+                        ));
                     }
                 };
                 self.check_max(step, "max", MAX_LOOP_LIST)?;
                 let mut inner = scope.clone();
                 let name = step.ident_prop("as").unwrap().to_string();
-                self.bind(step, &mut inner, &name, Binding { ty: item_ty, tainted })?;
+                self.bind(
+                    step,
+                    &mut inner,
+                    &name,
+                    Binding {
+                        ty: item_ty,
+                        tainted,
+                    },
+                )?;
                 self.check_block(&step.children, &mut inner, true)?;
             }
             "write" => {
@@ -1262,7 +1443,9 @@ impl<'a> Checker<'a> {
                     return Err(self.err(step, format!("unknown resource `{res}`")));
                 };
                 match resource.find_method(cap) {
-                    Some(m) if m.kind == crate::ResourceKind::Mutation && (cap == "create" || cap == "update") => {}
+                    Some(m)
+                        if m.kind == crate::ResourceKind::Mutation
+                            && (cap == "create" || cap == "update") => {}
                     _ => {
                         return Err(self.err(step, format!("`{res}.{cap}` is not a create/update mutation; declare `mutation {cap};`")));
                     }
@@ -1276,7 +1459,12 @@ impl<'a> Checker<'a> {
                 match self.expr_ty(scope, value) {
                     BindTy::Row(c) if c == contract => {}
                     _ => {
-                        return Err(self.err(step, format!(":value must be `{contract}.new(...)` or a `{contract}` binding")));
+                        return Err(self.err(
+                            step,
+                            format!(
+                                ":value must be `{contract}.new(...)` or a `{contract}` binding"
+                            ),
+                        ));
                     }
                 }
                 if cap == "update" {
@@ -1303,11 +1491,23 @@ impl<'a> Checker<'a> {
                 if let Some(show) = step.prop("show") {
                     self.check_expr(step, scope, None, show)?;
                 }
-                parse_loop_duration(step.string_prop("within").unwrap()).map_err(|e| self.err(step, e))?;
-                let declined = step.children.iter().filter(|c| c.name == "declined").count();
-                let timed_out = step.children.iter().filter(|c| c.name == "timed_out").count();
+                parse_loop_duration(step.string_prop("within").unwrap())
+                    .map_err(|e| self.err(step, e))?;
+                let declined = step
+                    .children
+                    .iter()
+                    .filter(|c| c.name == "declined")
+                    .count();
+                let timed_out = step
+                    .children
+                    .iter()
+                    .filter(|c| c.name == "timed_out")
+                    .count();
                 if declined != 1 || timed_out != 1 {
-                    return Err(self.err(step, "needs exactly one loop::declined and one loop::timed_out block"));
+                    return Err(self.err(
+                        step,
+                        "needs exactly one loop::declined and one loop::timed_out block",
+                    ));
                 }
                 for arm in &step.children {
                     self.check_props(arm)?;
@@ -1317,7 +1517,15 @@ impl<'a> Checker<'a> {
                 }
                 Self::clear_taint(scope, step.prop("show"), step.string_prop("message"));
                 if let Some(name) = step.ident_prop("as").map(str::to_string) {
-                    self.bind(step, scope, &name, Binding { ty: BindTy::Approval, tainted: false })?;
+                    self.bind(
+                        step,
+                        scope,
+                        &name,
+                        Binding {
+                            ty: BindTy::Approval,
+                            tainted: false,
+                        },
+                    )?;
                 }
             }
             "skip" => {
@@ -1384,20 +1592,51 @@ pub fn validate_loop(program: &Program, lp: &Loop) -> Result<(), String> {
     };
     checker.check_props(trigger)?;
     let mut scope = Scope::new();
-    scope.insert("today".into(), Binding { ty: BindTy::Value, tainted: false });
-    scope.insert("now".into(), Binding { ty: BindTy::Value, tainted: false });
-    scope.insert("calendar".into(), Binding { ty: BindTy::Fields(CALENDAR_FIELDS), tainted: false });
+    scope.insert(
+        "today".into(),
+        Binding {
+            ty: BindTy::Value,
+            tainted: false,
+        },
+    );
+    scope.insert(
+        "now".into(),
+        Binding {
+            ty: BindTy::Value,
+            tainted: false,
+        },
+    );
+    scope.insert(
+        "calendar".into(),
+        Binding {
+            ty: BindTy::Fields(CALENDAR_FIELDS),
+            tainted: false,
+        },
+    );
     match trigger.name.as_str() {
         "schedule" => {
-            validate_cron(trigger.string_prop("cron").unwrap()).map_err(|e| checker.err(trigger, e))?;
+            validate_cron(trigger.string_prop("cron").unwrap())
+                .map_err(|e| checker.err(trigger, e))?;
             validate_tz(trigger.string_prop("tz").unwrap()).map_err(|e| checker.err(trigger, e))?;
             if let Some(c) = trigger.string_prop("catch_up") {
                 parse_loop_duration(c).map_err(|e| checker.err(trigger, e))?;
             }
-            scope.insert("event".into(), Binding { ty: BindTy::Fields(SCHEDULE_EVENT_FIELDS), tainted: false });
+            scope.insert(
+                "event".into(),
+                Binding {
+                    ty: BindTy::Fields(SCHEDULE_EVENT_FIELDS),
+                    tainted: false,
+                },
+            );
         }
         "manual" => {
-            scope.insert("event".into(), Binding { ty: BindTy::Fields(MANUAL_EVENT_FIELDS), tainted: false });
+            scope.insert(
+                "event".into(),
+                Binding {
+                    ty: BindTy::Fields(MANUAL_EVENT_FIELDS),
+                    tainted: false,
+                },
+            );
         }
         "on_mutation" => {
             let res = trigger.ident_prop("resource").unwrap().to_string();
@@ -1405,18 +1644,33 @@ pub fn validate_loop(program: &Program, lp: &Loop) -> Result<(), String> {
             let Some(resource) = program.resources.iter().find(|r| r.name == res) else {
                 return Err(checker.err(trigger, format!("unknown resource `{res}`")));
             };
-            if resource.find_method(mutation).is_none_or(|m| m.kind != crate::ResourceKind::Mutation) {
-                return Err(checker.err(trigger, format!("`{res}` does not declare `mutation {mutation};`")));
+            if resource
+                .find_method(mutation)
+                .is_none_or(|m| m.kind != crate::ResourceKind::Mutation)
+            {
+                return Err(checker.err(
+                    trigger,
+                    format!("`{res}` does not declare `mutation {mutation};`"),
+                ));
             }
             let contract = resource.contract.clone().unwrap_or_default();
-            scope.insert("event".into(), Binding { ty: BindTy::Row(contract), tainted: false });
+            scope.insert(
+                "event".into(),
+                Binding {
+                    ty: BindTy::Row(contract),
+                    tainted: false,
+                },
+            );
             checker.trigger_resource = Some(res);
         }
         _ => unreachable!(),
     }
     let steps = lp.steps();
     if steps.is_empty() {
-        return Err(format!("loop `{}`: loop::flow needs at least one step after the trigger", lp.name));
+        return Err(format!(
+            "loop `{}`: loop::flow needs at least one step after the trigger",
+            lp.name
+        ));
     }
     checker.check_block(steps, &mut scope, false)?;
     Ok(())
@@ -1428,7 +1682,9 @@ pub fn validate_loops(program: &Program) -> Result<(), String> {
         return Ok(());
     }
     if !program.games.is_empty() {
-        return Err("cannot mix `loop` and `game` in one program; game programs are WebGPU-only".into());
+        return Err(
+            "cannot mix `loop` and `game` in one program; game programs are WebGPU-only".into(),
+        );
     }
     for lp in &program.loops {
         if lp.name.starts_with("Loop") {
@@ -1497,11 +1753,21 @@ pub fn format_loop_cost_report(program: &Program) -> Option<String> {
     if program.loops.is_empty() {
         return None;
     }
-    let width = program.loops.iter().map(|l| l.name.len()).max().unwrap_or(0).max(8);
+    let width = program
+        .loops
+        .iter()
+        .map(|l| l.name.len())
+        .max()
+        .unwrap_or(0)
+        .max(8);
     let mut out = String::from("loops (worst case per run, from static bounds):\n");
     for lp in &program.loops {
         let b = loop_bounds(lp);
-        out.push_str(&format!("  {:<width$}  {}\n", lp.name, describe_loop_trigger(lp)));
+        out.push_str(&format!(
+            "  {:<width$}  {}\n",
+            lp.name,
+            describe_loop_trigger(lp)
+        ));
         out.push_str(&format!(
             "  {:<width$}  model calls {} · effects {} (writes {}, notices {}) · approvals {} · reads {} · rows scanned {}\n",
             "",
@@ -1571,7 +1837,11 @@ mod tests {
     #[test]
     fn every_loop_node_and_prop_has_description() {
         for node in LOOP_NODE_CATALOG {
-            assert!(node.description.len() > 40, "loop::{} description too short", node.name);
+            assert!(
+                node.description.len() > 40,
+                "loop::{} description too short",
+                node.name
+            );
             for prop in node.props {
                 assert!(
                     prop.description.len() > 20,
@@ -1606,7 +1876,10 @@ mod tests {
     #[test]
     fn template_placeholders_parse() {
         let p = template_placeholders("{$rfi.id}:remind:{$today}").unwrap();
-        assert_eq!(p, vec![vec!["rfi".to_string(), "id".into()], vec!["today".into()]]);
+        assert_eq!(
+            p,
+            vec![vec!["rfi".to_string(), "id".into()], vec!["today".into()]]
+        );
         assert!(template_placeholders("{$rfi.id").is_err());
         assert!(template_placeholders("{1 + 2}").is_err());
     }

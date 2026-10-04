@@ -131,7 +131,10 @@ fn supervise_loop_kernel(
 ) -> Result<(thread::JoinHandle<()>, Arc<Mutex<Option<Child>>>), String> {
     let bin = output.root.join("go/loop/kernel");
     if !bin.is_file() {
-        return Err(format!("Go loop kernel missing at {} (run `silc build`)", bin.display()));
+        return Err(format!(
+            "Go loop kernel missing at {} (run `silc build`)",
+            bin.display()
+        ));
     }
     let plan = output.root.join("loop/plan.json");
     let socket = socket.to_path_buf();
@@ -404,12 +407,7 @@ pub fn run_game(output: &EmitResult, lock: &RuntimeLock) -> Result<(), String> {
     wait_for_pool(&workers, "go", 1, Duration::from_secs(90))?;
 
     if !mind_refs.is_empty() {
-        if let Err(err) = spawn_game_cognition_worker(
-            output,
-            lock,
-            &mut children,
-            cognition_port,
-        ) {
+        if let Err(err) = spawn_game_cognition_worker(output, lock, &mut children, cognition_port) {
             eprintln!("silc: game cognition worker skipped ({err}); Bun fallback remains active");
         }
     }
@@ -468,9 +466,7 @@ pub fn run_game(output: &EmitResult, lock: &RuntimeLock) -> Result<(), String> {
 fn game_mind_refs(output: &EmitResult) -> Vec<String> {
     let candidates = [
         output.root.join("python/bake_plan.json"),
-        output
-            .root
-            .join("typescript/public/baked/game_bake.json"),
+        output.root.join("typescript/public/baked/game_bake.json"),
     ];
     for path in candidates {
         let Ok(raw) = fs::read_to_string(&path) else {
@@ -915,7 +911,7 @@ pub fn run_api(output: &EmitResult, _lock: &RuntimeLock) -> Result<(), String> {
     let graph = output
         .graph
         .as_ref()
-        .ok_or_else(|| "program is not executable in Silc 0.5.0".to_string())?;
+        .ok_or_else(|| "program is not executable in Silc 0.6.0".to_string())?;
     if !graph.is_api_only() {
         return Err("run_api requires an API-only service::http program".into());
     }
@@ -982,7 +978,7 @@ pub fn run_loop_command(output: &EmitResult, lock: &RuntimeLock) -> Result<(), S
     let graph = output
         .graph
         .as_ref()
-        .ok_or_else(|| "program is not executable in Silc 0.5.0".to_string())?;
+        .ok_or_else(|| "program is not executable in Silc 0.6.0".to_string())?;
     if !graph.is_loop_command() {
         return Err("internal: run_loop_command needs a loop command program".into());
     }
@@ -1037,7 +1033,15 @@ pub fn run_loop_command(output: &EmitResult, lock: &RuntimeLock) -> Result<(), S
         let model_id = graph.model_ref.clone();
         let listener = listener.try_clone().map_err(|e| e.to_string())?;
         thread::spawn(move || {
-            accept_loop(listener, workers, pending, pool, stop, processor_op, model_id)
+            accept_loop(
+                listener,
+                workers,
+                pending,
+                pool,
+                stop,
+                processor_op,
+                model_id,
+            )
         })
     };
 
@@ -1123,7 +1127,7 @@ fn run_graph(
     let graph = output
         .graph
         .as_ref()
-        .ok_or_else(|| "program is not executable in Silc 0.5.0".to_string())?;
+        .ok_or_else(|| "program is not executable in Silc 0.6.0".to_string())?;
     if graph.is_api_only() {
         return run_api(output, lock);
     }

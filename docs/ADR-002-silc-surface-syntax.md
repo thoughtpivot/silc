@@ -61,8 +61,8 @@ Author `sink`, `method serve()`, and IPC/store/resource pipelines were removed
 in 0.4.0 — see [ADR-009](ADR-009-compiler-synthesized-runtime.md).
 
 `@domain` is not part of the grammar. Routing derives from module kinds, hard
-constraints, and operation namespaces. Source must declare exact
-`@version("0.4.0")` matching the compiler package version.
+constraints, and operation namespaces. Source must declare an exact
+`@version("…")` matching the compiler package version (`0.5.0` today).
 
 ## Selected Raku ideas (retained)
 
@@ -182,7 +182,7 @@ Pre-0.4.0 programs authored `method serve() { ui::web … ==> ui::terminal … }
 `sink` modules, and `resource::*` / `ipc::*` / `store::*` pipelines. Those
 forms are rejected by the 0.4.0 parser; see ADR-009.
 
-The exhaustive agent-facing contract (types, ops, 38-primitive UI catalog) lives
+The exhaustive agent-facing contract (types, operations, the UI primitive catalog) lives
 in [`crates/silc/templates/AGENTS.md`](../crates/silc/templates/AGENTS.md) and is
 mirrored in the root [README](../README.md).
 

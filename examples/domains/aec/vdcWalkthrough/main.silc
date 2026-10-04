@@ -1,0 +1,45 @@
+#!/usr/bin/env silc
+@version("0.6.0")
+
+scene ProjectWalkthrough {
+    scene::scene(
+        :title("Project Walkthrough"),
+        :renderer(webgpu),
+        scene::asset(
+            :name("project_model"),
+            :path("public/assets/project.glb"),
+            :kind(gltf)
+        ),
+        scene::entity(
+            :name("ProjectModel"),
+            scene::mesh(:asset("project_model"))
+        ),
+        scene::entity(
+            :name("Ground"),
+            :y(0),
+            scene::mesh(:shape(plane), :size(80), :color("#aeb8ae")),
+            scene::collider(:shape(plane), :size(80))
+        ),
+        scene::entity(
+            :name("Sun"),
+            scene::light(:kind(directional), :intensity(1.1))
+        ),
+        scene::prefab(
+            :name("Viewer"),
+            scene::mesh(:shape(capsule), :size(1.8)),
+            scene::collider(:shape(capsule), :size(1.8)),
+            scene::movement(:style(first_person), :speed(4.5)),
+            game::pawn()
+        ),
+        scene::spawn(:prefab("Viewer"), :x(0), :y(1), :z(6), :as_pawn),
+        game::mode(:id("walkthrough"), :possess("Viewer")),
+        scene::controller(:scheme(wasd_mouse)),
+        scene::camera(:mode(first_person), :follow(pawn)),
+        scene::environment(
+            :fog_density(0.002),
+            :fog_color("#d8dde2"),
+            :sky_color("#9fb6cc"),
+            :exposure(1.0)
+        )
+    )
+}

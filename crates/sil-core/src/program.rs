@@ -1,4 +1,4 @@
-//! A Silc 0.5.0 program: contracts, modules, components, resources, and apps.
+//! A Silc 0.6.0 program: contracts, modules, components, resources, and apps.
 
 use crate::app::App;
 use crate::component::{Component, UiTemplate};
@@ -24,10 +24,38 @@ pub struct Program {
     pub loops: Vec<Loop>,
 }
 
+fn collect_renamed_kernel(node: &crate::game::GameNode, out: &mut Vec<String>) {
+    let expected = crate::game::node_namespace(&node.name);
+    if node.namespace != expected {
+        let item = format!(
+            "`{}::{}` → `{}::{}`",
+            node.namespace, node.name, expected, node.name
+        );
+        if !out.iter().any(|existing| existing == &item) {
+            out.push(item);
+        }
+    }
+    for child in &node.children {
+        collect_renamed_kernel(child, out);
+    }
+}
+
 impl Program {
     pub fn validate_source_version(&self, expected: &str) -> Result<(), String> {
         match self.version.as_deref() {
             Some(actual) if actual == expected => Ok(()),
+            Some("0.5.0") => {
+                let renamed = self.renamed_kernel_nodes();
+                if renamed.is_empty() {
+                    Err(format!(
+                        "source declares Silc 0.5.0; migrate to `@version(\"{expected}\")`"
+                    ))
+                } else {
+                    Err(format!(
+                        "source declares Silc 0.5.0; migrate to `@version(\"{expected}\")`. Renamed nodes: {renamed}"
+                    ))
+                }
+            }
             Some(actual) => Err(format!(
                 "source declares Silc {actual}; migrate to `@version(\"{expected}\")`"
             )),
@@ -35,6 +63,17 @@ impl Program {
                 "source is missing a version; add `@version(\"{expected}\")`"
             )),
         }
+    }
+
+    /// Kernel nodes still written `game::` in a 0.5.0 program.
+    ///
+    /// Each entry is `` `game::name` → `scene::name` ``, in source order, once.
+    pub fn renamed_kernel_nodes(&self) -> String {
+        let mut renamed = Vec::new();
+        for game in &self.games {
+            collect_renamed_kernel(&game.root, &mut renamed);
+        }
+        renamed.join("; ")
     }
 
     pub fn all_components(&self) -> impl Iterator<Item = &Component> {
@@ -92,8 +131,7 @@ impl Program {
         }
         if !self.games.is_empty() && !self.apps.is_empty() {
             return Err(
-                "cannot mix `game` and `app` in one program; game programs are WebGPU-only"
-                    .into(),
+                "cannot mix `game` and `app` in one program; game programs are WebGPU-only".into(),
             );
         }
         if self.games.len() > 1 {
@@ -387,7 +425,7 @@ fn reject_author_runtime_mechanics(program: &Program) -> Result<(), String> {
         return Ok(());
     }
     Err(format!(
-        "runtime mechanics are compiler-owned in Silc 0.5.0 and must not appear in source ({}); remove `method serve()`, `sink`, `ipc::*`, `store::*`, and `resource::*` pipelines — declare `app` routes, `resource Name for Contract {{ query/mutation; }}`, and processor workflows only",
+        "runtime mechanics are compiler-owned in Silc 0.6.0 and must not appear in source ({}); remove `method serve()`, `sink`, `ipc::*`, `store::*`, and `resource::*` pipelines — declare `app` routes, `resource Name for Contract {{ query/mutation; }}`, and processor workflows only",
         forbidden.join(", ")
     ))
 }
@@ -409,7 +447,7 @@ fn validate_component_template(
                 for prop in &target.props {
                     if prop.default.is_none() && node.prop(&prop.name).is_none() {
                         return Err(format!(
-                            "component `{}` invocation in `{}` is missing required prop `:{}`",
+                            "component `{}` invocation in `{}` is missing required option `:{}`",
                             target.name, owner.name, prop.name
                         ));
                     }
@@ -417,7 +455,7 @@ fn validate_component_template(
                 for (name, _) in &node.props {
                     if !target.props.iter().any(|prop| prop.name == *name) {
                         return Err(format!(
-                            "unknown prop `:{name}` on component `{}`",
+                            "unknown option `:{name}` on component `{}`",
                             target.name
                         ));
                     }
@@ -648,4 +686,62 @@ fn validate_handler_expr(
         | Expr::Navigate { .. } => {}
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::game::GameNode;
+    use crate::types::Span;
+
+    fn node(namespace: &str, name: &str, children: Vec<GameNode>) -> GameNode {
+        GameNode {
+            name: name.into(),
+            namespace: namespace.into(),
+            name_span: Span::default(),
+            props: vec![],
+            prop_spans: vec![],
+            children,
+            span: Span::default(),
+        }
+    }
+
+    #[test]
+    fn version_0_5_0_lists_only_renamed_kernel_nodes() {
+        let program = Program {
+            version: Some("0.5.0".into()),
+            games: vec![Game {
+                name: "Arena".into(),
+                span: Span::default(),
+                root: node(
+                    "game",
+                    "scene",
+                    vec![
+                        node("game", "entity", vec![node("game", "mesh", vec![])]),
+                        node("game", "pawn", vec![]),
+                    ],
+                ),
+            }],
+            ..Program::default()
+        };
+        let err = program.validate_source_version("0.6.0").unwrap_err();
+        assert!(
+            err.contains("Renamed nodes: `game::scene` → `scene::scene`; `game::entity` → `scene::entity`; `game::mesh` → `scene::mesh`"),
+            "{err}"
+        );
+        assert!(!err.contains("pawn"), "{err}");
+    }
+
+    #[test]
+    fn version_0_5_0_without_kernel_nodes_is_a_plain_migration() {
+        let program = Program {
+            version: Some("0.5.0".into()),
+            ..Program::default()
+        };
+        let err = program.validate_source_version("0.6.0").unwrap_err();
+        assert_eq!(
+            err,
+            "source declares Silc 0.5.0; migrate to `@version(\"0.6.0\")`"
+        );
+    }
 }

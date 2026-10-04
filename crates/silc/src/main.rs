@@ -60,6 +60,8 @@ enum Commands {
         /// Path to the `.silc` entry file
         path: PathBuf,
     },
+    /// Print the generated catalog sections (the AGENTS.md contract)
+    Docs,
     /// Run a pipeline-only program with JSON input
     Run {
         /// Path to the `.silc` entry file
@@ -134,6 +136,13 @@ fn main() {
                 eprintln!("silc: {err}");
                 process::exit(1);
             }
+        }
+        Some(Commands::Docs) => {
+            for spec in sil_core::UI_COMPONENT_CATALOG {
+                println!("{}", sil_core::format_component_catalog_line(spec));
+            }
+            println!("{}", sil_core::format_game_catalog_md());
+            println!("{}", sil_core::format_loop_catalog_md());
         }
         Some(Commands::Build { path }) => {
             if let Err(err) = build_only(&path) {
@@ -232,7 +241,7 @@ fn compile_and_run_pipeline(entry: &Path, input_json: &str) -> Result<(), String
     let graph = output
         .graph
         .as_ref()
-        .ok_or_else(|| "program is not executable in Silc 0.5.0".to_string())?;
+        .ok_or_else(|| "program is not executable in Silc 0.6.0".to_string())?;
     if !graph.is_pipeline_only() {
         return Err("`silc run --input-*` requires a pipeline-only program".into());
     }
@@ -250,7 +259,7 @@ fn build_only(entry: &Path) -> Result<(), String> {
         println!("go:      {}", lock.go_bin.display());
         println!("engines locked under .silc/runtimes.lock.json");
     } else {
-        println!("stub emit only — this program is not executable in Silc 0.5.0");
+        println!("stub emit only — this program is not executable in Silc 0.6.0");
     }
     if let Some(report) = &output.loop_report {
         print!("{report}");
@@ -434,10 +443,7 @@ fn compile_common(
 }
 
 fn is_loop_command(output: &sil_codegen::EmitResult) -> bool {
-    output
-        .graph
-        .as_ref()
-        .is_some_and(|g| g.is_loop_command())
+    output.graph.as_ref().is_some_and(|g| g.is_loop_command())
 }
 
 fn status_line(to_stderr: bool, line: &str) {

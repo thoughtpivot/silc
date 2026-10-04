@@ -23,6 +23,10 @@ pub enum Token {
     App,
     #[token("game")]
     Game,
+    #[token("scene")]
+    Scene,
+    #[token("loop")]
+    Loop,
     #[token("service")]
     Service,
     #[token("processor")]

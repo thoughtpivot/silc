@@ -4,9 +4,7 @@ mod docs;
 mod document;
 mod resolve;
 
-pub use docs::{
-    builtin_type_doc, keyword_doc, operator_doc, BUILTIN_TYPE_NAMES, KEYWORD_NAMES,
-};
+pub use docs::{builtin_type_doc, keyword_doc, operator_doc, BUILTIN_TYPE_NAMES, KEYWORD_NAMES};
 pub use document::{Document, HoverContent, HoverRange};
 pub use resolve::resolve_hover;
 

@@ -1,0 +1,184 @@
+#!/usr/bin/env silc
+# RFI chase: every weekday morning, draft reminders for overdue RFIs,
+# ask the project manager, then record the reminder exactly once.
+@version("0.6.0")
+
+contract Rfi {
+    has Str $.id;
+    has Str $.number;
+    has Str $.title;
+    has Str $.status;
+    has Str $.due;
+    has Str $.assignee;
+    has Str $.pm;
+    has Str $.last_reminded;
+}
+
+contract Reminder {
+    has Str $.id;
+    has Str $.rfi;
+    has Str $.to;
+    has Str $.subject;
+    has Str $.body;
+}
+
+contract ReminderDraft {
+    has Str $.subject;
+    has Str $.body;
+}
+
+resource Rfis for Rfi {
+    query list;
+    mutation create;
+    mutation update;
+    seed Rfi.new(:id("rfi-101"), :number("RFI-101"), :title("Curtain wall anchor spacing"), :status("open"), :due("2026-09-28"), :assignee("Dana Ortiz"), :pm("Sam Lee"), :last_reminded(""));
+    seed Rfi.new(:id("rfi-102"), :number("RFI-102"), :title("Level 3 slab penetration"), :status("open"), :due("2026-09-30"), :assignee(""), :pm("Sam Lee"), :last_reminded(""));
+    seed Rfi.new(:id("rfi-103"), :number("RFI-103"), :title("Lobby finish schedule"), :status("closed"), :due("2026-09-15"), :assignee("Ira Chen"), :pm("Sam Lee"), :last_reminded(""));
+}
+
+resource Reminders for Reminder {
+    query list;
+    mutation create;
+}
+
+loop RfiChase {
+    loop::flow(
+        loop::schedule(:cron("0 8 * * 1-5"), :tz("America/New_York"), :catch_up("4h")),
+        loop::find(
+            :as(overdue),
+            :from(Rfis.list),
+            :where($.status == "open" && $.due < $today),
+            :order($.due),
+            :max(200)
+        ),
+        loop::each(:in($overdue), :as(rfi), :max(200),
+            loop::gate(
+                :that($rfi.assignee != ""),
+                :reason("an RFI needs an assignee before anyone is chased"),
+                loop::otherwise(loop::skip(:reason("{$rfi.number} has no assignee")))
+            ),
+            loop::ask(
+                :as(draft),
+                :into(ReminderDraft),
+                :from($rfi),
+                :retry(2),
+                :prompt("Write a short, polite reminder to {$rfi.assignee} that {$rfi.number} ({$rfi.title}) was due {$rfi.due}."),
+                loop::otherwise(loop::fail(:reason("could not draft a reminder for {$rfi.number}")))
+            ),
+            loop::approve(
+                :as(decision),
+                :by("{$rfi.pm}"),
+                :message("Send this reminder for {$rfi.number} to {$rfi.assignee}?"),
+                :show($draft),
+                :within("1d"),
+                loop::declined(loop::skip(:reason("{$rfi.pm} declined the reminder"))),
+                loop::timed_out(loop::skip(:reason("no decision within a day")))
+            ),
+            loop::write(
+                :to(Reminders.create),
+                :key("{$rfi.id}:remind:{$today}"),
+                :value(Reminder.new(:rfi($rfi.id), :to($rfi.assignee), :subject($draft.subject), :body($draft.body)))
+            ),
+            loop::write(
+                :to(Rfis.update),
+                :key("{$rfi.id}:stamp:{$today}"),
+                :value(Rfi.new(:id($rfi.id), :last_reminded($today)))
+            ),
+            loop::notify(
+                :to("{$rfi.assignee}"),
+                :text("Reminder for {$rfi.number}: {$draft.subject}"),
+                :key("{$rfi.id}:notice:{$today}")
+            )
+        )
+    )
+}
+
+loop OpenRfiDigest {
+    loop::flow(
+        loop::manual(),
+        loop::find(:as(open), :from(Rfis.list), :where($.status == "open"), :max(500)),
+        loop::branch(
+            loop::when(:that($open.count == 0), loop::stop(:reason("no open RFIs"))),
+            loop::otherwise(
+                loop::notify(
+                    :to("project team"),
+                    :text("{$open.count} RFIs are open as of {$today}."),
+                    :key("digest:{$event.requested_at}")
+                )
+            )
+        )
+    )
+}
+
+component RfiBoard {
+    has state Str $.number = "";
+    has state Str $.title = "";
+    has state Str $.due = "";
+    has state Str $.assignee = "";
+    has state Str $.pm = "";
+    query $.rfis = Rfis.list();
+    query $.reminders = Reminders.list();
+
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("RFI Chase"))),
+            :side_panel(ui::side_panel(
+                ui::nav_item(:label("RFIs"), :to("/"), :active),
+                ui::nav_item(:label("Loops"), :to("/loops"))
+            )),
+            ui::stack(
+                ui::section(
+                    :title("Open RFIs"),
+                    :description("Every weekday at 8:00 New York time, RfiChase drafts reminders for overdue RFIs and asks the PM in Loops."),
+                    ui::table(
+                        :rows($.rfis),
+                        :columns(["number", "title", "status", "due", "assignee", "pm", "last_reminded"]),
+                        :empty_text("No RFIs yet."),
+                        :sortable
+                    )
+                ),
+                ui::section(
+                    :title("Log an RFI"),
+                    ui::form(:on(submit(on_create)),
+                        ui::text_input(:field(number), :label("Number")),
+                        ui::text_input(:field(title), :label("Title")),
+                        ui::text_input(:field(due), :label("Due (YYYY-MM-DD)")),
+                        ui::text_input(:field(assignee), :label("Assignee")),
+                        ui::text_input(:field(pm), :label("Project manager")),
+                        ui::toolbar(ui::button(:label("Add RFI"), :variant(primary), :submit))
+                    )
+                ),
+                ui::section(
+                    :title("Reminders sent"),
+                    ui::table(
+                        :rows($.reminders),
+                        :columns(["rfi", "to", "subject", "body"]),
+                        :empty_text("No reminders yet.")
+                    )
+                )
+            )
+        )
+    }
+
+    method on_create() {
+        Rfis.create(Rfi.new(
+            :number($.number),
+            :title($.title),
+            :status("open"),
+            :due($.due),
+            :assignee($.assignee),
+            :pm($.pm),
+            :last_reminded("")
+        ));
+        Rfis.list();
+        $.number = "";
+        $.title = "";
+        $.due = "";
+        $.assignee = "";
+        $.pm = "";
+    }
+}
+
+app RfiChaseApp {
+    route "/" => RfiBoard;
+}
