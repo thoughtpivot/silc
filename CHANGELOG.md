@@ -55,6 +55,11 @@ Entries before 0.5.0 are reconstructed from the commit history.
 
 ### Fixed
 
+- THO-121: exiting `silc` tears down the worker tree (Go loop kernel, Bun, CPython)
+  so children are not reparented to pid 1. Workers join a dedicated process group and
+  receive `PR_SET_PDEATHSIG` on Linux. A second loop kernel refuses an `app.db` that
+  already has a live kernel via an exclusive flock on `app.db.kernel.lock`; stale
+  locks from dead processes do not block restart.
 - ADR-002 / ADR-009 no longer state `@version("0.4.0")` as the required pragma.
 - ARCHITECTURE.md lists the actual `sil-core` modules, the `Game` and `Loop`
   subjects, and the `sil-ide` / `sil-lsp` crates.
