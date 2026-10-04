@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 description = "Silc language server (LSP)"
+publish = false
 
 [[bin]]
 name = "sil-lsp"

@@ -3,8 +3,14 @@ name = "sil-router"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 authors.workspace = true
+rust-version.workspace = true
 description = "Silc semantic router (Go / Python / Bun-TypeScript) — stub"
+readme = "README.md"
+keywords = ["silc", "compiler", "router", "codegen", "runtime"]
+categories = ["compilers"]
 
 [dependencies]
 sil-core = { workspace = true }

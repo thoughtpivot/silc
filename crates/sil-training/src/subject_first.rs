@@ -347,17 +347,17 @@ pub fn baseline_fixture_trials() -> Vec<BenchTrial> {
         (
             "shopping_crud",
             "resources",
-            include_str!("../../silc/tests/fixtures/shopping_app.silc"),
+            include_str!("../fixtures/shopping_app.silc"),
         ),
         (
             "scored_form",
             "form",
-            include_str!("../../silc/tests/fixtures/scored_form.silc"),
+            include_str!("../fixtures/scored_form.silc"),
         ),
         (
             "data_pipeline",
             "pipeline",
-            include_str!("../../silc/tests/fixtures/data_pipeline_runnable.silc"),
+            include_str!("../fixtures/data_pipeline_runnable.silc"),
         ),
     ];
     let mut trials = Vec::new();
@@ -448,6 +448,7 @@ pub fn run_benchmark(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     #[test]
     fn builds_paired_prompts() {
@@ -484,6 +485,45 @@ app Notes {
 }
 "#;
         assert!(check_source(source, None).is_ok());
+    }
+
+    #[test]
+    fn vendored_fixtures_match_workspace_when_present() {
+        let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let workspace = crate_dir.join("../..");
+        let pairs = [
+            (
+                "fixtures/shopping_app.silc",
+                "crates/silc/tests/fixtures/shopping_app.silc",
+            ),
+            (
+                "fixtures/scored_form.silc",
+                "crates/silc/tests/fixtures/scored_form.silc",
+            ),
+            (
+                "fixtures/data_pipeline_runnable.silc",
+                "crates/silc/tests/fixtures/data_pipeline_runnable.silc",
+            ),
+        ];
+        let mut compared = 0usize;
+        for (vendored, source) in pairs {
+            let src = workspace.join(source);
+            if !src.is_file() {
+                continue;
+            }
+            compared += 1;
+            let vendored_body = fs::read_to_string(crate_dir.join(vendored)).unwrap();
+            let source_body = fs::read_to_string(&src).unwrap();
+            assert_eq!(
+                vendored_body, source_body,
+                "vendored fixture drifted: {vendored} vs {source}"
+            );
+        }
+        assert!(
+            compared == 0 || compared == pairs.len(),
+            "partial workspace fixtures; compared {compared}/{}",
+            pairs.len()
+        );
     }
 
     #[test]

@@ -11,14 +11,11 @@ use console::{style, Emoji};
 use indicatif::{ProgressBar, ProgressStyle};
 use sil_rlm::{
     run_assist, truncate_one_line, ActionKind, AssistSeed, Budgets, ChatReply, ChatRequest,
-    Completer, Corpus, ProgressEvent, ProgressReporter,
+    Completer, Corpus, ProgressEvent, ProgressReporter, ASSIST_COMPLETE_PY, ASSIST_REQUIREMENTS,
 };
 
 use crate::models::ensure_model;
 use crate::runtimes::{cache_root, ensure_runtimes};
-
-const ASSIST_REQUIREMENTS: &str = include_str!("../../sil-rlm/templates/requirements.txt");
-const ASSIST_COMPLETE_PY: &str = include_str!("../../sil-rlm/templates/assist_complete.py");
 
 static SPARKLE: Emoji<'_, '_> = Emoji("✦ ", "* ");
 static SEARCH: Emoji<'_, '_> = Emoji("⌕ ", "> ");

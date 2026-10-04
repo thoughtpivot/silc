@@ -25,105 +25,107 @@ impl Corpus {
     /// Built-in Silc authoring corpus embedded at compile time.
     pub fn builtin() -> Self {
         let mut corpus = Self::new();
-        corpus.insert("agents", include_str!("../../silc/templates/AGENTS.md"));
+        // Vendored copies so this crate packages for crates.io without
+        // workspace-relative include_str paths.
+        corpus.insert("agents", include_str!("../corpus/agents.md"));
         corpus.insert(
             "example/chatApp/main.silc",
-            include_str!("../../../examples/core/chatApp/main.silc"),
+            include_str!("../corpus/examples/chatApp/main.silc"),
         );
         corpus.insert(
             "example/chatApp/AGENTS.md",
-            include_str!("../../../examples/core/chatApp/AGENTS.md"),
+            include_str!("../corpus/examples/chatApp/AGENTS.md"),
         );
         corpus.insert(
             "example/inventoryApp/main.silc",
-            include_str!("../../../examples/core/inventoryApp/main.silc"),
+            include_str!("../corpus/examples/inventoryApp/main.silc"),
         );
         corpus.insert(
             "example/inventoryApp/AGENTS.md",
-            include_str!("../../../examples/core/inventoryApp/AGENTS.md"),
+            include_str!("../corpus/examples/inventoryApp/AGENTS.md"),
         );
         corpus.insert(
             "example/scraperApp/main.silc",
-            include_str!("../../../examples/core/scraperApp/main.silc"),
+            include_str!("../corpus/examples/scraperApp/main.silc"),
         );
         corpus.insert(
             "example/scraperApp/AGENTS.md",
-            include_str!("../../../examples/core/scraperApp/AGENTS.md"),
+            include_str!("../corpus/examples/scraperApp/AGENTS.md"),
         );
         corpus.insert(
             "example/pipelineApp/main.silc",
-            include_str!("../../../examples/core/pipelineApp/main.silc"),
+            include_str!("../corpus/examples/pipelineApp/main.silc"),
         );
         corpus.insert(
             "example/pipelineApp/AGENTS.md",
-            include_str!("../../../examples/core/pipelineApp/AGENTS.md"),
+            include_str!("../corpus/examples/pipelineApp/AGENTS.md"),
         );
         corpus.insert(
             "example/blogApp/main.silc",
-            include_str!("../../../examples/core/blogApp/main.silc"),
+            include_str!("../corpus/examples/blogApp/main.silc"),
         );
         corpus.insert(
             "example/blogApp/AGENTS.md",
-            include_str!("../../../examples/core/blogApp/AGENTS.md"),
+            include_str!("../corpus/examples/blogApp/AGENTS.md"),
         );
         corpus.insert(
             "example/dataExtractorApp/main.silc",
-            include_str!("../../../examples/core/dataExtractorApp/main.silc"),
+            include_str!("../corpus/examples/dataExtractorApp/main.silc"),
         );
         corpus.insert(
             "example/dataExtractorApp/AGENTS.md",
-            include_str!("../../../examples/core/dataExtractorApp/AGENTS.md"),
+            include_str!("../corpus/examples/dataExtractorApp/AGENTS.md"),
         );
         corpus.insert(
             "example/arenaGameApp/main.silc",
-            include_str!("../../../examples/core/arenaGameApp/main.silc"),
+            include_str!("../corpus/examples/arenaGameApp/main.silc"),
         );
         corpus.insert(
             "example/arenaGameApp/AGENTS.md",
-            include_str!("../../../examples/core/arenaGameApp/AGENTS.md"),
+            include_str!("../corpus/examples/arenaGameApp/AGENTS.md"),
         );
         corpus.insert(
             "example/hotelSignupApp/main.silc",
-            include_str!("../../../examples/core/hotelSignupApp/main.silc"),
+            include_str!("../corpus/examples/hotelSignupApp/main.silc"),
         );
         corpus.insert(
             "example/hotelSignupApp/AGENTS.md",
-            include_str!("../../../examples/core/hotelSignupApp/AGENTS.md"),
+            include_str!("../corpus/examples/hotelSignupApp/AGENTS.md"),
         );
         corpus.insert(
             "example/platformGameApp/main.silc",
-            include_str!("../../../examples/core/platformGameApp/main.silc"),
+            include_str!("../corpus/examples/platformGameApp/main.silc"),
         );
         corpus.insert(
             "example/platformGameApp/AGENTS.md",
-            include_str!("../../../examples/core/platformGameApp/AGENTS.md"),
+            include_str!("../corpus/examples/platformGameApp/AGENTS.md"),
         );
         corpus.insert(
             "example/mcpLoopApp/main.silc",
-            include_str!("../../../examples/core/mcpLoopApp/main.silc"),
+            include_str!("../corpus/examples/mcpLoopApp/main.silc"),
         );
         corpus.insert(
             "example/mcpLoopApp/AGENTS.md",
-            include_str!("../../../examples/core/mcpLoopApp/AGENTS.md"),
+            include_str!("../corpus/examples/mcpLoopApp/AGENTS.md"),
         );
         // The `silc init` starter: the smallest known-good program, used as the
         // skeleton to adapt when assist creates a file from scratch.
-        corpus.insert("starter", include_str!("../../silc/templates/main.silc"));
+        corpus.insert("starter", include_str!("../corpus/starter.silc"));
         corpus.insert(
             "fixture/scored_form.silc",
-            include_str!("../../silc/tests/fixtures/scored_form.silc"),
+            include_str!("../corpus/fixtures/scored_form.silc"),
         );
         corpus.insert(
             "fixture/shopping_app.silc",
-            include_str!("../../silc/tests/fixtures/shopping_app.silc"),
+            include_str!("../corpus/fixtures/shopping_app.silc"),
         );
         corpus.insert(
             "fixture/data_pipeline.silc",
-            include_str!("../../silc/tests/fixtures/data_pipeline.silc"),
+            include_str!("../corpus/fixtures/data_pipeline.silc"),
         );
         corpus.insert(
             "fixture/data_pipeline_runnable.silc",
-            include_str!("../../silc/tests/fixtures/data_pipeline_runnable.silc"),
+            include_str!("../corpus/fixtures/data_pipeline_runnable.silc"),
         );
         corpus
     }
@@ -313,6 +315,7 @@ fn truncate(s: &str, max: usize) -> String {
 mod tests {
     use super::*;
     use std::io::Write;
+    use std::path::PathBuf;
 
     #[test]
     fn builtin_has_agents_and_examples() {
@@ -336,6 +339,131 @@ mod tests {
             .contains("scene::scene"));
         assert!(c.get("example/arenaGameApp/AGENTS.md").is_some());
         assert!(c.len() >= 17);
+    }
+
+    #[test]
+    fn vendored_corpus_matches_workspace_when_present() {
+        let crate_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let workspace = crate_dir.join("../..");
+        let pairs = [
+            ("corpus/agents.md", "crates/silc/templates/AGENTS.md"),
+            ("corpus/starter.silc", "crates/silc/templates/main.silc"),
+            (
+                "corpus/examples/chatApp/main.silc",
+                "examples/core/chatApp/main.silc",
+            ),
+            (
+                "corpus/examples/chatApp/AGENTS.md",
+                "examples/core/chatApp/AGENTS.md",
+            ),
+            (
+                "corpus/examples/inventoryApp/main.silc",
+                "examples/core/inventoryApp/main.silc",
+            ),
+            (
+                "corpus/examples/inventoryApp/AGENTS.md",
+                "examples/core/inventoryApp/AGENTS.md",
+            ),
+            (
+                "corpus/examples/scraperApp/main.silc",
+                "examples/core/scraperApp/main.silc",
+            ),
+            (
+                "corpus/examples/scraperApp/AGENTS.md",
+                "examples/core/scraperApp/AGENTS.md",
+            ),
+            (
+                "corpus/examples/pipelineApp/main.silc",
+                "examples/core/pipelineApp/main.silc",
+            ),
+            (
+                "corpus/examples/pipelineApp/AGENTS.md",
+                "examples/core/pipelineApp/AGENTS.md",
+            ),
+            (
+                "corpus/examples/blogApp/main.silc",
+                "examples/core/blogApp/main.silc",
+            ),
+            (
+                "corpus/examples/blogApp/AGENTS.md",
+                "examples/core/blogApp/AGENTS.md",
+            ),
+            (
+                "corpus/examples/dataExtractorApp/main.silc",
+                "examples/core/dataExtractorApp/main.silc",
+            ),
+            (
+                "corpus/examples/dataExtractorApp/AGENTS.md",
+                "examples/core/dataExtractorApp/AGENTS.md",
+            ),
+            (
+                "corpus/examples/arenaGameApp/main.silc",
+                "examples/core/arenaGameApp/main.silc",
+            ),
+            (
+                "corpus/examples/arenaGameApp/AGENTS.md",
+                "examples/core/arenaGameApp/AGENTS.md",
+            ),
+            (
+                "corpus/examples/hotelSignupApp/main.silc",
+                "examples/core/hotelSignupApp/main.silc",
+            ),
+            (
+                "corpus/examples/hotelSignupApp/AGENTS.md",
+                "examples/core/hotelSignupApp/AGENTS.md",
+            ),
+            (
+                "corpus/examples/platformGameApp/main.silc",
+                "examples/core/platformGameApp/main.silc",
+            ),
+            (
+                "corpus/examples/platformGameApp/AGENTS.md",
+                "examples/core/platformGameApp/AGENTS.md",
+            ),
+            (
+                "corpus/examples/mcpLoopApp/main.silc",
+                "examples/core/mcpLoopApp/main.silc",
+            ),
+            (
+                "corpus/examples/mcpLoopApp/AGENTS.md",
+                "examples/core/mcpLoopApp/AGENTS.md",
+            ),
+            (
+                "corpus/fixtures/scored_form.silc",
+                "crates/silc/tests/fixtures/scored_form.silc",
+            ),
+            (
+                "corpus/fixtures/shopping_app.silc",
+                "crates/silc/tests/fixtures/shopping_app.silc",
+            ),
+            (
+                "corpus/fixtures/data_pipeline.silc",
+                "crates/silc/tests/fixtures/data_pipeline.silc",
+            ),
+            (
+                "corpus/fixtures/data_pipeline_runnable.silc",
+                "crates/silc/tests/fixtures/data_pipeline_runnable.silc",
+            ),
+        ];
+        let mut compared = 0usize;
+        for (vendored, source) in pairs {
+            let src = workspace.join(source);
+            if !src.is_file() {
+                continue;
+            }
+            compared += 1;
+            let vendored_body = fs::read_to_string(crate_dir.join(vendored)).unwrap();
+            let source_body = fs::read_to_string(&src).unwrap();
+            assert_eq!(
+                vendored_body, source_body,
+                "vendored corpus drifted: {vendored} vs {source}"
+            );
+        }
+        assert!(
+            compared == 0 || compared == pairs.len(),
+            "partial workspace corpus; compared {compared}/{}",
+            pairs.len()
+        );
     }
 
     #[test]

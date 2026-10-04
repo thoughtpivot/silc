@@ -1,0 +1,50 @@
+@version("0.6.0")
+
+# Dual-surface scored form (replaces the former feedback portal profile).
+
+contract FeedbackRecord {
+    has Str $.author;
+    has Str $.text;
+    has Str $.rating;
+}
+
+component FeedbackPage {
+    has state Str $.author = "";
+    has state Str $.text = "";
+    has state Str $.rating = "Okay";
+
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("Feedback"))),
+            :side_panel(ui::side_panel(
+                ui::nav_item(:label("Inbox"), :to("/"), :active),
+                ui::nav_item(:label("Archive"), :to("/"))
+            )),
+            ui::stack(
+                ui::heading(:text("Share feedback"), :level(2)),
+                ui::form(:on(submit(on_submit)),
+                    ui::text_input(:field(author), :label("Author")),
+                    ui::textarea(:field(text), :label("Feedback")),
+                    ui::radio_group(:field(rating), :options(["Good", "Okay", "Bad"]), :label("Rating")),
+                    ui::toolbar(
+                        ui::button(:label("Submit"), :variant(primary), :submit)
+                    )
+                )
+            )
+        )
+    }
+
+    method on_submit() {
+        submit();
+    }
+}
+
+app FeedbackApp {
+    route "/" => FeedbackPage;
+}
+
+processor TextAnalyzer {
+    method analyze(FeedbackRecord $record) {
+        $record.text ==> text::score()
+    }
+}

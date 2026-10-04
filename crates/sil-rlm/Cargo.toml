@@ -3,8 +3,14 @@ name = "sil-rlm"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 authors.workspace = true
+rust-version.workspace = true
 description = "Closed-tool recursive language model scaffold for silc assist (ADR-008)"
+readme = "README.md"
+keywords = ["silc", "llm", "assist", "compiler", "agent"]
+categories = ["compilers", "development-tools", "artificial-intelligence"]
 
 [dependencies]
 sil-core = { workspace = true }

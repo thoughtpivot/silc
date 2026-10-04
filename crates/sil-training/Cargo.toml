@@ -3,8 +3,14 @@ name = "sil-training"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 authors.workspace = true
+rust-version.workspace = true
 description = "Provider-neutral silclm prompt generation and compiler-backed dataset banking"
+readme = "README.md"
+keywords = ["silc", "training", "dataset", "compiler", "llm"]
+categories = ["development-tools", "compilers", "artificial-intelligence"]
 
 [[bin]]
 name = "sil-training"
