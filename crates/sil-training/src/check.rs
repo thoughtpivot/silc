@@ -102,9 +102,14 @@ pub fn extract_program(completion: &str) -> String {
                 }
             }
             // Unclosed tool fence — take remainder after the tag.
-            return trimmed[after + lang.len()..].trim_start_matches('\n').trim().to_string();
+            return trimmed[after + lang.len()..]
+                .trim_start_matches('\n')
+                .trim()
+                .to_string();
         }
-        let body_start = after + lang_end + usize::from(lang_end < rest.len() && rest.as_bytes().get(lang_end) == Some(&b'\n'));
+        let body_start = after
+            + lang_end
+            + usize::from(lang_end < rest.len() && rest.as_bytes().get(lang_end) == Some(&b'\n'));
         if let Some(end) = trimmed.get(body_start..).and_then(|b| b.find("```")) {
             return trimmed[body_start..body_start + end].trim().to_string();
         }

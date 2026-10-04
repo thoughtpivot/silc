@@ -76,7 +76,10 @@ fn plan_hash_is_stable_and_content_addressed() {
     let b = lower_loop_plan(&program, "test");
     assert_eq!(a["hash"], b["hash"]);
     let c = lower_loop_plan(&program, "other");
-    assert_ne!(a["hash"], c["hash"], "compiler version is part of the plan identity");
+    assert_ne!(
+        a["hash"], c["hash"],
+        "compiler version is part of the plan identity"
+    );
 }
 
 #[test]
@@ -110,14 +113,8 @@ fn emit_writes_pinned_plan_kernel_and_manifest_section() {
     let program = example_program();
     let decisions = sil_router::route_program(&program);
     let out = temp_dir("loop-emit");
-    let result = sil_codegen::emit(
-        &program,
-        &decisions,
-        Path::new("main.silc"),
-        &out,
-        "test",
-    )
-    .expect("emit");
+    let result = sil_codegen::emit(&program, &decisions, Path::new("main.silc"), &out, "test")
+        .expect("emit");
     let report = result.loop_report.expect("loop report");
     assert!(report.contains("RfiChase"), "{report}");
 

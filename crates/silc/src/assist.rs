@@ -64,7 +64,11 @@ pub fn run(args: AssistArgs) -> Result<(), String> {
         eprintln!(
             "{} {}",
             style(format!("{BOOK}loaded")).cyan(),
-            style(format!("{added} extra corpus file(s) from {}", dir.display())).dim()
+            style(format!(
+                "{added} extra corpus file(s) from {}",
+                dir.display()
+            ))
+            .dim()
         );
     }
 
@@ -153,7 +157,10 @@ pub fn run(args: AssistArgs) -> Result<(), String> {
         eprintln!(
             "{} {}",
             style("!").yellow().bold(),
-            style("finished on a compiler-checked draft before an explicit accept — review the file").yellow()
+            style(
+                "finished on a compiler-checked draft before an explicit accept — review the file"
+            )
+            .yellow()
         );
     }
 
@@ -178,8 +185,7 @@ pub fn run(args: AssistArgs) -> Result<(), String> {
 fn write_program(path: &Path, program: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent)
-                .map_err(|e| format!("create {}: {e}", parent.display()))?;
+            fs::create_dir_all(parent).map_err(|e| format!("create {}: {e}", parent.display()))?;
         }
     }
     fs::write(path, program).map_err(|e| format!("write {}: {e}", path.display()))
@@ -207,10 +213,7 @@ impl AssistUi {
         let spinner = ProgressBar::new_spinner();
         spinner.set_style(thinking_style());
         spinner.enable_steady_tick(Duration::from_millis(80));
-        spinner.set_message(format!(
-            "{}Thinking about the next step…",
-            SPARKLE
-        ));
+        spinner.set_message(format!("{}Thinking about the next step…", SPARKLE));
         Self { spinner }
     }
 
@@ -289,10 +292,7 @@ impl AssistUi {
                         style(format!("(chars {start}–{end} of {total})")).dim()
                     )
                 };
-                self.log_line(format!(
-                    "  {prefix}  {}Reading {id}{range}{timing}",
-                    BOOK
-                ));
+                self.log_line(format!("  {prefix}  {}Reading {id}{range}{timing}", BOOK));
             }
             ActionKind::Queried { purpose } => {
                 self.log_line(format!(
@@ -318,7 +318,10 @@ impl AssistUi {
                 let id_preview = if ids.is_empty() {
                     String::new()
                 } else {
-                    format!(" ({})", ids.iter().take(3).cloned().collect::<Vec<_>>().join(", "))
+                    format!(
+                        " ({})",
+                        ids.iter().take(3).cloned().collect::<Vec<_>>().join(", ")
+                    )
                 };
                 self.log_line(format!(
                     "  {prefix}  {}Searched corpus for fix — {hits} hit(s){id_preview}{timing}",
@@ -580,9 +583,7 @@ impl LlamaCompleter {
             if let Some(err) = ready.get("error").and_then(|v| v.as_str()) {
                 return Err(format!("assist completer failed to start: {err}"));
             }
-            return Err(format!(
-                "assist completer did not become ready: {ready}"
-            ));
+            return Err(format!("assist completer did not become ready: {ready}"));
         }
 
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -666,7 +667,9 @@ impl Drop for LlamaCompleter {
     }
 }
 
-fn read_json_line(reader: &mut BufReader<std::process::ChildStdout>) -> Result<serde_json::Value, String> {
+fn read_json_line(
+    reader: &mut BufReader<std::process::ChildStdout>,
+) -> Result<serde_json::Value, String> {
     let mut line = String::new();
     let n = reader
         .read_line(&mut line)
@@ -674,8 +677,7 @@ fn read_json_line(reader: &mut BufReader<std::process::ChildStdout>) -> Result<s
     if n == 0 {
         return Err("assist completer closed stdout unexpectedly".into());
     }
-    serde_json::from_str(line.trim())
-        .map_err(|e| format!("parse assist response `{line}`: {e}"))
+    serde_json::from_str(line.trim()).map_err(|e| format!("parse assist response `{line}`: {e}"))
 }
 
 fn assist_home() -> Result<PathBuf, String> {

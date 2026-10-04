@@ -434,10 +434,7 @@ fn compile_common(
 }
 
 fn is_loop_command(output: &sil_codegen::EmitResult) -> bool {
-    output
-        .graph
-        .as_ref()
-        .is_some_and(|g| g.is_loop_command())
+    output.graph.as_ref().is_some_and(|g| g.is_loop_command())
 }
 
 fn status_line(to_stderr: bool, line: &str) {

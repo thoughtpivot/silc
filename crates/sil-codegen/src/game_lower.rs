@@ -124,7 +124,8 @@ pub fn lower_game(game: &Game) -> Result<Value, String> {
                 shadow = lower_shadow(child);
             }
             "signal" => {
-                if let Some(from) = ident_prop(child, "name").or_else(|| string_prop(child, "name")) {
+                if let Some(from) = ident_prop(child, "name").or_else(|| string_prop(child, "name"))
+                {
                     if let Some(to) = string_prop(child, "on").or_else(|| ident_prop(child, "on")) {
                         signal_edges.push(json!({ "from": from, "to": to }));
                     }
@@ -245,17 +246,38 @@ pub fn lower_game(game: &Game) -> Result<Value, String> {
 /// Derive a compile-time CPython bake plan from the lowered scene graph.
 pub fn bake_plan_from_manifest(manifest: &Value) -> Value {
     let data = manifest.get("data").cloned().unwrap_or_else(|| json!({}));
-    let prefabs = manifest.get("prefabs").cloned().unwrap_or_else(|| json!({}));
+    let prefabs = manifest
+        .get("prefabs")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
     let assets = manifest.get("assets").cloned().unwrap_or_else(|| json!({}));
-    let materials = manifest.get("materials").cloned().unwrap_or_else(|| json!({}));
+    let materials = manifest
+        .get("materials")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
     let zones = manifest.get("zones").cloned().unwrap_or_else(|| json!([]));
-    let weapons = manifest.get("weapons").cloned().unwrap_or_else(|| json!({}));
-    let encounters = manifest.get("encounters").cloned().unwrap_or_else(|| json!([]));
-    let objectives = manifest.get("objectives").cloned().unwrap_or_else(|| json!([]));
+    let weapons = manifest
+        .get("weapons")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let encounters = manifest
+        .get("encounters")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+    let objectives = manifest
+        .get("objectives")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let environment = manifest.get("environment").cloned().unwrap_or(Value::Null);
-    let signals = manifest.get("signals").cloned().unwrap_or_else(|| json!([]));
+    let signals = manifest
+        .get("signals")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let mode = manifest.get("mode").cloned().unwrap_or(Value::Null);
-    let generated_assets = manifest.get("generatedAssets").cloned().unwrap_or_else(|| json!([]));
+    let generated_assets = manifest
+        .get("generatedAssets")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
     let scene = manifest
         .get("scene")
         .cloned()
@@ -300,12 +322,7 @@ pub fn bake_plan_from_manifest(manifest: &Value) -> Value {
     })
 }
 
-fn collect_nav_hints(
-    assets: &Value,
-    prefabs: &Value,
-    scene: &Value,
-    zones: &Value,
-) -> Value {
+fn collect_nav_hints(assets: &Value, prefabs: &Value, scene: &Value, zones: &Value) -> Value {
     let mut navmesh_assets = Vec::new();
     if let Some(obj) = assets.as_object() {
         for (name, asset) in obj {
@@ -488,7 +505,10 @@ fn lower_data_props(node: &GameNode) -> Value {
         if k == "name" {
             continue;
         }
-        props.insert(snake_to_camel_prop(k).unwrap_or_else(|| k.clone()), expr_json(v));
+        props.insert(
+            snake_to_camel_prop(k).unwrap_or_else(|| k.clone()),
+            expr_json(v),
+        );
         props.insert(k.clone(), expr_json(v));
     }
     Value::Object(props)
@@ -1022,10 +1042,7 @@ fn lower_entity_like(node: &GameNode, forced_name: Option<&str>) -> Result<Value
                 });
             }
             other => {
-                return Err(format!(
-                    "game::{} cannot contain game::{other}",
-                    node.name
-                ));
+                return Err(format!("game::{} cannot contain game::{other}", node.name));
             }
         }
     }
@@ -1402,7 +1419,10 @@ mod tests {
                             ),
                             node(
                                 "weapon",
-                                vec![("ref", Expr::String("Rifle".into())), ("slot", Expr::Number("1".into()))],
+                                vec![
+                                    ("ref", Expr::String("Rifle".into())),
+                                    ("slot", Expr::Number("1".into())),
+                                ],
                                 vec![],
                             ),
                         ],

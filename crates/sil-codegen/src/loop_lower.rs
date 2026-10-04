@@ -160,7 +160,10 @@ fn inbox_source(program: &Program) -> String {
     let manual: Vec<&Loop> = program
         .loops
         .iter()
-        .filter(|l| l.trigger().is_some_and(|t| t.name == "manual" || t.name == "schedule"))
+        .filter(|l| {
+            l.trigger()
+                .is_some_and(|t| t.name == "manual" || t.name == "schedule")
+        })
         .collect();
     let mut nav = Vec::new();
     if let Some(app) = program.apps.first() {
@@ -296,8 +299,13 @@ pub fn synthesize_loop_surface(program: &Program) -> Result<Program, String> {
     }
     for resource in &program.resources {
         let table = resource.table_name();
-        if [LOOP_RUNS_TABLE, LOOP_APPROVALS_TABLE, LOOP_NOTICES_TABLE, LOOP_REQUESTS_TABLE]
-            .contains(&table.as_str())
+        if [
+            LOOP_RUNS_TABLE,
+            LOOP_APPROVALS_TABLE,
+            LOOP_NOTICES_TABLE,
+            LOOP_REQUESTS_TABLE,
+        ]
+        .contains(&table.as_str())
             || table.starts_with("loop_")
         {
             return Err(format!(
@@ -366,7 +374,9 @@ fn lower_expr(expr: &Expr) -> serde_json::Value {
             "k": match op { UnaryOp::Not => "not", UnaryOp::Neg => "neg" },
             "e": lower_expr(expr),
         }),
-        Expr::List(items) => json!({"k": "list", "items": items.iter().map(lower_expr).collect::<Vec<_>>()}),
+        Expr::List(items) => {
+            json!({"k": "list", "items": items.iter().map(lower_expr).collect::<Vec<_>>()})
+        }
         Expr::New { ty, fields } => json!({
             "k": "new",
             "type": ty,
@@ -422,7 +432,15 @@ fn lower_step(program: &Program, step: &LoopNode, path: &str) -> serde_json::Val
     if let Some(name) = step.ident_prop("as") {
         put("as", json!(name));
     }
-    for key in ["reason", "prompt", "key", "unchecked", "by", "message", "text"] {
+    for key in [
+        "reason",
+        "prompt",
+        "key",
+        "unchecked",
+        "by",
+        "message",
+        "text",
+    ] {
         if let Some(s) = step.string_prop(key) {
             put(key, json!(s));
         }
@@ -448,10 +466,20 @@ fn lower_step(program: &Program, step: &LoopNode, path: &str) -> serde_json::Val
             }
             put("desc", json!(step.has_flag("desc")));
             put("one", json!(step.has_flag("one")));
-            put("max", json!(if step.has_flag("one") { 1 } else { step.number_prop("max").unwrap_or(0) }));
+            put(
+                "max",
+                json!(if step.has_flag("one") {
+                    1
+                } else {
+                    step.number_prop("max").unwrap_or(0)
+                }),
+            );
         }
         "read" => {
-            put("read_op", json!(step.string_prop("op").unwrap_or("scrape::page")));
+            put(
+                "read_op",
+                json!(step.string_prop("op").unwrap_or("scrape::page")),
+            );
             for key in ["server", "tool", "auth_env", "select"] {
                 if let Some(s) = step.string_prop(key) {
                     put(key, json!(s));
@@ -460,19 +488,43 @@ fn lower_step(program: &Program, step: &LoopNode, path: &str) -> serde_json::Val
             if let Some(e) = step.prop("args") {
                 put("args", lower_expr(e));
             }
-            put("retry", json!(step.number_prop("retry").unwrap_or(sil_core::loops::DEFAULT_READ_RETRY)));
+            put(
+                "retry",
+                json!(step
+                    .number_prop("retry")
+                    .unwrap_or(sil_core::loops::DEFAULT_READ_RETRY)),
+            );
         }
         "ask" => {
             let into = step.ident_prop("into").unwrap_or_default();
             put("into", json!(into));
-            put("retry", json!(step.number_prop("retry").unwrap_or(sil_core::loops::DEFAULT_ASK_RETRY)));
+            put(
+                "retry",
+                json!(step
+                    .number_prop("retry")
+                    .unwrap_or(sil_core::loops::DEFAULT_ASK_RETRY)),
+            );
             if let Some(o) = step.child("otherwise") {
-                put("otherwise", json!(lower_block(program, &o.children, &format!("{path}.otherwise"))));
+                put(
+                    "otherwise",
+                    json!(lower_block(
+                        program,
+                        &o.children,
+                        &format!("{path}.otherwise")
+                    )),
+                );
             }
         }
         "gate" => {
             if let Some(o) = step.child("otherwise") {
-                put("otherwise", json!(lower_block(program, &o.children, &format!("{path}.otherwise"))));
+                put(
+                    "otherwise",
+                    json!(lower_block(
+                        program,
+                        &o.children,
+                        &format!("{path}.otherwise")
+                    )),
+                );
             }
         }
         "branch" => {
@@ -484,14 +536,28 @@ fn lower_step(program: &Program, step: &LoopNode, path: &str) -> serde_json::Val
                         "steps": lower_block(program, &arm.children, &format!("{path}.when{i}")),
                     }));
                 } else {
-                    put("otherwise", json!(lower_block(program, &arm.children, &format!("{path}.otherwise"))));
+                    put(
+                        "otherwise",
+                        json!(lower_block(
+                            program,
+                            &arm.children,
+                            &format!("{path}.otherwise")
+                        )),
+                    );
                 }
             }
             put("arms", json!(arms));
         }
         "each" => {
             put("max", json!(step.number_prop("max").unwrap_or(0)));
-            put("steps", json!(lower_block(program, &step.children, &format!("{path}.each"))));
+            put(
+                "steps",
+                json!(lower_block(
+                    program,
+                    &step.children,
+                    &format!("{path}.each")
+                )),
+            );
         }
         "write" => {
             let (res, cap) = step.ref_prop("to").unwrap_or_default();
@@ -513,10 +579,24 @@ fn lower_step(program: &Program, step: &LoopNode, path: &str) -> serde_json::Val
                 .unwrap_or(0);
             put("within_minutes", json!(within));
             if let Some(d) = step.child("declined") {
-                put("declined", json!(lower_block(program, &d.children, &format!("{path}.declined"))));
+                put(
+                    "declined",
+                    json!(lower_block(
+                        program,
+                        &d.children,
+                        &format!("{path}.declined")
+                    )),
+                );
             }
             if let Some(t) = step.child("timed_out") {
-                put("timed_out", json!(lower_block(program, &t.children, &format!("{path}.timed_out"))));
+                put(
+                    "timed_out",
+                    json!(lower_block(
+                        program,
+                        &t.children,
+                        &format!("{path}.timed_out")
+                    )),
+                );
             }
         }
         _ => {}

@@ -66,7 +66,9 @@ fn hover_list_over_stdio() {
     );
     let init = read_message(&mut stdout);
     assert_eq!(init["id"], 1);
-    assert!(init["result"]["capabilities"]["hoverProvider"].as_bool().unwrap_or(false));
+    assert!(init["result"]["capabilities"]["hoverProvider"]
+        .as_bool()
+        .unwrap_or(false));
 
     write_message(
         &mut stdin,

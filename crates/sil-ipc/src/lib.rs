@@ -555,7 +555,12 @@ mod tests {
         let json = br#"{"type":"ASK","request_id":"ask-1","name":"RfiChase","prompt":"Draft","context":"{}","schema":"\"body\" (Str)"}"#;
         let frame: ControlFrame = serde_json::from_slice(json).expect("deserialize ASK");
         match frame {
-            ControlFrame::Ask { request_id, name, prompt, .. } => {
+            ControlFrame::Ask {
+                request_id,
+                name,
+                prompt,
+                ..
+            } => {
                 assert_eq!(request_id, "ask-1");
                 assert_eq!(name, "RfiChase");
                 assert_eq!(prompt, "Draft");

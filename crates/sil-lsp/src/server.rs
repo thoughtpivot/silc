@@ -12,8 +12,8 @@ use lsp_types::{
     Hover, HoverContents, HoverProviderCapability, InitializeResult, MarkupContent, MarkupKind,
     Position, ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind, Uri,
 };
-use sil_ide::{hover_at_lsp, Document};
 use serde_json::Value;
+use sil_ide::{hover_at_lsp, Document};
 
 pub fn run() -> Result<(), Box<dyn Error + Sync + Send>> {
     let (connection, io_threads) = Connection::stdio();
@@ -162,11 +162,7 @@ fn handle_request(
     Ok(())
 }
 
-fn compute_hover(
-    state: &ServerState,
-    uri: &Uri,
-    position: Position,
-) -> Option<Hover> {
+fn compute_hover(state: &ServerState, uri: &Uri, position: Position) -> Option<Hover> {
     let doc = state.documents.get(&uri_key(uri))?;
     let content = hover_at_lsp(doc, position.line, position.character)?;
     Some(Hover {
@@ -220,19 +216,15 @@ component Page {
         // Convert offset to line/col
         let (line, character) = sil_core::offset_to_lsp(src, offset);
         let url: Uri = uri.parse().unwrap();
-        let hover = compute_hover(
-            &state,
-            &url,
-            Position {
-                line,
-                character,
-            },
-        )
-        .expect("hover");
+        let hover = compute_hover(&state, &url, Position { line, character }).expect("hover");
         let HoverContents::Markup(m) = hover.contents else {
             panic!("expected markup");
         };
         assert!(m.value.contains("list"), "{}", m.value);
-        assert!(m.value.contains("[Article]") || m.value.contains("Article"), "{}", m.value);
+        assert!(
+            m.value.contains("[Article]") || m.value.contains("Article"),
+            "{}",
+            m.value
+        );
     }
 }
