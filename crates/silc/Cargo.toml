@@ -3,8 +3,14 @@ name = "silc"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 authors.workspace = true
+rust-version.workspace = true
 description = "ThoughtPivot Silc compiler CLI"
+readme = "README.md"
+keywords = ["silc", "compiler", "cli", "codegen", "intent"]
+categories = ["command-line-utilities", "compilers"]
 
 [[bin]]
 name = "silc"

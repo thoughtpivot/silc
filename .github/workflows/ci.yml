@@ -108,6 +108,35 @@ jobs:
       - name: Local HTTP to ONNX to SQLite
         run: cargo test -p silc --test pipeline_e2e -- --ignored --test-threads=1
 
+  # Publishes unpublished crates after a release PR lands.
+  # Auth: release-plz Trusted Publishing (OIDC). Do not set CARGO_REGISTRY_TOKEN.
+  # First crate versions must be published manually; then configure Trusted
+  # Publishing on crates.io for this workflow/job and set release-plz.toml
+  # `publish = true`.
+  release-plz-release:
+    name: release-plz release
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: check
+    permissions:
+      contents: write
+      pull-requests: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run release-plz
+        uses: release-plz/action@v0.5
+        with:
+          command: release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   release-plz:
     name: release-plz
     runs-on: ubuntu-latest
@@ -116,6 +145,9 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+    concurrency:
+      group: release-plz-${{ github.ref }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
         with:

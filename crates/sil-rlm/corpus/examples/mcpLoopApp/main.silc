@@ -1,0 +1,59 @@
+#!/usr/bin/env silc
+# Generic MCP loop command. No app: `silc main.silc` runs once and exits.
+# See README.md for the inbox-only and app variants of this same shape.
+@version("0.6.0")
+
+contract ReadArgs {
+    has Str $.path;
+    has Int $.limit;
+}
+
+contract Note {
+    has Str $.id;
+    has Str $.day;
+    has Str $.sentence;
+}
+
+resource DailyNotes for Note {
+    query list;
+    mutation create;
+}
+
+loop DailyBrief {
+    loop::flow(
+        loop::manual(),
+        loop::read(
+            :as(notes),
+            mcp::call(
+                :server("https://mcp.example.test/mcp"),
+                :tool("list_notes"),
+                :args(ReadArgs.new(:path("notes.jsonl"), :limit(20))),
+                :auth_env("EXAMPLE_MCP_TOKEN"),
+                :select("records")
+            )
+        ),
+        loop::ask(
+            :as(brief),
+            :into(Note),
+            :from($notes.data),
+            :retry(2),
+            :prompt("Today is {$calendar.today}. One sentence for the reader, using only the notes."),
+            loop::otherwise(loop::fail(:reason("could not write a brief")))
+        ),
+        loop::gate(
+            :that($brief.sentence != ""),
+            :reason("one grounded sentence or nothing"),
+            loop::otherwise(loop::fail(:reason("empty brief")))
+        ),
+        loop::write(
+            :to(DailyNotes.create),
+            :key("note:{$now}"),
+            :value(Note.new(:day($calendar.today), :sentence($brief.sentence)))
+        ),
+        loop::notify(
+            :to("Reader"),
+            :text("{$brief.sentence}"),
+            :key("note:{$now}")
+        )
+    )
+}

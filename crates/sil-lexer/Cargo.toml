@@ -3,8 +3,14 @@ name = "sil-lexer"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 authors.workspace = true
+rust-version.workspace = true
 description = "Silc lexical analysis (Raku-inspired surface)"
+readme = "README.md"
+keywords = ["silc", "lexer", "tokenizer", "compiler", "parsing"]
+categories = ["parser-implementations", "compilers"]
 
 [dependencies]
 logos = "0.14"

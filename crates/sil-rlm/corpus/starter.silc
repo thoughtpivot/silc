@@ -1,0 +1,51 @@
+#!/usr/bin/env silc
+# Starter Silc 0.5.0 app — edit this file; do not edit .runtime/
+@version("0.6.0")
+
+# Contract: typed record shape shared by UI and processor.
+contract Note {
+    has Str $.author;
+    has Str $.text;
+}
+
+# Author-defined component: local state, events, and a render tree.
+# The same tree lowers to both web and terminal — never write React/OpenTUI.
+component HomePage {
+    has state Str $.author = "";
+    has state Str $.text = "";
+
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("My Silc App"))),
+            :side_panel(ui::side_panel(
+                ui::nav_item(:label("Home"), :to("/"), :active)
+            )),
+            ui::stack(
+                ui::heading(:text("Leave a note"), :level(2)),
+                ui::form(:on(submit(on_submit)),
+                    ui::text_input(:field(author), :label("Author")),
+                    ui::textarea(:field(text), :label("Note")),
+                    ui::toolbar(
+                        ui::button(:label("Submit"), :variant(primary), :submit)
+                    )
+                )
+            )
+        )
+    }
+
+    method on_submit() {
+        submit();
+    }
+}
+
+# App: routes only — dual-surface web/terminal serving is synthesized.
+app MyApp {
+    route "/" => HomePage;
+}
+
+# Optional processor — scoring + synthesized SQLite persistence.
+processor NoteScorer {
+    method analyze(Note $note) {
+        $note.text ==> text::score()
+    }
+}

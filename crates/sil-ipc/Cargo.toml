@@ -3,8 +3,14 @@ name = "sil-ipc"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+repository.workspace = true
+homepage.workspace = true
 authors.workspace = true
+rust-version.workspace = true
 description = "Silc Shared Buffer ABI and UDS signaling"
+readme = "README.md"
+keywords = ["silc", "ipc", "mmap", "uds", "abi"]
+categories = ["os", "development-tools"]
 
 [dependencies]
 memmap2 = "0.9"

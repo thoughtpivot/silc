@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 authors.workspace = true
 description = "Semantic IDE helpers for Silc (hover, document index)"
+publish = false
 
 [dependencies]
 sil-core = { workspace = true }

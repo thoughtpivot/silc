@@ -14,6 +14,9 @@ pub mod prompt;
 pub mod session;
 pub mod tools;
 
+pub const ASSIST_REQUIREMENTS: &str = include_str!("../templates/requirements.txt");
+pub const ASSIST_COMPLETE_PY: &str = include_str!("../templates/assist_complete.py");
+
 pub use complete::{ChatReply, ChatRequest, Completer, ScriptedCompleter};
 pub use corpus::{find_agents_md, Corpus};
 pub use progress::{
