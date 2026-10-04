@@ -8,41 +8,16 @@
 use crate::expr::Expr;
 use crate::types::Span;
 
-/// Render / runtime surface for game programs (web-only, WebGPU).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GameSurface {
-    WebGpu,
-}
+use crate::catalog::{
+    ChildPolicy, NodeRole, NodeSpec, OptionKind, OptionSpec, NO_EVENTS, NO_SLOTS, SCENE_SURFACES,
+};
 
-impl GameSurface {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            GameSurface::WebGpu => "webgpu",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GamePropKind {
-    String,
-    Bool,
-    Ident,
-    Number,
-    Flag,
-    Expr,
-    Node,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct GamePropSpec {
-    pub name: &'static str,
-    pub kind: GamePropKind,
-    pub required: bool,
-    /// One or two sentences teaching what the prop controls.
-    pub description: &'static str,
-    /// Closed ident tokens when `kind` is Ident (empty = open / unvalidated).
-    pub closed_values: &'static [&'static str],
-}
+/// Historical names for the shared catalog types.
+pub type GameSurface = crate::catalog::Surface;
+pub type GamePropKind = OptionKind;
+pub type GamePropSpec = OptionSpec;
+pub type GameChildPolicy = ChildPolicy;
+pub type GameNodeSpec = NodeSpec;
 
 const fn gp(
     name: &'static str,
@@ -73,21 +48,6 @@ const fn gp_closed(
         description,
         closed_values,
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GameChildPolicy {
-    None,
-    AnyOf(&'static [&'static str]),
-    Any,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct GameNodeSpec {
-    pub name: &'static str,
-    pub description: &'static str,
-    pub props: &'static [GamePropSpec],
-    pub children: GameChildPolicy,
 }
 
 const SCENE_CHILDREN: &[&str] = &[
@@ -190,7 +150,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("target_fps", GamePropKind::Number, false, "Preferred frame rate for the render loop (for example `90`). The runtime caps to display capability."),
         ],
         children: GameChildPolicy::AnyOf(SCENE_CHILDREN),
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "entity",
         description: "Named node in the scene tree (Godot-style). Parent/child links own transform hierarchy; attach component children such as mesh, collider, or ability.",
@@ -207,7 +171,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("sz", GamePropKind::Number, false, "Local Z scale multiplier applied to mesh children."),
         ],
         children: GameChildPolicy::AnyOf(ENTITY_CHILDREN),
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "prefab",
         description: "Named reusable entity template (Unity prefab / Godot packed scene). Instantiate with `game::spawn` and optional property overrides.",
@@ -224,7 +192,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("sz", GamePropKind::Number, false, "Default root Z scale multiplier for mesh children."),
         ],
         children: GameChildPolicy::AnyOf(PREFAB_CHILDREN),
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "spawn",
         description: "Instantiate a prefab into the scene (Unity instantiate). Supports transform overrides and component `:ref` data bindings at spawn time.",
@@ -236,7 +208,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("as_pawn", GamePropKind::Flag, false, "When set, marks this spawn as the possessable pawn for the active mode."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "data",
         description: "Named data asset (Unity ScriptableObject-like). Shared tuneables referenced by components via `:ref(Name)`.",
@@ -264,7 +240,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("armor", GamePropKind::Number, false, "Optional armor rating subtracted from incoming damage."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "signal",
         description: "Declared event on an entity (Godot signal). Wire listeners with `:on(signal_name => handler)` on the receiving node.",
@@ -273,7 +253,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("on", GamePropKind::Expr, false, "Optional connection expression wiring this signal to a handler id."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "group",
         description: "Membership tag for entity queries (Godot groups). Systems find entities with `world.group(\"enemies\")`.",
@@ -281,7 +265,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("name", GamePropKind::String, true, "Group name string shared by all members."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "mesh",
         description: "Renderable mesh component (Unity MeshFilter-like). Use a closed primitive `:shape` or a GLTF `:asset`; one is required at runtime.",
@@ -293,7 +281,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("color", GamePropKind::String, false, "CSS-like hex color for the unlit/albedo tint (for example `\"#4a7c59\"`)."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "light",
         description: "Light component attached to an entity (directional sun, point lamp, or spot cone).",
@@ -305,7 +297,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("cast_shadows", GamePropKind::Bool, false, "When true, this light casts shadow maps for nearby receivers."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "collider",
         description: "Thin physics collider used by the kernel physics system (ground planes and capsule bodies).",
@@ -314,7 +310,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("size", GamePropKind::Number, false, "Collider half-extent or radius scale in meters."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "movement",
         description: "Locomotion component for walk, first-person, sprint, jump, and platformer styles driven by the possessed controller.",
@@ -326,7 +326,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("ref", GamePropKind::String, false, "Optional `game::data` asset name providing speed and related tuneables."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "attribute",
         description: "Named float channel on an entity (health, stamina) used by abilities for cost and GAS-lite state.",
@@ -336,7 +340,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("max", GamePropKind::Number, false, "Optional maximum clamp for the attribute."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "mode",
         description: "Unreal-style game mode: owns default spawns and which pawn the controller possesses.",
@@ -345,13 +353,21 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("possess", GamePropKind::String, false, "Prefab or entity name the controller should possess at start."),
         ],
         children: GameChildPolicy::AnyOf(MODE_CHILDREN),
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "pawn",
         description: "Marks an entity or prefab as a possessable Unreal-style pawn body for the active controller.",
         props: &[],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "controller",
         description: "Input owner that drives the possessed pawn (WASD + mouse or arrows + jump). Does not move meshes directly.",
@@ -359,7 +375,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp_closed("scheme", GamePropKind::Ident, false, "Closed input scheme token.", &["wasd_mouse", "arrows_jump"]),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "camera",
         description: "Follow, first-person, or side-scroll camera bound to the possessed pawn.",
@@ -370,7 +390,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("follow", GamePropKind::Ident, false, "Follow target token; use `pawn` to track the possessed body."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "ability",
         description: "Keyed player ability with optional cooldown/cost and cue children (particles, lights, camera impulse).",
@@ -383,7 +407,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("ref", GamePropKind::String, false, "Optional `game::data` asset supplying cooldown/cost defaults."),
         ],
         children: GameChildPolicy::AnyOf(ABILITY_CHILDREN),
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "particle_emitter",
         description: "Pooled GPU particle burst cue fired by an ability cast.",
@@ -392,7 +420,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("count", GamePropKind::Number, false, "Particle budget for this emitter; larger counts look denser and cost more GPU."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "dynamic_light",
         description: "Tight-radius dynamic light cue for ability illumination.",
@@ -402,7 +434,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("color", GamePropKind::String, false, "CSS-like hex color string for the light (for example `\"#a8d4ff\"`)."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "camera_impulse",
         description: "Subtle camera shake impulse fired when an ability casts, scaled by strength.",
@@ -410,7 +446,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("strength", GamePropKind::Number, false, "Impulse magnitude; keep small (near `0.15`–`0.25`) for readable framing."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "post_process",
         description: "One post-process stage in the ordered screen chain (TAA, bloom, tonemap, …). Repeat the node once per stage.",
@@ -419,7 +459,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("enabled", GamePropKind::Bool, false, "Whether this stage is active. Disable expensive stages (SSR, DOF) for performance."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "overlay",
         description: "Hidden-by-default settings and debug overlay toggled from the keyboard (F1 style). Can trigger save/load.",
@@ -427,7 +471,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("toggle", GamePropKind::String, true, "Key binding that shows or hides the overlay (for example `\"F1\"`)."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "asset",
         description: "Named external asset reference (GLTF model, texture, audio clip, or navmesh bake) declared at scene scope.",
@@ -437,7 +485,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp_closed("kind", GamePropKind::Ident, true, "Closed asset kind selecting how the runtime loads and caches the file.", &["gltf", "texture", "audio", "navmesh"]),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "material",
         description: "Named PBR material asset with optional texture maps and tiling. Referenced by `:material` on mesh components.",
@@ -452,7 +504,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("tiling", GamePropKind::Number, false, "UV tiling multiplier applied to all texture maps."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "zone",
         description: "Spatial volume grouping entities, spawns, lights, and signals (room, walkway, or outdoor area).",
@@ -461,7 +517,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp_closed("kind", GamePropKind::Ident, true, "Closed zone topology hint for lighting and AI nav hints.", &["room", "walkway", "outdoor"]),
         ],
         children: GameChildPolicy::AnyOf(ZONE_CHILDREN),
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "weapon",
         description: "Weapon definition with fire mode, ballistics tuneables, and cue children (projectile, particles, audio).",
@@ -477,7 +537,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("spread", GamePropKind::Number, false, "Aim cone spread in degrees for pellet or hitscan weapons."),
         ],
         children: GameChildPolicy::AnyOf(WEAPON_CHILDREN),
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "projectile",
         description: "Projectile or tracer cue spawned by a weapon fire event with speed, lifetime, and splash tuning.",
@@ -490,7 +554,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("size", GamePropKind::Number, false, "Visual size multiplier for the projectile mesh or billboard."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "ammo",
         description: "Ammo pool component tracking current and maximum rounds for a weapon slot on an entity.",
@@ -500,7 +568,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("max", GamePropKind::Number, false, "Maximum rounds this pool can hold."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "damage",
         description: "Damage payload component attached to projectiles or melee hitboxes describing amount and type.",
@@ -509,7 +581,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp_closed("type_ident", GamePropKind::Ident, true, "Closed damage type for armor and VFX routing.", &["bullet", "pellet", "plasma", "rail", "melee"]),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "pickup",
         description: "World pickup trigger granting weapons, ammo, or health when the player overlaps the collider.",
@@ -519,7 +595,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("amount", GamePropKind::Number, false, "Quantity granted (ammo rounds or health points; ignored for weapon pickups)."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "hud",
         description: "Heads-up display toggles for crosshair, ammo counter, and health bar rendered over the 3D view.",
@@ -530,7 +610,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("score_label", GamePropKind::String, false, "Label for the score display (default: 'Score'). Use 'Coins', 'Points', 'Gold', etc."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "npc",
         description: "Non-player character archetype and faction tag driving AI squad roles and hostility checks.",
@@ -539,7 +623,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp_closed("faction", GamePropKind::Ident, true, "Closed faction token for targeting and friendly-fire rules.", &["hostile", "neutral"]),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "perception",
         description: "Sensory range component defining how far an NPC can see and hear the player.",
@@ -549,7 +637,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("fov_deg", GamePropKind::Number, false, "Horizontal field-of-view cone in degrees for line-of-sight checks."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "behavior",
         description: "Behavior-tree selector and default combat tactic for an NPC squad member.",
@@ -558,7 +650,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp_closed("default_tactic", GamePropKind::Ident, false, "Closed default combat tactic when engaged.", &["suppress", "flank", "push", "retreat"]),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "mind",
         description: "AI mind component referencing a persona data asset and decision cadence for tactical re-evaluation.",
@@ -567,7 +663,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("cadence_s", GamePropKind::Number, false, "Seconds between AI tactic re-evaluations when in combat."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "nav_agent",
         description: "Navigation agent capsule describing radius, height, and max speed for pathfinding on navmesh.",
@@ -577,7 +677,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("max_speed", GamePropKind::Number, false, "Maximum travel speed in m/s along navmesh paths."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "encounter",
         description: "Combat encounter wave container that spawns prefabs when the mode or trigger activates it.",
@@ -586,7 +690,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("wave", GamePropKind::Number, false, "Wave index within a multi-wave encounter sequence."),
         ],
         children: GameChildPolicy::AnyOf(ENCOUNTER_CHILDREN),
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "objective",
         description: "Mission objective node declaring win conditions such as clearing hostiles or reaching a target zone.",
@@ -596,7 +704,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("target", GamePropKind::String, false, "Zone name, encounter id, or entity name required to complete the objective."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "audio",
         description: "Spatial or UI audio source playing a one-shot or looping clip from an asset path or ref.",
@@ -607,7 +719,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("volume", GamePropKind::Number, false, "Playback volume multiplier (0 = silent, 1 = full)."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "environment",
         description: "Scene-wide atmosphere tuning for fog, sky color, and exposure applied before the post chain.",
@@ -618,7 +734,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("exposure", GamePropKind::Number, false, "Global exposure multiplier before tonemap (1 = neutral)."),
         ],
         children: GameChildPolicy::AnyOf(ENVIRONMENT_CHILDREN),
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "shadow",
         description: "Scene-wide shadow map configuration controlling cascade count and enable state.",
@@ -627,7 +747,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("cascade_count", GamePropKind::Number, false, "Number of cascaded shadow splits for directional sun (1–4)."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "clouds",
         description: "Procedural volumetric cloud layer with independent drift animation. Must be a child of game::environment.",
@@ -641,7 +765,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("opacity", GamePropKind::Number, false, "Cloud transparency 0-1 (default: 0.8)."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "stars",
         description: "Star field layer with small emissive points scattered on a sphere. Must be a child of game::environment.",
@@ -654,7 +782,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("twinkle", GamePropKind::Bool, false, "Animate subtle brightness flickering."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "door",
         description: "Animated door component with open/closed state and optional auto-close behavior.",
@@ -663,7 +795,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("auto", GamePropKind::Bool, false, "When true, the door opens on player proximity and closes after a delay."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "trigger",
         description: "Volume trigger firing a handler expression when the player enters or exits the collider.",
@@ -672,7 +808,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("on", GamePropKind::Expr, true, "Handler expression or signal id invoked when the trigger fires."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "cover",
         description: "Cover point quality tag used by AI flank and suppress tactics to rank defensive positions.",
@@ -680,7 +820,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp_closed("quality", GamePropKind::Ident, true, "Closed cover quality rating for AI position scoring.", &["low", "med", "high"]),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     // ========== Platformer nodes ==========
     GameNodeSpec {
         name: "sprite",
@@ -695,7 +839,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("billboard", GamePropKind::Bool, false, "When true, sprite always faces the camera."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "tilemap",
         description: "Tile-based level geometry loaded from a tilemap asset. Generates collision AABBs for solid tiles.",
@@ -706,7 +854,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("collision_layer", GamePropKind::String, false, "Layer name that generates collision AABBs."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "collectible",
         description: "Pickup item that fires a signal when the pawn overlaps its collider. Despawns after collection.",
@@ -717,7 +869,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("respawn", GamePropKind::Number, false, "Seconds until respawn; omit for no respawn."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "interactable",
         description: "Block or object that responds to hits from below or attacks. Can spawn contents and change state.",
@@ -728,7 +884,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("on_interact", GamePropKind::Expr, false, "Signal or handler expression fired on interaction."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "patrol",
         description: "Simple 2D patrol behavior for platformer enemies. Walks until hitting a wall or edge, then reverses.",
@@ -740,7 +900,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("on_touch", GamePropKind::Expr, false, "Signal fired when touched from the side by the pawn."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "warp",
         description: "Teleport trigger that moves the pawn to a target location when entered from the specified direction.",
@@ -750,7 +914,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("on_warp", GamePropKind::Expr, false, "Signal fired before teleporting."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "level_end",
         description: "Level completion trigger that fires a signal when the pawn reaches it.",
@@ -759,7 +927,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("next_level", GamePropKind::String, false, "Optional next level asset to load."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     // ========== Generic platformer enhancement nodes ==========
     GameNodeSpec {
         name: "state_machine",
@@ -773,7 +945,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("on_state_change", GamePropKind::Expr, false, "Signal fired when state changes."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "parallax",
         description: "Parallax background layer that scrolls at a fraction of camera movement for depth effect.",
@@ -786,7 +962,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("tint", GamePropKind::String, false, "Color tint (CSS hex) applied to the layer."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "particle_effect",
         description: "Particle system for visual effects triggered by signals or on spawn.",
@@ -802,7 +982,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("on_trigger", GamePropKind::String, false, "Signal name that triggers emission."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     GameNodeSpec {
         name: "floating_text",
         description: "Floating text popup that rises and fades out. Triggered by signals with value data.",
@@ -814,7 +998,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("rise_speed", GamePropKind::Number, false, "Upward movement speed (default 2)."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
     // ========== Procedural asset generation (ADR-013) ==========
     GameNodeSpec {
         name: "generate",
@@ -830,7 +1018,11 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
             gp("export", GamePropKind::Bool, false, "When true, also export generated assets to public/assets/ for external tool editing."),
         ],
         children: GameChildPolicy::None,
-    },
+
+        surfaces: SCENE_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,
+        role: NodeRole::Plain,},
 ];
 
 pub fn lookup_game_node(name: &str) -> Option<&'static GameNodeSpec> {
@@ -1210,22 +1402,6 @@ pub struct GameCapabilities {
 pub const DEFAULT_GAME_PORT: u16 = 18140;
 pub const DEFAULT_GAME_FPS: u32 = 90;
 
-fn validate_closed_ident(
-    node: &str,
-    prop: &str,
-    value: &str,
-    allowed: &[&str],
-) -> Result<(), String> {
-    if allowed.contains(&value) {
-        Ok(())
-    } else {
-        Err(format!(
-            "game::{node} :{prop} must be one of {}",
-            allowed.join("|")
-        ))
-    }
-}
-
 pub fn validate_game_node(node: &GameNode) -> Result<(), String> {
     let spec = lookup_game_node(&node.name).ok_or_else(|| {
         format!(
@@ -1256,8 +1432,22 @@ pub fn validate_game_node(node: &GameNode) -> Result<(), String> {
         if prop.closed_values.is_empty() {
             continue;
         }
-        if let Some(Expr::Ident(v)) = node.prop(prop.name) {
-            validate_closed_ident(&node.name, prop.name, v, prop.closed_values)?;
+        let Some(expr) = node.prop(prop.name) else {
+            continue;
+        };
+        if let Err(err) = crate::catalog::check_closed_enum(expr, prop.closed_values) {
+            return Err(match err {
+                crate::catalog::ClosedEnumError::NotAllowed(_) => format!(
+                    "game::{} :{} must be one of {}",
+                    node.name,
+                    prop.name,
+                    prop.closed_values.join("|")
+                ),
+                crate::catalog::ClosedEnumError::StringForm(value) => format!(
+                    "game::{} `:{}` takes a bare name; write `:{}({value})` instead of `:{}(\"{value}\")`",
+                    node.name, prop.name, prop.name, prop.name
+                ),
+            });
         }
     }
 

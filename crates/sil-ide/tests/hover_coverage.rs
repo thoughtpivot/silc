@@ -4,8 +4,8 @@
 //! (not `NONE`). Example caret probes cover game, UI, ops, and builtins.
 
 use sil_core::{
-    format_game_catalog_line, game_closed_value_doc, game_prop_doc, lookup_game_node,
-    EXECUTABLE_OPS, GAME_NODE_CATALOG, KNOWN_NAMESPACES, UI_COMPONENT_CATALOG,
+    executable_ops, format_game_catalog_line, game_closed_value_doc, game_prop_doc,
+    lookup_game_node, GAME_NODE_CATALOG, KNOWN_NAMESPACES, UI_COMPONENT_CATALOG,
 };
 use sil_ide::{
     builtin_type_doc, keyword_doc, resolve_hover, Document, BUILTIN_TYPE_NAMES, KEYWORD_NAMES,
@@ -99,7 +99,7 @@ fn every_game_node_and_prop_has_docs() {
 
 #[test]
 fn every_executable_op_has_specific_hover_prose() {
-    for (ns, name) in EXECUTABLE_OPS {
+    for (ns, name) in executable_ops() {
         let snippet = format!(
             r#"@version("0.5.0")
 processor P {{

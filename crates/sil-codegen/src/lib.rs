@@ -2172,8 +2172,8 @@ service FeedbackApi {
         assert!(ts.contains("/submit"));
         assert!(ts.contains(r#"type: "INGEST""#));
         assert!(ts.contains("dist"));
-        assert!(ts.contains("text.score"));
-        assert!(py.contains("text.score"));
+        assert!(ts.contains("text::score"));
+        assert!(py.contains("text::score"));
         assert!(go.contains("feedback") || go.contains("SILC_TABLE"));
         assert!(app.contains("function FeedbackPage"));
         assert!(app.contains("function App"));
@@ -2218,7 +2218,7 @@ service FeedbackApi {
         assert!(manifest.contains("\"sqlite_table\": \"feedback_records\""));
         assert!(manifest.contains("\"surfaces\""));
         assert!(manifest.contains("\"capabilities\""));
-        assert!(manifest.contains("text.score") || manifest.contains("\"processor\""));
+        assert!(manifest.contains("text::score") || manifest.contains("\"processor\""));
         assert!(manifest.contains("\"terminal_port\": 18023"));
         assert!(manifest.contains("FeedbackApp") || manifest.contains("FeedbackPage"));
         fs::remove_dir_all(output).ok();
@@ -2345,7 +2345,7 @@ service FeedbackApi {
         let ts = fs::read_to_string(output.join("typescript/worker.ts")).unwrap();
         assert!(ts.contains("/complete"));
         assert!(ts.contains("/history"));
-        assert!(ts.contains("llm.complete") || ts.contains("true"));
+        assert!(ts.contains("llm::complete") || ts.contains("true"));
         assert!(
             ts.contains("text: prompt") || ts.contains("text:"),
             "complete ingest must send ControlFrame::Ingest.text"
@@ -2384,7 +2384,7 @@ service FeedbackApi {
                 && thread.contains("message.pending")
         );
         let manifest = fs::read_to_string(&result.manifest).unwrap();
-        assert!(manifest.contains("llm.complete") || manifest.contains("\"llm\": true"));
+        assert!(manifest.contains("llm::complete") || manifest.contains("\"llm\": true"));
         assert!(manifest.contains("silclm"));
         fs::remove_dir_all(output).ok();
     }
@@ -2470,7 +2470,7 @@ component Home {
             :app_bar(ui::app_bar(:title("Scraper"))),
             ui::form(:on(submit(on_submit)),
                 ui::text_input(:field(url), :label("URL")),
-                ui::button(:label("Scrape"), :variant("primary"), :submit)
+                ui::button(:label("Scrape"), :variant(primary), :submit)
             ),
             ui::table(
                 :rows($.pages),
@@ -2571,7 +2571,7 @@ component UploadPage {
             ui::form(
                 :on(submit(on_submit)),
                 ui::file_input(:field(upload), :label("Document"), :accept(".pdf,.docx,.odt,.md,.txt,.html")),
-                ui::button(:label("Extract"), :variant("primary"), :submit)
+                ui::button(:label("Extract"), :variant(primary), :submit)
             )
         )
     }

@@ -113,8 +113,8 @@ component LoopApprovalCard {
             ui::text(:text($.approval.note)),
             when $.approval.status == "pending" {
                 ui::toolbar(
-                    ui::button(:label("Approve"), :variant("primary"), :on(click(on_approve))),
-                    ui::button(:label("Decline"), :variant("destructive"), :on(click(on_decline)))
+                    ui::button(:label("Approve"), :variant(primary), :on(click(on_approve))),
+                    ui::button(:label("Decline"), :variant(destructive), :on(click(on_decline)))
                 )
             }
         )
@@ -185,7 +185,7 @@ fn inbox_source(program: &Program) -> String {
             .enumerate()
             .map(|(i, l)| {
                 format!(
-                    "ui::button(:label(\"Run {} now\"), :variant(\"primary\"), :on(click(run_{i})))",
+                    "ui::button(:label(\"Run {} now\"), :variant(primary), :on(click(run_{i})))",
                     l.name
                 )
             })

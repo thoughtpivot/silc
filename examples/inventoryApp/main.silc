@@ -38,7 +38,7 @@ component ItemCard {
             ui::text(:text($.item.notes)),
             ui::button(
                 :label("Delete"),
-                :variant("destructive"),
+                :variant(destructive),
                 :on(click(on_remove))
             )
         )
@@ -124,7 +124,7 @@ component AdminPage {
                         ui::text_input(:field(reorder_level), :label("Reorder level")),
                         ui::textarea(:field(notes), :label("Notes")),
                         ui::toolbar(
-                            ui::button(:label("Create"), :variant("primary"), :submit)
+                            ui::button(:label("Create"), :variant(primary), :submit)
                         )
                     )
                 ),

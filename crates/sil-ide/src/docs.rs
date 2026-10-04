@@ -1,6 +1,6 @@
 //! Documentation catalog for Silc keywords, operators, types, and operations.
 
-use sil_core::{is_executable_op, EXECUTABLE_OPS, UI_COMPONENT_CATALOG};
+use sil_core::{is_executable_op, UI_COMPONENT_CATALOG};
 
 pub fn keyword_doc(keyword: &str) -> Option<&'static str> {
     Some(match keyword {
@@ -277,6 +277,17 @@ pub fn namespace_doc(ns: &str) -> Option<String> {
              runtime manifest. Game programs are web-only (no terminal surface).",
             count = sil_core::GAME_NODE_CATALOG.len()
         ),
+        "scene" => {
+            "Real-time scene kernel. `scene::` nodes (entity, mesh, light, camera, and the \
+             rest of the kernel) describe a WebGPU world without gameplay vocabulary. Gameplay \
+             nodes stay in `game::`."
+                .into()
+        }
+        "mcp" => {
+            "MCP tool calls. `mcp::call` is nested inside `loop::read` \
+             (`loop::read(:as(x), mcp::call(:server(...), :tool(...)))`); it is not a pipeline step."
+                .into()
+        }
         "loop" => format!(
             "Loop step catalog ({count} nodes). Author `loop::flow` with one trigger \
              (`schedule`, `manual`, `on_mutation`) followed by steps such as `find`, `read`, \
@@ -375,11 +386,7 @@ pub fn namespace_doc(ns: &str) -> Option<String> {
 }
 
 pub fn executable_op_doc(namespace: &str, name: &str) -> Option<String> {
-    if !EXECUTABLE_OPS
-        .iter()
-        .any(|(ns, n)| *ns == namespace && *n == name)
-        && !is_executable_op(namespace, name)
-    {
+    if !is_executable_op(namespace, name) {
         return None;
     }
     let summary = match (namespace, name) {

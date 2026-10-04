@@ -13,7 +13,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use sil_core::{format_component_catalog_line, EXECUTABLE_OPS, UI_COMPONENT_CATALOG};
+use sil_core::{executable_ops, format_component_catalog_line, UI_COMPONENT_CATALOG};
 
 fn workspace_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -141,6 +141,11 @@ fn game_catalog_lines_present_in_agents_template() {
 #[test]
 fn loop_catalog_lines_present_in_agents_template() {
     let template = read_workspace("crates/silc/templates/AGENTS.md");
+    assert_eq!(
+        sil_core::LOOP_NODE_CATALOG.len(),
+        21,
+        "loop catalog size changed; update docs and this assertion"
+    );
     for spec in sil_core::LOOP_NODE_CATALOG {
         let line = sil_core::format_loop_catalog_line(spec);
         assert!(
@@ -196,7 +201,7 @@ fn executable_ops_listed_in_template_and_readme() {
     let template = read_workspace("crates/silc/templates/AGENTS.md");
     let readme = read_workspace("README.md");
 
-    for (ns, name) in EXECUTABLE_OPS {
+    for (ns, name) in executable_ops() {
         let op = format!("{ns}::{name}");
         assert!(
             template.contains(&op),

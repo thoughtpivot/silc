@@ -145,7 +145,7 @@ component RfiBoard {
                         ui::text_input(:field(due), :label("Due (YYYY-MM-DD)")),
                         ui::text_input(:field(assignee), :label("Assignee")),
                         ui::text_input(:field(pm), :label("Project manager")),
-                        ui::toolbar(ui::button(:label("Add RFI"), :variant("primary"), :submit))
+                        ui::toolbar(ui::button(:label("Add RFI"), :variant(primary), :submit))
                     )
                 ),
                 ui::section(

@@ -92,9 +92,8 @@ child   := ns::name(...) | ComponentName(...)   # component calls only inside ui
   declared name, string template (loop only, section 9).
 - **Closed options** accept only the listed identifier values
   (`:variant(primary)`, `:fire_mode(hitscan)`, `:mutation(update)`). The
-  canonical spelling is the bare identifier. UI closed options currently also
-  accept the quoted form `:variant("primary")`; this tolerance is scheduled for
-  removal (section 12).
+  spelling is the bare identifier. A quoted string is a compile error with a
+  fix-it (`:variant(primary)`, not a string).
 - Named slots are options whose value is a node: `:app_bar(ui::app_bar(...))`.
 - Children are positional and follow the options. Each catalog entry declares
   its child policy: none, any, or an allow-list.
@@ -298,8 +297,9 @@ corresponding task in the language refinement plan.
 2. `loop::read` selects its operation with a string option (`:op("mcp::call")`)
    instead of nesting the operation node; `mcp` is not yet a registered
    namespace.
-3. Closed-enum values accept quoted strings in `ui::` but only identifiers in
-   `game::`; the quoted form will be rejected everywhere.
+3. Closed-enum values are bare identifiers in every namespace (done). `loop::read`
+   still accepts the string `:op("mcp::call")` as a one-release alias of the
+   nested operation.
 4. References to declared names are strings in `game::` (`:ref("X")`) and
    identifiers in `loop::` (`:from(Rfis.list)`) and `ui::` (`:on(click(h))`).
 5. `{$x}` interpolation exists only in `loop::`.

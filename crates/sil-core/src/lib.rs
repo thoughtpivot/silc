@@ -6,6 +6,7 @@
 //! implementation architecture, not the language's product identity.
 
 pub mod app;
+pub mod catalog;
 pub mod component;
 pub mod constraint;
 pub mod contract;
@@ -17,6 +18,7 @@ pub mod module;
 pub mod operation;
 pub mod pipeline;
 pub mod program;
+pub mod registry;
 pub mod resource;
 pub mod scrape_catalog;
 pub mod target;
@@ -56,10 +58,14 @@ pub use module::{Method, Module, ModuleKind, Param};
 pub use operation::{
     classify_program, infer_graph, is_executable_op, scan_author_calls, ApiRoute, DocCapabilities,
     ExecutableGraph, ExecutionMode, ProcessorOp, ScrapeCapabilities, ScrapeSelect, UiCapabilities,
-    DEFAULT_API_PORT, DEFAULT_TERMINAL_PORT, DEFAULT_WEB_PORT, EXECUTABLE_OPS, KNOWN_NAMESPACES,
+    DEFAULT_API_PORT, DEFAULT_TERMINAL_PORT, DEFAULT_WEB_PORT, KNOWN_NAMESPACES,
 };
 pub use pipeline::{Pipeline, PipelineStep};
 pub use program::Program;
+pub use registry::{
+    executable_ops, lookup_operation, Capability, CompatRule, Engine, OperationSpec, COMPATIBILITY,
+    OPERATION_CATALOG,
+};
 pub use resource::{
     sink_table_for_contract, snake_case as resource_snake_case, ActionDef, Resource, ResourceKind,
     ResourceMethod, ResourceSeed,

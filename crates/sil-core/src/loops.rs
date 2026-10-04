@@ -19,32 +19,16 @@ pub const DEFAULT_ASK_RETRY: u64 = 1;
 pub const DEFAULT_READ_RETRY: u64 = 2;
 pub const LOOP_READ_OPS: &[&str] = &["scrape::page", "mcp::call"];
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LoopPropKind {
-    /// Literal string.
-    String,
-    /// Literal string with `{$name.field}` placeholders filled at run time.
-    Template,
-    /// Bare identifier (binding name, contract, resource, closed token).
-    Ident,
-    /// Non-negative integer literal.
-    Number,
-    /// Bare flag (`:desc`).
-    Flag,
-    /// Expression over bindings (`$rfi.due < $today`).
-    Expr,
-    /// `Resource.capability` reference.
-    Ref,
-}
+use crate::catalog::{
+    ChildPolicy, NodeRole, NodeSpec, OptionKind, OptionSpec, NO_EVENTS, NO_SLOTS, NO_SURFACES,
+};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LoopPropSpec {
-    pub name: &'static str,
-    pub kind: LoopPropKind,
-    pub required: bool,
-    pub description: &'static str,
-    pub closed_values: &'static [&'static str],
-}
+/// Historical names for the shared catalog types.
+pub type LoopPropKind = OptionKind;
+pub type LoopPropSpec = OptionSpec;
+pub type LoopChildPolicy = ChildPolicy;
+pub type LoopNodeRole = NodeRole;
+pub type LoopNodeSpec = NodeSpec;
 
 const fn lp(
     name: &'static str,
@@ -75,29 +59,6 @@ const fn lp_closed(
         description,
         closed_values,
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LoopChildPolicy {
-    None,
-    AnyOf(&'static [&'static str]),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LoopNodeRole {
-    Root,
-    Trigger,
-    Step,
-    Block,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LoopNodeSpec {
-    pub name: &'static str,
-    pub role: LoopNodeRole,
-    pub description: &'static str,
-    pub props: &'static [LoopPropSpec],
-    pub children: LoopChildPolicy,
 }
 
 pub const LOOP_TRIGGERS: &[&str] = &["schedule", "manual", "on_mutation"];
@@ -135,7 +96,10 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
         description: "Root of a loop. The first child is exactly one trigger; the remaining children are steps that run in order.",
         props: &[],
         children: LoopChildPolicy::AnyOf(FLOW_CHILDREN),
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "schedule",
         role: LoopNodeRole::Trigger,
@@ -146,14 +110,20 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
             lp("catch_up", LoopPropKind::String, false, "How far back a missed firing still runs after downtime, e.g. \"4h\" (max 30d). Only the latest missed firing runs."),
         ],
         children: LoopChildPolicy::None,
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "manual",
         role: LoopNodeRole::Trigger,
         description: "Starts a run when a person asks for one. With an `app` (or any scheduled loop) that is Run now in the synthesized /loops inbox; when every loop is manual and there is no `app`, the program is a command: `silc main.silc` runs each loop once, prints its notices to stdout, and exits.",
         props: &[],
         children: LoopChildPolicy::None,
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "on_mutation",
         role: LoopNodeRole::Trigger,
@@ -163,7 +133,10 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
             lp_closed("mutation", LoopPropKind::Ident, true, "Which change starts a run: `create` or `update`.", &["create", "update"]),
         ],
         children: LoopChildPolicy::None,
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "let",
         role: LoopNodeRole::Step,
@@ -173,7 +146,10 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
             lp("value", LoopPropKind::Expr, true, "Expression over earlier bindings, literals, or `Contract.new(...)`."),
         ],
         children: LoopChildPolicy::None,
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "find",
         role: LoopNodeRole::Step,
@@ -188,7 +164,10 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
             lp("one", LoopPropKind::Flag, false, "Return the first matching row instead of a list; empty when nothing matches."),
         ],
         children: LoopChildPolicy::None,
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "read",
         role: LoopNodeRole::Step,
@@ -205,7 +184,10 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
             lp("retry", LoopPropKind::Number, false, "Retries after a failed fetch (default 2, max 10)."),
         ],
         children: LoopChildPolicy::None,
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "ask",
         role: LoopNodeRole::Step,
@@ -218,7 +200,10 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
             lp("retry", LoopPropKind::Number, false, "Retries when the answer does not match the contract (default 1, max 10)."),
         ],
         children: LoopChildPolicy::AnyOf(&["otherwise"]),
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "gate",
         role: LoopNodeRole::Step,
@@ -228,28 +213,40 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
             lp("reason", LoopPropKind::String, true, "Why the gate exists; recorded when it blocks."),
         ],
         children: LoopChildPolicy::AnyOf(&["otherwise"]),
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "branch",
         role: LoopNodeRole::Step,
         description: "Runs the first `loop::when` whose condition is true, else the required `loop::otherwise`. Unknown conditions are not true.",
         props: &[],
         children: LoopChildPolicy::AnyOf(&["when", "otherwise"]),
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "when",
         role: LoopNodeRole::Block,
         description: "One arm of a `loop::branch`. Its steps run when the condition is true.",
         props: &[lp("that", LoopPropKind::Expr, true, "Condition for this arm; unknown counts as false.")],
         children: LoopChildPolicy::AnyOf(LOOP_STEPS),
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "otherwise",
         role: LoopNodeRole::Block,
         description: "Fallback block for `branch`, `gate`, or `ask`. Under gate and ask it must end in stop, fail, or skip.",
         props: &[],
         children: LoopChildPolicy::AnyOf(LOOP_STEPS),
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "each",
         role: LoopNodeRole::Step,
@@ -260,7 +257,10 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
             lp("max", LoopPropKind::Number, true, "Maximum items processed (at most 10000); extra items fail the run before it starts the loop."),
         ],
         children: LoopChildPolicy::AnyOf(LOOP_STEPS),
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "write",
         role: LoopNodeRole::Step,
@@ -272,7 +272,10 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
             lp("unchecked", LoopPropKind::String, false, "Reason to let unreviewed model output reach this effect; shown in the build report."),
         ],
         children: LoopChildPolicy::None,
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "notify",
         role: LoopNodeRole::Step,
@@ -284,7 +287,10 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
             lp("unchecked", LoopPropKind::String, false, "Reason to let unreviewed model output reach this effect."),
         ],
         children: LoopChildPolicy::None,
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "approve",
         role: LoopNodeRole::Step,
@@ -297,42 +303,60 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
             lp("as", LoopPropKind::Ident, false, "Binding for the decision (`outcome`, `by`, `decided_at`, `note`)."),
         ],
         children: LoopChildPolicy::AnyOf(&["declined", "timed_out"]),
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "declined",
         role: LoopNodeRole::Block,
         description: "Runs when the approver declines; must end in stop, fail, or skip.",
         props: &[],
         children: LoopChildPolicy::AnyOf(LOOP_STEPS),
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "timed_out",
         role: LoopNodeRole::Block,
         description: "Runs when nobody decides before `:within`; must end in stop, fail, or skip.",
         props: &[],
         children: LoopChildPolicy::AnyOf(LOOP_STEPS),
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "stop",
         role: LoopNodeRole::Step,
         description: "Ends the run successfully. Inside `each` it ends the whole run, not just the item.",
         props: &[lp("reason", LoopPropKind::Template, false, "Why the run stopped; recorded on the run.")],
         children: LoopChildPolicy::None,
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "fail",
         role: LoopNodeRole::Step,
         description: "Fails the current item inside `each`, or the run outside it, with a recorded reason.",
         props: &[lp("reason", LoopPropKind::Template, true, "Failure reason shown in the runs table.")],
         children: LoopChildPolicy::None,
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
     LoopNodeSpec {
         name: "skip",
         role: LoopNodeRole::Step,
         description: "Skips the rest of the current `each` item; only valid inside `each`.",
         props: &[lp("reason", LoopPropKind::Template, true, "Why the item was skipped; recorded in the event log.")],
         children: LoopChildPolicy::None,
-    },
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
 ];
 
 pub fn lookup_loop_node(name: &str) -> Option<&'static LoopNodeSpec> {
@@ -380,6 +404,7 @@ pub fn format_loop_catalog_line(spec: &LoopNodeSpec) -> String {
             .map(|n| format!("`{n}`"))
             .collect::<Vec<_>>()
             .join(", "),
+        LoopChildPolicy::Any => "any".to_string(),
     };
     format!(
         "- `loop::{}` — options: {}; children: {}",
@@ -1046,35 +1071,38 @@ impl<'a> Checker<'a> {
             if !seen.insert(pname.as_str()) {
                 return Err(self.err(node, format!("option `:{pname}` appears twice")));
             }
-            let ok = match pspec.kind {
-                LoopPropKind::String | LoopPropKind::Template => matches!(value, Expr::String(_)),
-                LoopPropKind::Ident => matches!(value, Expr::Ident(_)),
-                LoopPropKind::Number => {
-                    matches!(value, Expr::Number(n) if n.parse::<u64>().is_ok())
-                }
-                LoopPropKind::Flag => matches!(value, Expr::Bool(true)),
-                LoopPropKind::Ref => node.ref_prop(pname).is_some(),
-                LoopPropKind::Expr => true,
-            };
-            if !ok {
-                let want = match pspec.kind {
-                    LoopPropKind::String | LoopPropKind::Template => "a string",
-                    LoopPropKind::Ident => "a bare name",
-                    LoopPropKind::Number => "a whole number",
-                    LoopPropKind::Flag => "a bare flag",
-                    LoopPropKind::Ref => "`Resource.capability`",
-                    LoopPropKind::Expr => "an expression",
+            if !pspec.closed_values.is_empty() && matches!(pspec.kind, LoopPropKind::String) {
+                // `:op("mcp::call")` stays a string for one release. The nested
+                // form `mcp::call(...)` is parsed into the same string.
+                let text = match value {
+                    Expr::String(s) | Expr::Ident(s) => s.as_str(),
+                    _ => "",
                 };
-                return Err(self.err(node, format!(":{pname} must be {want}")));
-            }
-            if !pspec.closed_values.is_empty() {
-                let v = value.as_ident().unwrap_or_default();
-                if !pspec.closed_values.contains(&v) {
+                if !pspec.closed_values.contains(&text) {
                     return Err(self.err(
                         node,
                         format!(":{pname} must be one of {}", pspec.closed_values.join("|")),
                     ));
                 }
+            } else if !pspec.closed_values.is_empty() {
+                if let Err(err) = crate::catalog::check_closed_enum(value, pspec.closed_values) {
+                    let message = match err {
+                        crate::catalog::ClosedEnumError::NotAllowed(_) => format!(
+                            ":{pname} must be one of {}",
+                            pspec.closed_values.join("|")
+                        ),
+                        crate::catalog::ClosedEnumError::StringForm(value) => format!(
+                            ":{pname} takes a bare name; write `:{pname}({value})` instead of `:{pname}(\"{value}\")`"
+                        ),
+                    };
+                    return Err(self.err(node, message));
+                }
+            }
+            let ok =
+                crate::catalog::option_accepts(pspec.kind, value, node.ref_prop(pname).is_some());
+            if !ok {
+                let want = crate::catalog::option_expected(pspec.kind);
+                return Err(self.err(node, format!(":{pname} must be {want}")));
             }
         }
         match spec.children {
@@ -1103,7 +1131,7 @@ impl<'a> Checker<'a> {
                     }
                 }
             }
-            LoopChildPolicy::None => {}
+            LoopChildPolicy::None | LoopChildPolicy::Any => {}
         }
         Ok(spec)
     }

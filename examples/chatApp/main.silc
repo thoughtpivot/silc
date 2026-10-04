@@ -31,13 +31,13 @@ component SessionItem {
             when $.selected {
                 ui::button(
                     :label($.draft_title),
-                    :variant("primary"),
+                    :variant(primary),
                     :on(click(on_click))
                 )
             } else {
                 ui::button(
                     :label($.session.title),
-                    :variant("secondary"),
+                    :variant(secondary),
                     :on(click(on_click))
                 )
             }
@@ -86,7 +86,7 @@ component ChatPage {
                                 ui::button(:label("Save name"), :submit),
                                 ui::button(
                                     :label("Delete chat"),
-                                    :variant("destructive"),
+                                    :variant(destructive),
                                     :on(click(on_delete))
                                 )
                             )

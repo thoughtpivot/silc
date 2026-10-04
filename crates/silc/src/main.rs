@@ -60,6 +60,8 @@ enum Commands {
         /// Path to the `.silc` entry file
         path: PathBuf,
     },
+    /// Print the generated catalog sections (the AGENTS.md contract)
+    Docs,
     /// Run a pipeline-only program with JSON input
     Run {
         /// Path to the `.silc` entry file
@@ -134,6 +136,13 @@ fn main() {
                 eprintln!("silc: {err}");
                 process::exit(1);
             }
+        }
+        Some(Commands::Docs) => {
+            for spec in sil_core::UI_COMPONENT_CATALOG {
+                println!("{}", sil_core::format_component_catalog_line(spec));
+            }
+            println!("{}", sil_core::format_game_catalog_md());
+            println!("{}", sil_core::format_loop_catalog_md());
         }
         Some(Commands::Build { path }) => {
             if let Err(err) = build_only(&path) {

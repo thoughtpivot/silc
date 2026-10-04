@@ -19,7 +19,17 @@ Entries before 0.5.0 are reconstructed from the commit history.
 - Hard-coded catalog counts were removed from prose; counts are pinned only in
   `docs_conformance.rs`.
 - Editor grammar scopes `class` and `sink` as `invalid.deprecated`; `loop` is a
-  hover keyword.
+  hover keyword and a lexer keyword. Inside an expression or a field name
+  (`$.loop`, `game::audio(:kind(loop))`) it is still an identifier.
+- `ui::`, `game::`, and `loop::` catalogs share one `NodeSpec`. Closed-enum
+  values are bare identifiers; a quoted string is a compile error with a fix-it.
+- Executable operations live in `OPERATION_CATALOG`. The router reads each
+  scrape operation's engine from that catalog. "Cannot mix" rules live in
+  `COMPATIBILITY`.
+- `ProcessorOp` names use the operation spelling (`text::score`, `llm::complete`,
+  `tensor::infer`).
+- Author `sink` modules and `app.serve` are gone from the model. Component
+  methods cannot be pipelines.
 
 ### Added
 
@@ -28,6 +38,10 @@ Entries before 0.5.0 are reconstructed from the commit history.
 - [docs/GLOSSARY.md](docs/GLOSSARY.md): one meaning per term and the retired
   vocabulary.
 - `examples/hotelSignupApp` README and index rows.
+- `mcp::call` is a registered operation. `loop::read` accepts a nested
+  operation (`loop::read(:as(x), scrape::page(:url(...)))`); the string
+  `:op("scrape::page")` remains valid for one release.
+- `silc docs` prints the generated catalog sections.
 
 ### Fixed
 

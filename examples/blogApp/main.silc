@@ -447,7 +447,7 @@ component AdminPage {
                             :label("Month")
                         ),
                         ui::toolbar(
-                            ui::button(:label("Create"), :variant("primary"), :submit)
+                            ui::button(:label("Create"), :variant(primary), :submit)
                         )
                     )
                 ),
@@ -487,7 +487,7 @@ component AdminPage {
                         ui::toolbar(
                             ui::button(
                                 :label("Delete"),
-                                :variant("destructive"),
+                                :variant(destructive),
                                 :on(click(on_delete))
                             )
                         )

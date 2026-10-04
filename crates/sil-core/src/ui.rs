@@ -4,72 +4,17 @@ use crate::component::{UiNode, UiTemplate};
 use crate::contract::Contract;
 use crate::expr::Expr;
 
-/// Render surface every primitive and author component must support.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Surface {
-    Web,
-    Terminal,
-}
+pub use crate::catalog::{
+    ChildPolicy, EventSpec, NodeRole, NodeSpec, OptionKind, OptionSpec, SlotSpec, Surface,
+    UI_SURFACES,
+};
 
-impl Surface {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Surface::Web => "web",
-            Surface::Terminal => "terminal",
-        }
-    }
-}
+/// Historical names for the shared catalog types. `Prop` means option.
+pub type PropKind = OptionKind;
+pub type PropSpec = OptionSpec;
+pub type ComponentSpec = NodeSpec;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PropKind {
-    String,
-    Bool,
-    Ident,
-    StringList,
-    Expr,
-    Flag,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PropSpec {
-    pub name: &'static str,
-    pub kind: PropKind,
-    pub required: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct SlotSpec {
-    pub name: &'static str,
-    pub component: &'static str,
-    pub required: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ChildPolicy {
-    None,
-    AnyOf(&'static [&'static str]),
-    Any,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct EventSpec {
-    pub name: &'static str,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ComponentSpec {
-    pub name: &'static str,
-    /// One or two sentences: what the primitive renders and when to use it.
-    pub description: &'static str,
-    pub props: &'static [PropSpec],
-    pub slots: &'static [SlotSpec],
-    pub children: ChildPolicy,
-    pub events: &'static [EventSpec],
-    /// Every builtin must declare both surfaces.
-    pub surfaces: &'static [Surface],
-}
-
-const BOTH: &[Surface] = &[Surface::Web, Surface::Terminal];
+const BOTH: &[Surface] = UI_SURFACES;
 
 const LAYOUT_CHILDREN: &[&str] = &[
     "stack",
@@ -158,6 +103,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
         children: ChildPolicy::AnyOf(LAYOUT_CHILDREN),
         events: &[],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "app_bar",
@@ -166,11 +112,14 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
             name: "title",
             kind: PropKind::Expr,
             required: true,
+            description: "",
+            closed_values: &[],
         }],
         slots: &[],
         children: ChildPolicy::None,
         events: &[],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "side_panel",
@@ -180,6 +129,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
         children: ChildPolicy::AnyOf(&["nav_item"]),
         events: &[],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "nav_item",
@@ -189,22 +139,29 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
                 name: "label",
                 kind: PropKind::Expr,
                 required: true,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "to",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "active",
                 kind: PropKind::Flag,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
         ],
         slots: &[],
         children: ChildPolicy::None,
         events: &[EventSpec { name: "click" }],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "toolbar",
@@ -214,6 +171,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
         children: ChildPolicy::AnyOf(&["button"]),
         events: &[],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "stack",
@@ -223,6 +181,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
         children: ChildPolicy::Any,
         events: &[],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "row",
@@ -232,6 +191,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
         children: ChildPolicy::Any,
         events: &[],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "grid",
@@ -241,6 +201,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
         children: ChildPolicy::Any,
         events: &[],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "card",
@@ -254,6 +215,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
         children: ChildPolicy::Any,
         events: &[],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "heading",
@@ -263,17 +225,22 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
                 name: "text",
                 kind: PropKind::Expr,
                 required: true,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "level",
                 kind: PropKind::Ident,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
         ],
         slots: &[],
         children: ChildPolicy::None,
         events: &[],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "text",
@@ -282,11 +249,14 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
             name: "text",
             kind: PropKind::Expr,
             required: true,
+            description: "",
+            closed_values: &[],
         }],
         slots: &[],
         children: ChildPolicy::None,
         events: &[],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "form",
@@ -296,6 +266,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
         children: ChildPolicy::AnyOf(FORM_CHILDREN),
         events: &[EventSpec { name: "submit" }],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "text_input",
@@ -305,32 +276,43 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
                 name: "field",
                 kind: PropKind::Ident,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "value",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "label",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "placeholder",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "disabled",
                 kind: PropKind::Flag,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
         ],
         slots: &[],
         children: ChildPolicy::None,
         events: &[EventSpec { name: "input" }, EventSpec { name: "change" }],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "textarea",
@@ -340,27 +322,36 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
                 name: "field",
                 kind: PropKind::Ident,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "value",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "label",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "disabled",
                 kind: PropKind::Flag,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
         ],
         slots: &[],
         children: ChildPolicy::None,
         events: &[EventSpec { name: "input" }, EventSpec { name: "change" }],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "file_input",
@@ -370,32 +361,43 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
                 name: "field",
                 kind: PropKind::Ident,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "label",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "accept",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "multiple",
                 kind: PropKind::Flag,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "disabled",
                 kind: PropKind::Flag,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
         ],
         slots: &[],
         children: ChildPolicy::None,
         events: &[EventSpec { name: "change" }],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "radio_group",
@@ -405,32 +407,43 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
                 name: "field",
                 kind: PropKind::Ident,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "value",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "options",
                 kind: PropKind::StringList,
                 required: true,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "label",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "disabled",
                 kind: PropKind::Flag,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
         ],
         slots: &[],
         children: ChildPolicy::None,
         events: &[EventSpec { name: "change" }],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "select",
@@ -440,37 +453,50 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
                 name: "field",
                 kind: PropKind::Ident,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "value",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "options",
                 kind: PropKind::StringList,
                 required: true,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "label",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "placeholder",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "disabled",
                 kind: PropKind::Flag,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
         ],
         slots: &[],
         children: ChildPolicy::None,
         events: &[EventSpec { name: "change" }],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "checkbox",
@@ -480,27 +506,36 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
                 name: "field",
                 kind: PropKind::Ident,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "label",
                 kind: PropKind::Expr,
                 required: true,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "checked",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "disabled",
                 kind: PropKind::Flag,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
         ],
         slots: &[],
         children: ChildPolicy::None,
         events: &[EventSpec { name: "change" }],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "switch",
@@ -510,27 +545,36 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
                 name: "field",
                 kind: PropKind::Ident,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "label",
                 kind: PropKind::Expr,
                 required: true,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "checked",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "disabled",
                 kind: PropKind::Flag,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
         ],
         slots: &[],
         children: ChildPolicy::None,
         events: &[EventSpec { name: "change" }],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "field",
@@ -540,22 +584,29 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
                 name: "label",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "hint",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "error",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
         ],
         slots: &[],
         children: ChildPolicy::AnyOf(FORM_CHILDREN),
         events: &[],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "button",
@@ -565,37 +616,50 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
                 name: "label",
                 kind: PropKind::Expr,
                 required: true,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "variant",
                 kind: PropKind::Ident,
                 required: false,
+                description: "",
+                closed_values: &["primary", "secondary", "destructive", "ghost"],
             },
             PropSpec {
                 name: "size",
                 kind: PropKind::Ident,
                 required: false,
+                description: "",
+                closed_values: &["sm", "md", "lg"],
             },
             PropSpec {
                 name: "submit",
                 kind: PropKind::Flag,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "active",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "disabled",
                 kind: PropKind::Flag,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
         ],
         slots: &[],
         children: ChildPolicy::None,
         events: &[EventSpec { name: "click" }],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "chat",
@@ -605,52 +669,71 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
                 name: "field",
                 kind: PropKind::Ident,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "value",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "label",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "placeholder",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "session",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "loading",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "error",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "context",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "persona",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
         ],
         slots: &[],
         children: ChildPolicy::None,
         events: &[EventSpec { name: "send" }],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "chat_history",
@@ -660,22 +743,29 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
                 name: "title",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "items",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "collapsible",
                 kind: PropKind::Flag,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
         ],
         slots: &[],
         children: ChildPolicy::None,
         events: &[],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "search_input",
@@ -685,37 +775,50 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
                 name: "field",
                 kind: PropKind::Ident,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "value",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "label",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "placeholder",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "context",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "persona",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
         ],
         slots: &[],
         children: ChildPolicy::None,
         events: &[EventSpec { name: "input" }, EventSpec { name: "submit" }],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "filter_bar",
@@ -725,6 +828,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
         children: ChildPolicy::AnyOf(&["search_input", "button", "text_input"]),
         events: &[],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "collection",
@@ -734,17 +838,22 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
                 name: "items",
                 kind: PropKind::Expr,
                 required: true,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "empty_text",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
         ],
         slots: &[],
         children: ChildPolicy::Any,
         events: &[],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "list",
@@ -753,11 +862,14 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
             name: "items",
             kind: PropKind::Expr,
             required: false,
+            description: "",
+            closed_values: &[],
         }],
         slots: &[],
         children: ChildPolicy::Any,
         events: &[],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "table",
@@ -767,57 +879,78 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
                 name: "rows",
                 kind: PropKind::Expr,
                 required: true,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "columns",
                 kind: PropKind::Expr,
                 required: true,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "empty_text",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "filter_field",
                 kind: PropKind::Ident,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "filter_column",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "filter_all",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "sortable",
                 kind: PropKind::Flag,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "searchable",
                 kind: PropKind::Flag,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "selectable",
                 kind: PropKind::Flag,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "dense",
                 kind: PropKind::Flag,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
         ],
         slots: &[],
         children: ChildPolicy::None,
         events: &[EventSpec { name: "select" }],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "badge",
@@ -827,17 +960,22 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
                 name: "text",
                 kind: PropKind::Expr,
                 required: true,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "tone",
                 kind: PropKind::Ident,
                 required: false,
+                description: "",
+                closed_values: &["default", "muted", "info", "success", "warning", "danger"],
             },
         ],
         slots: &[],
         children: ChildPolicy::None,
         events: &[],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "alert",
@@ -847,32 +985,43 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
                 name: "text",
                 kind: PropKind::Expr,
                 required: true,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "title",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "tone",
                 kind: PropKind::Ident,
                 required: false,
+                description: "",
+                closed_values: &["default", "muted", "info", "success", "warning", "danger"],
             },
             PropSpec {
                 name: "dismissible",
                 kind: PropKind::Flag,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "auto_dismiss_ms",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
         ],
         slots: &[],
         children: ChildPolicy::None,
         events: &[EventSpec { name: "dismiss" }],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "divider",
@@ -881,11 +1030,14 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
             name: "label",
             kind: PropKind::Expr,
             required: false,
+            description: "",
+            closed_values: &[],
         }],
         slots: &[],
         children: ChildPolicy::None,
         events: &[],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "section",
@@ -895,17 +1047,22 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
                 name: "title",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "description",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
         ],
         slots: &[],
         children: ChildPolicy::Any,
         events: &[],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "footer",
@@ -915,6 +1072,7 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
         children: ChildPolicy::Any,
         events: &[],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "description_list",
@@ -923,11 +1081,14 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
             name: "items",
             kind: PropKind::Expr,
             required: true,
+            description: "",
+            closed_values: &[],
         }],
         slots: &[],
         children: ChildPolicy::None,
         events: &[],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "tabs",
@@ -937,17 +1098,22 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
                 name: "field",
                 kind: PropKind::Ident,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "value",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
         ],
         slots: &[],
         children: ChildPolicy::AnyOf(&["tab"]),
         events: &[EventSpec { name: "change" }],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "tab",
@@ -957,17 +1123,22 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
                 name: "label",
                 kind: PropKind::Expr,
                 required: true,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "value",
                 kind: PropKind::Expr,
                 required: true,
+                description: "",
+                closed_values: &[],
             },
         ],
         slots: &[],
         children: ChildPolicy::Any,
         events: &[],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "dialog",
@@ -977,17 +1148,22 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
                 name: "open",
                 kind: PropKind::Expr,
                 required: true,
+                description: "",
+                closed_values: &[],
             },
             PropSpec {
                 name: "title",
                 kind: PropKind::Expr,
                 required: false,
+                description: "",
+                closed_values: &[],
             },
         ],
         slots: &[],
         children: ChildPolicy::Any,
         events: &[EventSpec { name: "confirm" }, EventSpec { name: "cancel" }],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "loading",
@@ -996,11 +1172,14 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
             name: "text",
             kind: PropKind::Expr,
             required: false,
+            description: "",
+            closed_values: &[],
         }],
         slots: &[],
         children: ChildPolicy::None,
         events: &[],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
     ComponentSpec {
         name: "empty",
@@ -1009,11 +1188,14 @@ pub const UI_COMPONENT_CATALOG: &[ComponentSpec] = &[
             name: "text",
             kind: PropKind::Expr,
             required: false,
+            description: "",
+            closed_values: &[],
         }],
         slots: &[],
         children: ChildPolicy::None,
         events: &[],
         surfaces: BOTH,
+        role: NodeRole::Plain,
     },
 ];
 
@@ -1238,25 +1420,7 @@ const EVENT_DOC_OVERRIDES: &[(&str, &str, &str)] = &[
 
 /// Canonical one-line API reference for docs / AGENTS.md (kept in sync by tests).
 pub fn format_component_catalog_line(spec: &ComponentSpec) -> String {
-    let props = if spec.props.is_empty() {
-        "none".to_string()
-    } else {
-        spec.props
-            .iter()
-            .map(|prop| {
-                let mut item = if prop.required {
-                    format!("`{}` (required)", prop.name)
-                } else {
-                    format!("`{}?`", prop.name)
-                };
-                if matches!(prop.kind, PropKind::Flag) {
-                    item.push_str(" (flag)");
-                }
-                item
-            })
-            .collect::<Vec<_>>()
-            .join(", ")
-    };
+    let props = crate::catalog::format_ui_option_list(spec.props);
     let events = if spec.events.is_empty() {
         "none".to_string()
     } else {
@@ -1293,29 +1457,31 @@ pub fn format_component_catalog_line(spec: &ComponentSpec) -> String {
     )
 }
 
-const VARIANT_VALUES: &[&str] = &["primary", "secondary", "destructive", "ghost"];
-const TONE_VALUES: &[&str] = &["default", "muted", "info", "success", "warning", "danger"];
-const SIZE_VALUES: &[&str] = &["sm", "md", "lg"];
-
-fn validate_closed_ident_prop(node: &UiNode, prop: &str, allowed: &[&str]) -> Result<(), String> {
-    let Some(expr) = node.prop(prop) else {
-        return Ok(());
-    };
-    let value = match expr {
-        Expr::Ident(s) | Expr::String(s) => s.as_str(),
-        // Dynamic expressions are allowed; only closed tokens are validated.
-        _ => return Ok(()),
-    };
-    if allowed.iter().any(|item| *item == value) {
-        return Ok(());
+fn validate_closed_options(node: &UiNode, spec: &ComponentSpec) -> Result<(), String> {
+    for prop in spec.props {
+        if prop.closed_values.is_empty() {
+            continue;
+        }
+        let Some(expr) = node.prop(prop.name) else {
+            continue;
+        };
+        if let Err(err) = crate::catalog::check_closed_enum(expr, prop.closed_values) {
+            return Err(match err {
+                crate::catalog::ClosedEnumError::NotAllowed(value) => format!(
+                    "invalid `:{}({})` on `ui::{}`; expected one of: {}",
+                    prop.name,
+                    value,
+                    node.component,
+                    prop.closed_values.join(", ")
+                ),
+                crate::catalog::ClosedEnumError::StringForm(value) => format!(
+                    "ui::{} `:{}` takes a bare name; write `:{}({value})` instead of `:{}(\"{value}\")`",
+                    node.component, prop.name, prop.name, prop.name
+                ),
+            });
+        }
     }
-    Err(format!(
-        "invalid `:{}({})` on `ui::{}`; expected one of: {}",
-        prop,
-        value,
-        node.component,
-        allowed.join(", ")
-    ))
+    Ok(())
 }
 
 pub fn validate_builtin_node(node: &UiNode) -> Result<(), String> {
@@ -1353,9 +1519,7 @@ pub fn validate_builtin_node(node: &UiNode) -> Result<(), String> {
             ));
         }
     }
-    validate_closed_ident_prop(node, "variant", VARIANT_VALUES)?;
-    validate_closed_ident_prop(node, "tone", TONE_VALUES)?;
-    validate_closed_ident_prop(node, "size", SIZE_VALUES)?;
+    validate_closed_options(node, spec)?;
     Ok(())
 }
 

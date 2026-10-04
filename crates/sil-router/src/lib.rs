@@ -13,6 +13,12 @@ pub fn route_program(program: &Program) -> Vec<RouteDecision> {
     program.modules.iter().map(route_module).collect()
 }
 
+fn scrape_engine_is(ops: &[&str], engine: sil_core::Engine) -> bool {
+    ops.iter().any(|name| {
+        sil_core::lookup_operation("scrape", name).is_some_and(|op| op.engine == engine)
+    })
+}
+
 fn scrape_ops(module: &Module) -> Vec<&str> {
     module
         .methods
@@ -41,7 +47,6 @@ pub fn route_module(module: &Module) -> RouteDecision {
             .any(|namespace| candidates.contains(namespace))
     };
     let scrape = scrape_ops(module);
-    let has_scrape_op = |names: &[&str]| scrape.iter().any(|op| names.contains(op));
     let cuda = module.methods.iter().any(|method| {
         method.pipeline.steps.iter().any(|step| match step {
             sil_core::PipelineStep::Call { args, .. } => args
@@ -50,31 +55,9 @@ pub fn route_module(module: &Module) -> RouteDecision {
             _ => false,
         })
     });
-    let low_latency = module.traits.iter().any(|t| {
-        t.name == "latency"
-            && t.value
-                .trim_end_matches("ms")
-                .parse::<u64>()
-                .is_ok_and(|value| value <= 10)
-    });
-
-    let sqlite_storage = module
-        .traits
-        .iter()
-        .any(|t| t.name == "storage" && t.value.eq_ignore_ascii_case("SQLite"));
-
     // Provenance cites ADR-004 / ADR-006 runtime strength catalogs.
-    let (target, provenance) = if module.kind == ModuleKind::Sink && (low_latency || sqlite_storage)
-    {
-        (
-            Target::Go,
-            if sqlite_storage {
-                "tier1: sink+SQLite → Go (durable low-latency storage)".to_string()
-            } else {
-                "tier1: sink+latency≤10ms → Go (predictable low-latency systems path)".to_string()
-            },
-        )
-    } else if module.kind == ModuleKind::Processor
+    // Author `sink` modules are rejected by the parser; persistence is synthesized.
+    let (target, provenance) = if module.kind == ModuleKind::Processor
         && (has(&["tensor", "numpy", "pandas", "text", "llm"]) || cuda)
     {
         (
@@ -93,7 +76,9 @@ pub fn route_module(module: &Module) -> RouteDecision {
             Target::Python,
             "tier1: processor+doc → Python (document extract, ADR-011)".to_string(),
         )
-    } else if module.kind == ModuleKind::Processor && has_scrape_op(&["render", "extract"]) {
+    } else if module.kind == ModuleKind::Processor
+        && scrape_engine_is(&scrape, sil_core::Engine::Python)
+    {
         (
             Target::Python,
             "tier1: processor+scrape render/extract → Python (Playwright browser, ADR-006)"
@@ -127,7 +112,7 @@ pub fn route_module(module: &Module) -> RouteDecision {
                 namespaces.join(", ")
             ),
         )
-    } else if has_scrape_op(&["site"]) {
+    } else if scrape_engine_is(&scrape, sil_core::Engine::Go) {
         (
             Target::Go,
             format!(
@@ -135,7 +120,7 @@ pub fn route_module(module: &Module) -> RouteDecision {
                 namespaces.join(", ")
             ),
         )
-    } else if has_scrape_op(&["render", "extract"]) {
+    } else if scrape_engine_is(&scrape, sil_core::Engine::Python) {
         (
             Target::Python,
             format!(
@@ -187,10 +172,6 @@ pub fn route_module(module: &Module) -> RouteDecision {
             ModuleKind::Processor => (
                 Target::Python,
                 "fallback: processor → Python (domain analysis glue)".to_string(),
-            ),
-            ModuleKind::Sink => (
-                Target::Go,
-                "fallback: sink → Go (systems and storage paths)".to_string(),
             ),
             _ => (
                 Target::Bun,

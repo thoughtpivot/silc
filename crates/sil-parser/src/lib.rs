@@ -89,6 +89,10 @@ impl Parser {
                 Some(Token::Game) => {
                     self.parse_subject_into(&mut program, ClassKind::Game, "game")?
                 }
+                Some(Token::Loop) => {
+                    let lp = self.parse_loop_decl()?;
+                    program.loops.push(lp);
+                }
                 Some(Token::Service) => self.parse_subject_into(
                     &mut program,
                     ClassKind::Module(ModuleKind::Service),
@@ -110,10 +114,6 @@ impl Parser {
                     "task",
                 )?,
                 Some(Token::Class) => return Err(self.legacy_class_error()),
-                Some(Token::Ident(word)) if word == "loop" => {
-                    let lp = self.parse_loop_decl()?;
-                    program.loops.push(lp);
-                }
                 _ => {
                     return Err(self.error_here(
                         "unsupported construct; expected `subset`, `contract`, `component`, `resource`, `app`, `game`, `loop`, `service`, `processor`, or `task`",
@@ -364,7 +364,7 @@ impl Parser {
         let mut emits = Vec::new();
         let mut queries = Vec::new();
         let mut handlers = Vec::new();
-        let mut methods = Vec::new();
+        let methods = Vec::new();
         let mut render: Option<UiTemplate> = None;
 
         while !matches!(self.peek(), Some(Token::RBrace)) {
@@ -466,10 +466,11 @@ impl Parser {
                         let is_pipeline = self.looks_like_pipeline_body();
                         self.pos = saved;
                         if is_pipeline {
-                            methods.push(self.parse_pipeline_method()?);
-                        } else {
-                            handlers.push(self.parse_handler_method()?);
+                            return Err(self.error_here(
+                                "component methods are handlers, not pipelines; put `==>` chains on a service or processor",
+                            ));
                         }
+                        handlers.push(self.parse_handler_method()?);
                     }
                 }
                 None => return Err(self.error_here("unterminated component body")),
@@ -486,7 +487,6 @@ impl Parser {
             col: start.col,
         })?;
 
-        let _ = &methods; // reserved for pipeline-style methods if needed
         Ok(Component {
             name,
             props,
@@ -938,7 +938,6 @@ impl Parser {
         Ok(App {
             name,
             routes,
-            serve: None,
             span: self.finish_span(start),
         })
     }
@@ -1026,11 +1025,60 @@ impl Parser {
     }
 
     fn at_loop_node(&self) -> bool {
-        matches!(self.peek(), Some(Token::Ident(n)) if n == "loop")
+        matches!(self.peek(), Some(Token::Loop))
             && matches!(
                 self.tokens.get(self.pos + 1).map(|t| &t.token),
                 Some(Token::DoubleColon)
             )
+    }
+
+    /// `scrape::page(...)` or `mcp::call(...)` nested inside `loop::read`.
+    fn at_nested_read_op(&self) -> bool {
+        let ns = match self.peek() {
+            Some(Token::Ident(n)) if n == "scrape" || n == "mcp" => true,
+            _ => false,
+        };
+        ns && matches!(
+            self.tokens.get(self.pos + 1).map(|t| &t.token),
+            Some(Token::DoubleColon)
+        )
+    }
+
+    fn parse_nested_read_op(&mut self) -> Result<(String, Vec<(String, Expr)>), ParseError> {
+        let ns = self.expect_ident("read operation namespace")?;
+        self.expect_simple(Token::DoubleColon, "`::` in read operation")?;
+        let name = self.expect_ident("read operation name")?;
+        self.expect_simple(Token::LParen, "`(` after read operation")?;
+        let mut props = Vec::new();
+        while !matches!(self.peek(), Some(Token::RParen)) {
+            if matches!(self.peek(), Some(Token::Comma)) {
+                self.advance();
+                continue;
+            }
+            if !matches!(self.peek(), Some(Token::Colon)) {
+                return Err(
+                    self.error_here("expected `:option(...)` inside the nested read operation")
+                );
+            }
+            self.advance();
+            let key = self.expect_ident_like_spanned("read option name")?.0;
+            let expr = if matches!(self.peek(), Some(Token::LParen)) {
+                self.advance();
+                if matches!(self.peek(), Some(Token::RParen)) {
+                    self.advance();
+                    Expr::Bool(true)
+                } else {
+                    let expr = self.parse_game_prop_expr()?;
+                    self.expect_simple(Token::RParen, "`)` after read option")?;
+                    expr
+                }
+            } else {
+                Expr::Bool(true)
+            };
+            props.push((key, expr));
+        }
+        self.expect_simple(Token::RParen, "`)` after nested read operation")?;
+        Ok((format!("{ns}::{name}"), props))
     }
 
     fn parse_loop_node(&mut self) -> Result<LoopNode, ParseError> {
@@ -1069,8 +1117,18 @@ impl Parser {
                 prop_spans.push(key_span);
             } else if self.at_loop_node() {
                 children.push(self.parse_loop_node()?);
+            } else if self.at_nested_read_op() {
+                let (op, nested) = self.parse_nested_read_op()?;
+                props.push(("op".into(), Expr::String(op)));
+                prop_spans.push(start);
+                for (key, expr) in nested {
+                    props.push((key, expr));
+                    prop_spans.push(start);
+                }
             } else {
-                return Err(self.error_here("expected `:option(...)` or `loop::node(...)`"));
+                return Err(self.error_here(
+                    "expected `:option(...)`, `loop::node(...)`, or a nested read operation (`scrape::page(...)`, `mcp::call(...)`)",
+                ));
             }
         }
         self.expect_simple(Token::RParen, "`)` after loop node")?;
@@ -1244,6 +1302,10 @@ impl Parser {
                     _ => unreachable!(),
                 };
                 Ok(Expr::Bool(name == "true"))
+            }
+            Some(Token::Loop) => {
+                self.advance();
+                Ok(Expr::Ident("loop".into()))
             }
             Some(Token::Ident(_)) => {
                 let name = self.expect_ident("identifier")?;
@@ -1457,6 +1519,16 @@ impl Parser {
                     .map(|t| Span::new(t.start, t.end, t.line, t.col))
                     .unwrap_or(span);
                 Ok((s, span))
+            }
+            // `loop` is a root keyword and also a field name (`$.loop`) and a
+            // closed value (`game::audio(:kind(loop))`).
+            Token::Loop => {
+                let span = self
+                    .tokens
+                    .get(self.pos.saturating_sub(1))
+                    .map(|t| Span::new(t.start, t.end, t.line, t.col))
+                    .unwrap_or(span);
+                Ok(("loop".into(), span))
             }
             _ => Err(self.error_here(&format!("expected {what}"))),
         }
@@ -1842,6 +1914,7 @@ fn ident_like_name(token: &Token) -> Option<String> {
         Token::Resource => Some("resource".into()),
         Token::App => Some("app".into()),
         Token::Game => Some("game".into()),
+        Token::Loop => Some("loop".into()),
         Token::Service => Some("service".into()),
         Token::Processor => Some("processor".into()),
         Token::Sink => Some("sink".into()),
@@ -2001,7 +2074,7 @@ app ShopApp {
         assert_eq!(program.components.len(), 2);
         assert_eq!(program.apps.len(), 1);
         assert_eq!(program.apps[0].routes[0].component, "ShopPage");
-        assert!(program.apps[0].serve.is_none());
+        assert!(program.apps[0].routes.iter().any(|r| r.path == "/"));
     }
 
     #[test]
