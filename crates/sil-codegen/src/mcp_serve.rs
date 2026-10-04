@@ -313,7 +313,9 @@ pub fn format_mcp_report(program: &Program) -> Option<String> {
         "MCP server: POST {MCP_PATH} (auth env: {MCP_AUTH_ENV})\n"
     ));
     if tools.is_empty() {
-        out.push_str("  (no tools — declare a resource query/mutation or a schedule/manual loop)\n");
+        out.push_str(
+            "  (no tools — declare a resource query/mutation or a schedule/manual loop)\n",
+        );
         return Some(out);
     }
     for tool in &tools {

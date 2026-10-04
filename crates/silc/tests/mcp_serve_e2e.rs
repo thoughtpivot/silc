@@ -106,7 +106,10 @@ fn talk_today_mcp_server_lists_calls_and_rejects_unauth() {
         None,
         r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#,
     );
-    assert_eq!(unauth_status, 401, "expected 401 without token: {unauth_body}");
+    assert_eq!(
+        unauth_status, 401,
+        "expected 401 without token: {unauth_body}"
+    );
 
     let (list_status, list_body) = mcp_post(
         PORT,
@@ -154,7 +157,10 @@ fn talk_today_mcp_server_lists_calls_and_rejects_unauth() {
         Some("test-mcp-token"),
         r#"{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"talk_today_run","arguments":{"requested_by":"agent"}}}"#,
     );
-    assert_eq!(run2_status, 200, "second talk_today_run failed: {run2_body}");
+    assert_eq!(
+        run2_status, 200,
+        "second talk_today_run failed: {run2_body}"
+    );
     assert!(
         run2_body.contains("no new run started") || run2_body.contains("already pending"),
         "second run_now must not start another: {run2_body}"

@@ -1790,10 +1790,7 @@ mod tests {
         );
         assert!(validate_builtin_node(&ok).is_ok());
 
-        let bound = node(
-            "embed",
-            vec![("src", Expr::Var("game_url".into()))],
-        );
+        let bound = node("embed", vec![("src", Expr::Var("game_url".into()))]);
         assert!(validate_builtin_node(&bound).is_ok());
 
         let unknown = node(
