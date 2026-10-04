@@ -2263,10 +2263,7 @@ mod tests {
             component_span: Default::default(),
             prop_spans: vec![],
             props: vec![
-                (
-                    "src".into(),
-                    Expr::String("http://127.0.0.1:18140/".into()),
-                ),
+                ("src".into(), Expr::String("http://127.0.0.1:18140/".into())),
                 ("title".into(), Expr::String("Firefly Run".into())),
             ],
             events: vec![],
