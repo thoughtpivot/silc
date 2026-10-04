@@ -22,9 +22,10 @@ The shared block between `<!-- BEGIN SILC_AGENTS_TEMPLATE -->` and
 [`crates/silc/templates/AGENTS.md`](../crates/silc/templates/AGENTS.md)
 byte-for-byte. App-specific notes go **after** the end marker only.
 
-Tracked examples today: `chatApp`, `inventoryApp`, `scraperApp`,
-`pipelineApp`, `blogApp`, `dataExtractorApp`, `arenaGameApp`, `platformGameApp`,
-`rfiChaseApp`, `oneThingApp`, `oneThingCliApp`, and `whatToDoTodayApp`.
+Every directory under `examples/` is tracked; the conformance test in
+`crates/silc/tests/docs_conformance.rs` checks each one's `AGENTS.md` block
+and `@version`, so a new example needs no registration beyond its files and a
+row in the table below.
 
 ## Current apps
 
@@ -32,6 +33,7 @@ Tracked examples today: `chatApp`, `inventoryApp`, `scraperApp`,
 | --- | --- | --- | --- |
 | [`chatApp/`](chatApp/) | Multi-session local chat via **silclm** | 18090 | 18091 |
 | [`inventoryApp/`](inventoryApp/) | Inventory CRUD + browse/admin + grounded silclm assistant | 18096 | 18097 |
+| [`hotelSignupApp/`](hotelSignupApp/) | Two-route sign-up form + ledger; direct `Guests.create(...)` handler style | 18088 | 18023 |
 | [`scraperApp/`](scraperApp/) | URL + depth form; site crawl via `scrape::*`; results table | 18110 | 18111 |
 | [`pipelineApp/`](pipelineApp/) | One-shot scrape → MiniLM/ONNX → SQLite pipeline | — | — |
 | [`blogApp/`](blogApp/) | Seeded blog: home filters + grounded search + admin modal CRUD | 18120 | 18121 |

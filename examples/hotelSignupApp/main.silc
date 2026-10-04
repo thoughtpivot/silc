@@ -29,7 +29,7 @@ component GuestForm {
                 ui::nav_item(:label("Ledger"), :to("/ledger"))
             )),
             ui::stack(
-                ui::heading(:text("Leave a note"), :level(2)),
+                ui::heading(:text("Sign in a guest"), :level(2)),
                 ui::form(:on(submit(on_submit)),
                     ui::text_input(:field(name), :label("Name")),
                     ui::text_input(:field(phone), :label("Phone Number")),
