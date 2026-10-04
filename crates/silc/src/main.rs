@@ -185,7 +185,16 @@ fn looks_like_direct_run(first: &str) -> bool {
     }
     !matches!(
         first,
-        "assist" | "init" | "build" | "docs" | "run" | "help" | "--help" | "-h" | "--version" | "-V"
+        "assist"
+            | "init"
+            | "build"
+            | "docs"
+            | "run"
+            | "help"
+            | "--help"
+            | "-h"
+            | "--version"
+            | "-V"
     )
 }
 

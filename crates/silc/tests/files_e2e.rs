@@ -53,7 +53,10 @@ fn get_bytes(url: &str) -> (u16, Vec<u8>, String) {
         .unwrap_or("")
         .to_string();
     let mut bytes = Vec::new();
-    response.into_reader().read_to_end(&mut bytes).expect("read");
+    response
+        .into_reader()
+        .read_to_end(&mut bytes)
+        .expect("read");
     (status, bytes, disposition)
 }
 
@@ -120,7 +123,10 @@ fn files_app_lists_downloads_and_rejects_traversal() {
         .map(|e| e["name"].as_str().unwrap())
         .collect();
     assert_eq!(names, vec!["textfiles", "utils", "README.txt"], "{body}");
-    assert!(!body.contains(".secret"), "dot-files must be hidden: {body}");
+    assert!(
+        !body.contains(".secret"),
+        "dot-files must be hidden: {body}"
+    );
 
     // Subfolder listing.
     let (status, body) = get(&format!("{base}/files/list?path=textfiles"));
@@ -139,8 +145,7 @@ fn files_app_lists_downloads_and_rejects_traversal() {
     assert!(disposition.contains("README.txt"), "{disposition}");
 
     // Folder download is a zip holding the folder's files.
-    let (status, bytes, disposition) =
-        get_bytes(&format!("{base}/files/download?path=textfiles"));
+    let (status, bytes, disposition) = get_bytes(&format!("{base}/files/download?path=textfiles"));
     assert_eq!(status, 200);
     assert!(disposition.contains("textfiles.zip"), "{disposition}");
     assert!(bytes.starts_with(b"PK"), "expected zip bytes");
@@ -163,7 +168,13 @@ fn files_app_lists_downloads_and_rejects_traversal() {
     assert!(bytes.starts_with(b"PK"));
 
     // Path traversal and hidden names are not found.
-    for bad in ["..", "../..", "textfiles/../../", ".secret", "textfiles/../.secret"] {
+    for bad in [
+        "..",
+        "../..",
+        "textfiles/../../",
+        ".secret",
+        "textfiles/../.secret",
+    ] {
         let response = ureq::get(&format!(
             "{base}/files/download?path={}",
             urlencoding_minimal(bad)

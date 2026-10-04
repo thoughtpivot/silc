@@ -1986,7 +1986,9 @@ pub fn render_terminal_app(
         out.push_str(
             "  DescriptionList, Tabs, Tab, Dialog, DataTable, ChatThread, ChatComposer,\n",
         );
-        out.push_str("  HistoryPanel, SearchInput, FilterBar, Loading, Empty, Embed, FileBrowser, Main,\n");
+        out.push_str(
+            "  HistoryPanel, SearchInput, FilterBar, Loading, Empty, Embed, FileBrowser, Main,\n",
+        );
         out.push_str("} from \"./components/terminal/components\";\n\n");
         out.push_str("let __silcNavigateImpl = (_path) => {};\n");
         out.push_str("export function __silcNavigate(path) { __silcNavigateImpl(path); }\n\n");

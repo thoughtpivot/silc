@@ -1,10 +1,10 @@
 //! Recursive-descent parser for Silc 0.6.0 grammar.
 
 use sil_core::{
-    App, CompField, Component, Contract, EmitDecl, EventBinding, Expr, Field, Game, GameNode,
-    Handler, Loop, LoopNode, Method, Module, ModuleKind, Param, Pipeline, PipelineStep, Program,
-    FilesDecl, QueryBinding, Resource, ResourceKind, ResourceMethod, ResourceSeed, Route,
-    SlotDecl, Span, Subset, SubsetPredicate, TraitArg, TypeExpr, UiNode, UiTemplate,
+    App, CompField, Component, Contract, EmitDecl, EventBinding, Expr, Field, FilesDecl, Game,
+    GameNode, Handler, Loop, LoopNode, Method, Module, ModuleKind, Param, Pipeline, PipelineStep,
+    Program, QueryBinding, Resource, ResourceKind, ResourceMethod, ResourceSeed, Route, SlotDecl,
+    Span, Subset, SubsetPredicate, TraitArg, TypeExpr, UiNode, UiTemplate,
 };
 use sil_lexer::{lex, SpannedToken, Token};
 
@@ -930,11 +930,9 @@ impl Parser {
                     self.advance();
                     let path = match self.advance_token()? {
                         Token::StringLit(s) => s.trim_matches('"').to_string(),
-                        _ => {
-                            return Err(self.error_here(
-                                "expected a directory string after `files`, e.g. `files \"./files\";`",
-                            ))
-                        }
+                        _ => return Err(self.error_here(
+                            "expected a directory string after `files`, e.g. `files \"./files\";`",
+                        )),
                     };
                     if path.trim().is_empty() {
                         return Err(self.error_here("`files` directory must not be empty"));

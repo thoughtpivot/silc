@@ -1573,7 +1573,10 @@ fn render_template(
         .replace("__HAS_LLM__", has_llm)
         .replace("__HAS_SCRAPE__", has_scrape)
         .replace("__HAS_DOC__", has_doc)
-        .replace("__HAS_FILES__", if graph.has_files() { "true" } else { "false" })
+        .replace(
+            "__HAS_FILES__",
+            if graph.has_files() { "true" } else { "false" },
+        )
         .replace(
             "__FILES_DIR__",
             &escape_ts_string(graph.files_dir().unwrap_or("files")),
