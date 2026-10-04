@@ -84,8 +84,7 @@ fn exiting_silc_stops_loop_kernel_and_db_guard_works() {
     ));
     std::fs::create_dir_all(&temp).unwrap();
 
-    let fixture =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/loop_pulse.silc");
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/loop_pulse.silc");
     let entry = temp.join("main.silc");
     std::fs::copy(&fixture, &entry).unwrap();
 

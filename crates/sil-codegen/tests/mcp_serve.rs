@@ -53,10 +53,7 @@ fn talk_today_emits_mcp_tools_worker_and_manifest() {
     let manifest: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&result.manifest).unwrap()).unwrap();
     let tools = manifest["mcp"]["tools"].as_array().expect("mcp.tools");
-    let names: Vec<&str> = tools
-        .iter()
-        .filter_map(|t| t["name"].as_str())
-        .collect();
+    let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
     assert!(names.contains(&"talks_list"), "{names:?}");
     assert!(names.contains(&"talk_today_run"), "{names:?}");
     assert_eq!(manifest["mcp"]["path"], "/mcp");
@@ -97,10 +94,9 @@ fn mcp_tool_list_change_changes_plan_hash() {
 
 #[test]
 fn rfi_chase_also_gets_mcp_surface() {
-    let source = std::fs::read_to_string(
-        repo_root().join("examples/domains/aec/rfiChaseApp/main.silc"),
-    )
-    .unwrap();
+    let source =
+        std::fs::read_to_string(repo_root().join("examples/domains/aec/rfiChaseApp/main.silc"))
+            .unwrap();
     let program = sil_parser::parse(&source).unwrap();
     program.validate().unwrap();
     let decisions = sil_router::route_program(&program);
