@@ -600,6 +600,29 @@ export function Empty(props: { text?: string }) {
   return h(Text, { content: props.text ?? "No items", fg: "#64748b" });
 }
 
+/** Terminal fallback for ui::embed — a card, not a fake canvas. */
+export function Embed(props: { src: string; title?: string }) {
+  const heading =
+    props.title && String(props.title).trim().length > 0
+      ? String(props.title)
+      : "Embedded page";
+  const url = asText(props.src);
+  return h(
+    Box,
+    {
+      border: true,
+      borderColor: "#475569",
+      title: heading,
+      padding: 1,
+      flexDirection: "column",
+      gap: 1,
+      width: "100%",
+    },
+    h(Text, { content: url, fg: "#38bdf8" }),
+    h(Text, { content: "Open in a browser", fg: "#94a3b8" })
+  );
+}
+
 export function Main(props: { children?: VChild[] }, ...children: VChild[]) {
   return h(
     ScrollBox,

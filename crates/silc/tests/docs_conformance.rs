@@ -186,7 +186,7 @@ fn ui_catalog_lines_present_in_agents_template() {
 
     assert_eq!(
         UI_COMPONENT_CATALOG.len(),
-        39,
+        40,
         "catalog size changed; update docs and this assertion"
     );
 
