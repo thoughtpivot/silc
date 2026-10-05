@@ -109,7 +109,7 @@ fn every_game_node_and_prop_has_docs() {
 fn every_executable_op_has_specific_hover_prose() {
     for (ns, name) in executable_ops() {
         let snippet = format!(
-            r#"@version("0.6.0")
+            r#"@version("0.7.0")
 processor P {{
     method run() {{
         {ns}::{name}();
@@ -238,7 +238,7 @@ fn arena_game_prop_and_enum_hovers() {
 
 #[test]
 fn service_http_keyword_namespace_hover() {
-    let src = r#"@version("0.6.0")
+    let src = r#"@version("0.7.0")
 service Api {
     method boot() {
         service::http(:port(8080));
@@ -309,7 +309,7 @@ fn doc_extract_and_op_prop_hover() {
 
 #[test]
 fn unit_literal_and_vec_hover() {
-    let src = r#"@version("0.6.0")
+    let src = r#"@version("0.7.0")
 contract C {
     has Vec[num32; 384] $.embedding;
 }
@@ -346,7 +346,7 @@ component X {
 
 #[test]
 fn navigate_submit_new_builtin_hovers() {
-    let src = r#"@version("0.6.0")
+    let src = r#"@version("0.7.0")
 contract Item { has Str $.id; has Str $.title; }
 component Page {
     method go() {

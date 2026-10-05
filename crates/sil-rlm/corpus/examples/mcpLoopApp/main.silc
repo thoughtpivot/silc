@@ -1,7 +1,7 @@
 #!/usr/bin/env silc
 # Generic MCP loop command. No app: `silc main.silc` runs once and exits.
 # See README.md for the inbox-only and app variants of this same shape.
-@version("0.6.0")
+@version("0.7.0")
 
 contract ReadArgs {
     has Str $.path;

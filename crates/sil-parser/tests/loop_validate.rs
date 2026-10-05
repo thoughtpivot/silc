@@ -4,7 +4,7 @@
 use sil_parser::parse;
 
 const PRELUDE: &str = r#"
-@version("0.6.0")
+@version("0.7.0")
 contract Rfi {
     has Str $.id;
     has Str $.status;

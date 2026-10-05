@@ -122,7 +122,7 @@ pub fn extract_program(completion: &str) -> String {
 mod tests {
     use super::*;
 
-    const VALID: &str = r#"@version("0.6.0")
+    const VALID: &str = r#"@version("0.7.0")
 contract Note { has Str $.text; }
 component NotePage {
     has state Str $.text = "";
@@ -150,14 +150,14 @@ app NoteApp {
 
     #[test]
     fn extracts_fenced_silc() {
-        let raw = "Here you go:\n```silc\n@version(\"0.6.0\")\ncontract X {}\n```\n";
-        assert_eq!(extract_program(raw), "@version(\"0.6.0\")\ncontract X {}");
+        let raw = "Here you go:\n```silc\n@version(\"0.7.0\")\ncontract X {}\n```\n";
+        assert_eq!(extract_program(raw), "@version(\"0.7.0\")\ncontract X {}");
     }
 
     #[test]
     fn extracts_sentinel_silc() {
-        let raw = "Here:\n<silc>\n@version(\"0.6.0\")\ncontract X {}\n</silc>\n";
-        assert_eq!(extract_program(raw), "@version(\"0.6.0\")\ncontract X {}");
+        let raw = "Here:\n<silc>\n@version(\"0.7.0\")\ncontract X {}\n</silc>\n";
+        assert_eq!(extract_program(raw), "@version(\"0.7.0\")\ncontract X {}");
     }
 
     #[test]

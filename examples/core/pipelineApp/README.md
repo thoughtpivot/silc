@@ -1,6 +1,6 @@
 # pipelineApp
 
-A Silc 0.5.0 pipeline-only example
+A Silc 0.7.0 pipeline-only example
 ([ADR-010](../../docs/ADR-010-tensor-minilm-pipeline.md)) that fetches a static
 HTTP page with Bun, extracts bounded text, creates a normalized 384-float MiniLM
 embedding with CPython/ONNX on CPU, and persists the complete article record
@@ -22,4 +22,4 @@ silc run main.silc --input input.json
 The generated database is `.runtime/main/data/app.db`; the `articles` table
 stores each record as generic JSON, including `raw_content` and the
 `vector_embedding` array. The example is deliberately static-fetch only:
-JavaScript rendering and CUDA are outside Silc 0.5.0's tensor pipeline.
+JavaScript rendering and CUDA are outside Silc 0.7.0's tensor pipeline.

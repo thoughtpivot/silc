@@ -15,7 +15,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.6.0"
+version = "0.7.0"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/thoughtpivot/silc"
@@ -24,12 +24,12 @@ authors = ["ThoughtPivot"]
 rust-version = "1.82"
 
 [workspace.dependencies]
-sil-core = { version = "0.6.0", path = "crates/sil-core" }
-sil-lexer = { version = "0.6.0", path = "crates/sil-lexer" }
-sil-parser = { version = "0.6.0", path = "crates/sil-parser" }
-sil-router = { version = "0.6.0", path = "crates/sil-router" }
-sil-codegen = { version = "0.6.0", path = "crates/sil-codegen" }
-sil-ipc = { version = "0.6.0", path = "crates/sil-ipc" }
-sil-training = { version = "0.6.0", path = "crates/sil-training" }
-sil-rlm = { version = "0.6.0", path = "crates/sil-rlm" }
-sil-ide = { version = "0.6.0", path = "crates/sil-ide" }
+sil-core = { version = "0.7.0", path = "crates/sil-core" }
+sil-lexer = { version = "0.7.0", path = "crates/sil-lexer" }
+sil-parser = { version = "0.7.0", path = "crates/sil-parser" }
+sil-router = { version = "0.7.0", path = "crates/sil-router" }
+sil-codegen = { version = "0.7.0", path = "crates/sil-codegen" }
+sil-ipc = { version = "0.7.0", path = "crates/sil-ipc" }
+sil-training = { version = "0.7.0", path = "crates/sil-training" }
+sil-rlm = { version = "0.7.0", path = "crates/sil-rlm" }
+sil-ide = { version = "0.7.0", path = "crates/sil-ide" }

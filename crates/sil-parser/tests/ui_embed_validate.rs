@@ -8,7 +8,7 @@ fn validate(src: &str) -> Result<(), String> {
 }
 
 const EMBED_APP: &str = r#"
-@version("0.6.0")
+@version("0.7.0")
 
 component GamePane {
     has state Bool $.game_open = true;
@@ -51,7 +51,7 @@ fn embed_inside_dialog_and_page_with_state_src_validates() {
 #[test]
 fn embed_missing_src_is_error() {
     let src = r#"
-@version("0.6.0")
+@version("0.7.0")
 component Pane {
     method render() {
         ui::page(
@@ -71,7 +71,7 @@ app A { route "/" => Pane; }
 #[test]
 fn embed_unknown_option_is_error() {
     let src = r#"
-@version("0.6.0")
+@version("0.7.0")
 component Pane {
     method render() {
         ui::page(
@@ -94,7 +94,7 @@ app A { route "/" => Pane; }
 #[test]
 fn game_and_app_mixing_still_rejected() {
     let src = r#"
-@version("0.6.0")
+@version("0.7.0")
 component Pane {
     method render() {
         ui::page(

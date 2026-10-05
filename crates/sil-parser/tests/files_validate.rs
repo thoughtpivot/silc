@@ -8,7 +8,7 @@ fn validate(src: &str) -> Result<(), String> {
 }
 
 const FILES_APP: &str = r#"
-@version("0.6.0")
+@version("0.7.0")
 
 component FilesPage {
     method render() {
@@ -40,7 +40,7 @@ fn files_directive_and_file_browser_validate() {
 #[test]
 fn files_directive_may_precede_routes() {
     let src = r#"
-@version("0.6.0")
+@version("0.7.0")
 component Home { method render() { ui::page(ui::file_browser()) } }
 app Board {
     files "shared";
@@ -53,7 +53,7 @@ app Board {
 #[test]
 fn duplicate_files_directive_is_error() {
     let src = r#"
-@version("0.6.0")
+@version("0.7.0")
 component Home { method render() { ui::page(ui::text(:text("hi"))) } }
 app Board {
     route "/" => Home;
@@ -68,7 +68,7 @@ app Board {
 #[test]
 fn files_without_string_is_error() {
     let src = r#"
-@version("0.6.0")
+@version("0.7.0")
 component Home { method render() { ui::page(ui::text(:text("hi"))) } }
 app Board {
     route "/" => Home;
@@ -82,7 +82,7 @@ app Board {
 #[test]
 fn files_with_parent_segments_is_error() {
     let src = r#"
-@version("0.6.0")
+@version("0.7.0")
 component Home { method render() { ui::page(ui::text(:text("hi"))) } }
 app Board {
     route "/" => Home;
@@ -96,7 +96,7 @@ app Board {
 #[test]
 fn file_browser_without_files_directive_is_error() {
     let src = r#"
-@version("0.6.0")
+@version("0.7.0")
 component Home { method render() { ui::page(ui::file_browser()) } }
 app Board {
     route "/" => Home;
@@ -110,7 +110,7 @@ app Board {
 #[test]
 fn file_browser_rejects_unknown_option() {
     let src = r#"
-@version("0.6.0")
+@version("0.7.0")
 component Home { method render() { ui::page(ui::file_browser(:directory("./x"))) } }
 app Board {
     route "/" => Home;
@@ -126,7 +126,7 @@ fn files_remains_an_ordinary_identifier_elsewhere() {
     // `files` is matched by name only inside the app body, so state fields,
     // handles, and options named `files` keep working.
     let src = r#"
-@version("0.6.0")
+@version("0.7.0")
 component Home {
     has state Str $.files = "";
     method render() {

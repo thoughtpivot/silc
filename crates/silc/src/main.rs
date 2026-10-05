@@ -250,7 +250,7 @@ fn compile_and_run_pipeline(entry: &Path, input_json: &str) -> Result<(), String
     let graph = output
         .graph
         .as_ref()
-        .ok_or_else(|| "program is not executable in Silc 0.6.0".to_string())?;
+        .ok_or_else(|| "program is not executable in Silc 0.7.0".to_string())?;
     if !graph.is_pipeline_only() {
         return Err("`silc run --input-*` requires a pipeline-only program".into());
     }
@@ -268,7 +268,7 @@ fn build_only(entry: &Path) -> Result<(), String> {
         println!("go:      {}", lock.go_bin.display());
         println!("engines locked under .silc/runtimes.lock.json");
     } else {
-        println!("stub emit only — this program is not executable in Silc 0.6.0");
+        println!("stub emit only — this program is not executable in Silc 0.7.0");
     }
     if let Some(report) = &output.loop_report {
         print!("{report}");

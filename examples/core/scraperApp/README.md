@@ -1,6 +1,6 @@
 # scraperApp
 
-Standalone Silc 0.5.0 scraping application:
+Standalone Silc 0.7.0 scraping application:
 
 - Enter a **website URL**. The crawl runs at depth 2 (`scrape::site(:depth(2))`), which is also the form's starting value.
 - Silc runs `scrape::site` (Go Colly) with optional Playwright escalation (`:js(auto)`)

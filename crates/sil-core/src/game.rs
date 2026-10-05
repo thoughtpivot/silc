@@ -146,7 +146,7 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
         description: "Root WebGPU game scene (Godot main scene). Hosts the entity tree, prefabs, data assets, mode, controller, camera, and post-process.",
         props: &[
             gp("title", GamePropKind::String, true, "Window / overlay title shown for the game program. Prefer a short product name."),
-            gp_closed("renderer", GamePropKind::Ident, false, "Graphics backend token. Only `webgpu` is legal in Silc 0.6.0.", &["webgpu"]),
+            gp_closed("renderer", GamePropKind::Ident, false, "Graphics backend token. Only `webgpu` is legal in Silc 0.7.0.", &["webgpu"]),
             gp("target_fps", GamePropKind::Number, false, "Preferred frame rate for the render loop (for example `90`). The runtime caps to display capability."),
         ],
         children: GameChildPolicy::AnyOf(SCENE_CHILDREN),
@@ -1043,7 +1043,7 @@ pub fn game_prop_doc(node: &str, prop: &str) -> Option<&'static str> {
 pub fn game_closed_value_doc(value: &str) -> Option<&'static str> {
     Some(match value {
         "webgpu" => {
-            "WebGPU renderer backend. The only legal `:renderer` token for `scene::scene` in Silc 0.6.0."
+            "WebGPU renderer backend. The only legal `:renderer` token for `scene::scene` in Silc 0.7.0."
         }
         "plane" => "Flat ground or wall primitive / collider.",
         "box" => "Axis-aligned box mesh or collider.",
@@ -1483,7 +1483,7 @@ pub fn validate_game_node(node: &GameNode) -> Result<(), String> {
     let expected = node_namespace(&node.name);
     if node.namespace != expected {
         return Err(format!(
-            "`{}::{}` is written `{}::{}` in Silc 0.6.0",
+            "`{}::{}` is written `{}::{}` in Silc 0.7.0",
             node.namespace, node.name, expected, node.name
         ));
     }

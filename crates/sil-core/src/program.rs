@@ -1,4 +1,4 @@
-//! A Silc 0.6.0 program: contracts, modules, components, resources, and apps.
+//! A Silc 0.7.0 program: contracts, modules, components, resources, and apps.
 
 use crate::app::App;
 use crate::component::{Component, UiTemplate};
@@ -444,7 +444,7 @@ fn reject_author_runtime_mechanics(program: &Program) -> Result<(), String> {
         return Ok(());
     }
     Err(format!(
-        "runtime mechanics are compiler-owned in Silc 0.6.0 and must not appear in source ({}); remove `method serve()`, `sink`, `ipc::*`, `store::*`, and `resource::*` pipelines — declare `app` routes, `resource Name for Contract {{ query/mutation; }}`, and processor workflows only",
+        "runtime mechanics are compiler-owned in Silc 0.7.0 and must not appear in source ({}); remove `method serve()`, `sink`, `ipc::*`, `store::*`, and `resource::*` pipelines — declare `app` routes, `resource Name for Contract {{ query/mutation; }}`, and processor workflows only",
         forbidden.join(", ")
     ))
 }
@@ -743,7 +743,7 @@ mod tests {
             }],
             ..Program::default()
         };
-        let err = program.validate_source_version("0.6.0").unwrap_err();
+        let err = program.validate_source_version("0.7.0").unwrap_err();
         assert!(
             err.contains("Renamed nodes: `game::scene` → `scene::scene`; `game::entity` → `scene::entity`; `game::mesh` → `scene::mesh`"),
             "{err}"
@@ -757,10 +757,10 @@ mod tests {
             version: Some("0.5.0".into()),
             ..Program::default()
         };
-        let err = program.validate_source_version("0.6.0").unwrap_err();
+        let err = program.validate_source_version("0.7.0").unwrap_err();
         assert_eq!(
             err,
-            "source declares Silc 0.5.0; migrate to `@version(\"0.6.0\")`"
+            "source declares Silc 0.5.0; migrate to `@version(\"0.7.0\")`"
         );
     }
 }

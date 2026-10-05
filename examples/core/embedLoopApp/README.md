@@ -1,6 +1,6 @@
 # embedLoopApp
 
-Standalone Silc 0.6.0 example that proves three backlog fixes in one program:
+Standalone Silc 0.7.0 example that proves three backlog fixes in one program:
 
 1. **`ui::embed`** (THO-119) — a dialog and page host `https://example.com/` with required `:src` and a `:title`. Web lowers to a sandboxed iframe; terminal lowers to a title / full URL / “Open in a browser” card. No `game` subject (ADR-012).
 2. **Blank `Str` in `loop::ask`** (THO-120) — `NextSlot.item` may be `""`; that means “no more items” and is accepted by contract checking instead of failing as a type error.

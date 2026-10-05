@@ -1,4 +1,4 @@
-# Silc language surface (0.6.0)
+# Silc language surface (0.7.0)
 
 This is the normative description of what a `.silc` program may contain. ADRs
 record *why*; this page records *what*. The compiler catalogs in `sil-core`
@@ -33,7 +33,7 @@ are generated into
 ## 2. Program structure
 
 ```silc
-@version("0.6.0")
+@version("0.7.0")
 
 <declaration>*
 ```
@@ -261,7 +261,7 @@ processor Embedder {
 - `is trait(value)` after the declaration name is accepted on these three
   keywords only, for compiler-consumed hints; authors do not declare storage
   or sinks.
-- **Executable operations (0.6.0):** `service::http`, `text::score`,
+- **Executable operations (0.7.0):** `service::http`, `text::score`,
   `llm::complete`, `scrape::page`, `scrape::site`, `scrape::select`,
   `scrape::render`, `scrape::extract`, `doc::extract`, `tensor::tokenize`,
   `tensor::infer`.

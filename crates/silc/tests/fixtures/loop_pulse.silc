@@ -1,6 +1,6 @@
 #!/usr/bin/env silc
 # Minimal loop+app fixture for THO-121 lifecycle tests. No silclm.
-@version("0.6.0")
+@version("0.7.0")
 
 contract Item {
     has Str $.id;

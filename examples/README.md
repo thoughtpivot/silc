@@ -1,6 +1,6 @@
 # Silc example apps
 
-Each example is a **standalone Silc 0.6.0 project** — the same shape `silc init` creates for end users.
+Each example is a **standalone Silc 0.7.0 project** — the same shape `silc init` creates for end users.
 
 Core programs live in `examples/core/`. Domain programs live in `examples/domains/<domain>/`. Architecture, engineering, and construction examples are under `examples/domains/aec/`.
 

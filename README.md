@@ -181,7 +181,7 @@ workflows, records, simulations, and decisions—while Silc handles the rest.
 
 ## How it looks in practice
 
-Examples below are Silc 0.6.0 source. GitHub fences use `raku` for highlighting
+Examples below are Silc 0.7.0 source. GitHub fences use `raku` for highlighting
 only. The surface is **Raku-inspired**, not Raku-compatible. Source files are
 `.silc` only.
 
@@ -197,7 +197,7 @@ scene, asset, physics, camera, and entity kernel available to VDC and simulation
 programs.
 
 ```raku
-@version("0.6.0")
+@version("0.7.0")
 
 scene Arena {
     scene::scene(:title("MEGASTRUCTURE"), :renderer(webgpu), :target_fps(90),
@@ -231,7 +231,7 @@ From [`examples/core/pipelineApp`](examples/core/pipelineApp/) — no UI app req
 intent file becomes a Bun/CPython/Go ingestion graph.
 
 ```raku
-@version("0.6.0")
+@version("0.7.0")
 
 subset Uri of Str where { .starts-with("http") }
 subset Emb384 of Vec[num32; 384];
@@ -283,7 +283,7 @@ scorer. Dual-surface web/terminal serving and SQLite persistence are
 **synthesized**.
 
 ```raku
-@version("0.6.0")
+@version("0.7.0")
 
 contract Note {
     has Str $.author;
@@ -499,7 +499,7 @@ See [`examples/README.md`](examples/README.md).
 
 ---
 
-## What ships today (0.6.0)
+## What ships today (0.7.0)
 
 Silc is **pre-1.0**. Release 0.4.0 made the product rule explicit: authors
 declare intent; the compiler synthesizes runtime mechanics

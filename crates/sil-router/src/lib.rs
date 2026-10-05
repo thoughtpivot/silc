@@ -278,7 +278,7 @@ mod tests {
     #[test]
     fn routes_score_processor_to_python() {
         let source = r#"
-@version("0.6.0")
+@version("0.7.0")
 contract FeedbackRecord { has Str $.author; has Str $.text; }
 component Page {
     method render() { ui::page(ui::text(:text("x"))) }
@@ -303,7 +303,7 @@ processor TextAnalyzer {
     #[test]
     fn routes_llm_processor_to_python() {
         let source = r#"
-@version("0.6.0")
+@version("0.7.0")
 contract ChatRecord { has Str $.prompt; has Str $.reply; }
 component ChatPage {
     has state Str $.prompt = "";
@@ -354,7 +354,7 @@ service FeedbackApi {
     #[test]
     fn routes_scrape_site_service_to_bun() {
         let source = r#"
-@version("0.6.0")
+@version("0.7.0")
 service Crawler {
     method run() {
         seed_url ==> scrape::site(:depth(2), :same_host(true)) ==> scrape::select(:css("title"), :as(title))
@@ -372,7 +372,7 @@ service Crawler {
     #[test]
     fn task_declarator_is_removed() {
         let source = r#"
-@version("0.6.0")
+@version("0.7.0")
 task Crawler {
     method run() {
         seed_url ==> scrape::site(:depth(2), :same_host(true))
@@ -389,7 +389,7 @@ task Crawler {
     #[test]
     fn routes_scrape_page_with_ui_service_to_bun() {
         let source = r#"
-@version("0.6.0")
+@version("0.7.0")
 component Page {
     method render() { ui::page(ui::text(:text("x"))) }
 }
@@ -411,7 +411,7 @@ service Ingest {
     #[test]
     fn routes_scrape_render_processor_to_python() {
         let source = r#"
-@version("0.6.0")
+@version("0.7.0")
 processor Browser {
     method run() {
         url ==> scrape::render() ==> scrape::extract(:into(Article))

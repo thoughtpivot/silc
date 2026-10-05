@@ -281,7 +281,7 @@ fn removed_author_ops_not_listed_as_runnable() {
 
     for (label, doc) in [("AGENTS", &template), ("README", &readme)] {
         let start = doc
-            .find("Runnable operations (0.6.0)")
+            .find("Runnable operations (0.7.0)")
             .or_else(|| doc.find("### Executable operations"))
             .unwrap_or_else(|| panic!("{label}: missing runnable operations section"));
         let section = &doc[start..];
@@ -382,8 +382,8 @@ fn canonical_silc_sources_omit_runtime_plumbing() {
     for rel in &roots {
         let src = read_workspace(rel);
         assert!(
-            src.contains("@version(\"0.6.0\")"),
-            "{rel} must declare @version(\"0.6.0\")"
+            src.contains("@version(\"0.7.0\")"),
+            "{rel} must declare @version(\"0.7.0\")"
         );
         for needle in forbidden {
             assert!(
