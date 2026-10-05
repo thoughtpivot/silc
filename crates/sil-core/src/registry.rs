@@ -314,12 +314,12 @@ pub const COMPATIBILITY: &[CompatRule] = &[
     CompatRule {
         left: Capability::Loop,
         right: Capability::Scrape,
-        message: "loops cannot be combined with scrape::* or tensor::* pipelines in Silc 0.6.0; use loop::read for pages",
+        message: "loops cannot be combined with scrape::* or tensor::* pipelines in Silc 0.7.0; use loop::read for pages",
     },
     CompatRule {
         left: Capability::Loop,
         right: Capability::Embedding,
-        message: "loops cannot be combined with scrape::* or tensor::* pipelines in Silc 0.6.0; use loop::read for pages",
+        message: "loops cannot be combined with scrape::* or tensor::* pipelines in Silc 0.7.0; use loop::read for pages",
     },
 ];
 

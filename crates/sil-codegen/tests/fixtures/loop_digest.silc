@@ -1,7 +1,7 @@
 # Compiler fixture: a scheduled loop that reads two MCP streams, asks twice,
 # gates, writes one row, and posts one notice. Tests swap the schedule for
 # loop::manual() to get a command program.
-@version("0.6.0")
+@version("0.7.0")
 
 contract ReadArgs {
     has Str $.path;

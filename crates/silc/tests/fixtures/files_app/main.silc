@@ -1,6 +1,6 @@
 #!/usr/bin/env silc
 # Fixture for the `files` capability (ADR-018): one shared directory, one browser.
-@version("0.6.0")
+@version("0.7.0")
 
 component FilesPage {
     method render() {

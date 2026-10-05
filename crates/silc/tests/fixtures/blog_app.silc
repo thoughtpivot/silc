@@ -1,7 +1,7 @@
 #!/usr/bin/env silc
 # Standalone blog app: chronological home, silclm feed filter, grounded Q&A,
 # and admin CRUD with table-row modal edit. Thirty SilcLM-authored seeds ship with the app.
-@version("0.6.0")
+@version("0.7.0")
 
 contract Article {
     has Str $.id;

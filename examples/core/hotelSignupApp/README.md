@@ -1,6 +1,6 @@
 # hotelSignupApp
 
-Standalone Silc 0.5.0 example: the smallest useful two-route app. It shows the
+Standalone Silc 0.7.0 example: the smallest useful two-route app. It shows the
 direct-mutation handler style (`Guests.create(Guest.new(...))` inside
 `on_submit`) as the alternative to the starter's `submit()` + processor
 pattern.

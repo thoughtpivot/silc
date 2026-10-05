@@ -29,7 +29,7 @@ did not match that sentence: a digital-twin author had to import "pawn" and
 The compiler ships generic kernels. A vertical's vocabulary is a layer or a
 package, never a compiler default.
 
-Kernels in 0.6.0:
+Kernels in 0.7.0:
 
 - `ui::` — dual-surface interface nodes.
 - `scene::` — the real-time scene kernel (entity, mesh, light, camera, asset, zone, and the rest of `SCENE_KERNEL_NODES`).

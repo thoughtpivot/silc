@@ -1,6 +1,6 @@
 # inventoryApp
 
-Standalone Silc 0.5.0 inventory application with:
+Standalone Silc 0.7.0 inventory application with:
 
 - **Browse** (`/`) — live inventory data grid (`ui::table`) with category filters
 - **Admin** (`/admin`) — create and delete inventory items

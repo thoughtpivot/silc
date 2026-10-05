@@ -1,7 +1,7 @@
 <!-- BEGIN SILC_AGENTS_TEMPLATE -->
 # Silc project guidance for AI tools
 
-This directory is a **Silc 0.6.0** project. Silc (said like “silk”) is an
+This directory is a **Silc 0.7.0** project. Silc (said like “silk”) is an
 independent intent language with a Raku-inspired surface and a local Rust
 compiler. Edit `.silc` source only (not `.raku` / `.sil`).
 
@@ -45,11 +45,11 @@ silc main.silc | pbcopy       # a loop command: run once, result on stdout, exit
 Treat compiler diagnostics as authoritative. Prefer `silc build` after each
 meaningful edit. Stop and report limits instead of inventing substrates.
 
-## Silc 0.6.0 authoring model
+## Silc 0.7.0 authoring model
 
 | Construct | Role |
 | --- | --- |
-| `@version("0.6.0")` | Required exact source-version annotation |
+| `@version("0.7.0")` | Required exact source-version annotation |
 | `subset Name of Base where { … }` | Semantic type alias; v1 `where` predicates (Str): `.contains` / `.starts-with` / `.ends-with` (ADR-002) |
 | `contract X { has T $.f; }` | **Contract** — typed data schema |
 | `component X` | **Component** — options (`has`), `has state`, slots, `emit`, handlers, `render()` |
@@ -487,7 +487,7 @@ Wire handlers with `:on(click(handler))`, `:on(submit(handler))`, navigation
 with `ui::nav_item(:to("/path"))`, collections with `for $.items -> $item { … }`,
 and conditionals with `when expr { … }`.
 
-## Runnable operations (0.6.0)
+## Runnable operations (0.7.0)
 
 Author-facing executable operations today (registry in `sil-core`):
 
@@ -521,7 +521,7 @@ Pipeline-only programs use `scrape::page ==> scrape::extract`, then
 Persistence is synthesized. Their contract must carry `raw_content` and
 `vector_embedding: Emb384`, where `subset Emb384 of Vec[num32; 384]`. Run them
 with `silc run main.silc --input-json '{"url":"https://…"}'`. CUDA and
-arbitrary tensor models/shapes are not executable in 0.6.0.
+arbitrary tensor models/shapes are not executable in 0.7.0.
 
 Stub-only namespaces (parse/route/emit, do not run): `http`, `html`,
 `numpy`, `pandas`, `ws`, `sys`, `schema`, `payload`, `json`, plus non-registry

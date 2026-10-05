@@ -1,4 +1,4 @@
-//! Recursive-descent parser for Silc 0.6.0 grammar.
+//! Recursive-descent parser for Silc 0.7.0 grammar.
 
 use sil_core::{
     App, CompField, Component, Contract, EmitDecl, EventBinding, Expr, Field, FilesDecl, Game,
@@ -108,12 +108,12 @@ impl Parser {
                 )?,
                 Some(Token::Sink) => {
                     return Err(self.error_here(
-                        "author `sink` declarations are not supported in Silc 0.6.0; remove the sink — persistence is synthesized from the processor",
+                        "author `sink` declarations are not supported in Silc 0.7.0; remove the sink — persistence is synthesized from the processor",
                     ))
                 }
                 Some(Token::Task) => {
                     return Err(self.error_here(
-                        "`task` was removed in Silc 0.6.0; declare a `service` and route by the operation",
+                        "`task` was removed in Silc 0.7.0; declare a `service` and route by the operation",
                     ))
                 }
                 Some(Token::Class) => return Err(self.legacy_class_error()),
@@ -188,12 +188,12 @@ impl Parser {
             .unwrap_or("contract");
         if kind == "task" {
             return self.error_here(
-                "legacy `class` declarator is not supported in Silc 0.6.0; `task` was removed — declare a `service` and route by the operation",
+                "legacy `class` declarator is not supported in Silc 0.7.0; `task` was removed — declare a `service` and route by the operation",
             );
         }
         let replacement = format!("{kind} {name} {{ ... }}");
         self.error_here(&format!(
-            "legacy `class` declarator is not supported in Silc 0.6.0; use `{replacement}`"
+            "legacy `class` declarator is not supported in Silc 0.7.0; use `{replacement}`"
         ))
     }
 
@@ -831,7 +831,7 @@ impl Parser {
                 }
                 Some(Token::Has) => {
                     return Err(self.error_here(
-                        "resource metadata fields are not supported in Silc 0.6.0; use `resource Name for Contract` and capability declarations (`query list;`)",
+                        "resource metadata fields are not supported in Silc 0.7.0; use `resource Name for Contract` and capability declarations (`query list;`)",
                     ));
                 }
                 _ => return Err(self.error_here("expected `query`, `mutation`, `seed`, or `}`")),
@@ -907,7 +907,7 @@ impl Parser {
         if matches!(self.peek(), Some(Token::LParen)) || matches!(self.peek(), Some(Token::LBrace))
         {
             return Err(self.error_here(
-                "resource method bodies are not supported in Silc 0.6.0; declare capabilities only (e.g. `query list;` / `mutation create;`)",
+                "resource method bodies are not supported in Silc 0.7.0; declare capabilities only (e.g. `query list;` / `mutation create;`)",
             ));
         }
         Err(self.error_here("expected `;` after resource capability name"))
@@ -965,7 +965,7 @@ impl Parser {
                 }
                 Some(Token::Method) => {
                     return Err(self.error_here(
-                        "app `method serve()` is not supported in Silc 0.6.0; declare routes only — dual-surface web/terminal serving is synthesized by the compiler",
+                        "app `method serve()` is not supported in Silc 0.7.0; declare routes only — dual-surface web/terminal serving is synthesized by the compiler",
                     ));
                 }
                 _ => return Err(self.error_here("expected `route`, `files`, or `}`")),
@@ -2102,7 +2102,7 @@ mod tests {
     #[test]
     fn parses_component_and_app() {
         let src = r#"
-@version("0.6.0")
+@version("0.7.0")
 contract Product {
     has Str $.name;
     has num64 $.price;
@@ -2145,7 +2145,7 @@ app ShopApp {
     #[test]
     fn parses_intent_declarations() {
         let src = r#"
-@version("0.6.0")
+@version("0.7.0")
 contract Record { has Str $.id; }
 component Page { method render() { ui::page() } }
 resource Records for Record {
@@ -2170,7 +2170,7 @@ processor Worker {}
 
     #[test]
     fn rejects_removed_task_declarator() {
-        let src = "@version(\"0.6.0\")\ntask Cleanup {}\n";
+        let src = "@version(\"0.7.0\")\ntask Cleanup {}\n";
         let err = parse(src).expect_err("task removed");
         assert!(err.message.contains("removed"), "{err}");
     }
@@ -2178,7 +2178,7 @@ processor Worker {}
     #[test]
     fn parses_resource_seeds() {
         let src = r#"
-@version("0.6.0")
+@version("0.7.0")
 contract Article {
     has Str $.id;
     has Str $.title;
@@ -2200,7 +2200,7 @@ resource Articles for Article {
     #[test]
     fn rejects_seed_wrong_contract() {
         let src = r#"
-@version("0.6.0")
+@version("0.7.0")
 contract Article { has Str $.id; }
 contract Other { has Str $.id; }
 resource Articles for Article {
@@ -2215,7 +2215,7 @@ resource Articles for Article {
     #[test]
     fn validate_rejects_seed_without_id() {
         let src = r#"
-@version("0.6.0")
+@version("0.7.0")
 contract Article {
     has Str $.id;
     has Str $.title;
@@ -2236,7 +2236,7 @@ app Demo { route "/" => Page; }
     fn rejects_author_sink_with_migration_diagnostic() {
         let err = parse("sink Db is storage(SQLite) {}").unwrap_err();
         assert!(err.message.contains("sink"), "error: {err}");
-        assert!(err.message.contains("0.6.0"), "error: {err}");
+        assert!(err.message.contains("0.7.0"), "error: {err}");
     }
 
     #[test]
@@ -2263,7 +2263,7 @@ app Demo { route "/" => Page; }
     #[test]
     fn parses_subset_where_contains() {
         let src = r#"
-@version("0.6.0")
+@version("0.7.0")
 subset Uri of Str where { .contains("://") }
 contract Item {
     has Uri $.url;
@@ -2290,7 +2290,7 @@ subset Uri of Str where { .len > 0 }
     #[test]
     fn validate_rejects_bad_subset_literal() {
         let src = r#"
-@version("0.6.0")
+@version("0.7.0")
 subset Uri of Str where { .contains("://") }
 contract Product {
     has Uri $.url;
@@ -2315,7 +2315,7 @@ app App {
     #[test]
     fn parses_minimal_game_scene() {
         let src = r#"
-@version("0.6.0")
+@version("0.7.0")
 game Foo {
     scene::scene(
         :title("T"),
@@ -2430,7 +2430,7 @@ game Foo {
     #[test]
     fn loop_stays_an_identifier_outside_top_level() {
         let src = r#"
-@version("0.6.0")
+@version("0.7.0")
 game Foo {
     scene::scene(
         :title("T"),
@@ -2444,7 +2444,7 @@ game Foo {
 
     #[test]
     fn rejects_loop_without_namespace_root() {
-        let err = parse("@version(\"0.6.0\")\nloop Foo { flow() }").unwrap_err();
+        let err = parse("@version(\"0.7.0\")\nloop Foo { flow() }").unwrap_err();
         assert!(err.message.contains("loop::"), "{}", err.message);
     }
 }

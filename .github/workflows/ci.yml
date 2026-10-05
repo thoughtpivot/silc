@@ -96,7 +96,7 @@ jobs:
           path: |
             ~/.silc
             ~/.cache/pip
-          key: silc-0.6.0-onnx-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('crates/sil-codegen/templates/*requirements.txt', 'crates/sil-core/src/model_catalog.rs') }}
+          key: silc-0.7.0-onnx-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('crates/sil-codegen/templates/*requirements.txt', 'crates/sil-core/src/model_catalog.rs') }}
 
       - name: Build all standalone examples
         run: |

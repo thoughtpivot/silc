@@ -1,7 +1,7 @@
 #!/usr/bin/env silc
 # RFI chase: every weekday morning, draft reminders for overdue RFIs,
 # ask the project manager, then record the reminder exactly once.
-@version("0.6.0")
+@version("0.7.0")
 
 contract Rfi {
     has Str $.id;

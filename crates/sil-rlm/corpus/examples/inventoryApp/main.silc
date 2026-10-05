@@ -1,6 +1,6 @@
 #!/usr/bin/env silc
 # Standalone inventory app: browse, admin CRUD, and silclm grounded on live stock.
-@version("0.6.0")
+@version("0.7.0")
 
 contract InventoryItem {
     has Str $.id;

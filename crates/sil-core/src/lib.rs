@@ -1,4 +1,4 @@
-//! Semantic core of ThoughtPivot Silc 0.6.0.
+//! Semantic core of ThoughtPivot Silc 0.7.0.
 //!
 //! Author surface is intent-oriented and declaration-based (`contract`,
 //! `component`, `resource`, `app`, `service`, `processor`, `task`). Internally,

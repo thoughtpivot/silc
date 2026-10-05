@@ -4,7 +4,10 @@ All notable changes to Silc are documented here.
 Silc remains pre-1.0; this project follows SemVer 0.x with Conventional Commits.
 Entries before 0.5.0 are reconstructed from the commit history.
 
-## Unreleased
+## 0.7.0 — 2026-10-05
+
+- `@version("0.7.0")` is the required source version and must match the compiler. Examples, `silc init`, and the assist corpus declare it. A 0.6.0 program is told to migrate.
+- Release-plz publishes new crate versions to crates.io when a release lands. `sil-ide` and `sil-lsp` stay unpublished.
 
 ### Added
 
