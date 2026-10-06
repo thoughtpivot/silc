@@ -6,7 +6,10 @@ semver_check = false
 # published once with an API token before Trusted Publishing can release them.
 # Crates with Cargo.toml `publish = false` (sil-ide, sil-lsp) stay unpublished.
 publish = true
-release_always = false
+# Publish whenever the manifest version is ahead of crates.io, including a
+# version that was bumped by hand. `false` only publishes a merge of a
+# release-plz pull request, which never exists for a hand-cut version.
+release_always = true
 
 [changelog]
 header = """# Changelog
