@@ -789,6 +789,9 @@ Pre-1.0 SemVer 0.x: breaking language/compiler changes bump the minor.
 | [docs/ADR-015-silc-loop-and-vran.md](docs/ADR-015-silc-loop-and-vran.md) | Silc `loop` and Vran |
 | [docs/ADR-016-generic-kernel-domain-layers.md](docs/ADR-016-generic-kernel-domain-layers.md) | Generic kernels and domain layers |
 | [docs/ADR-017-ui-embed.md](docs/ADR-017-ui-embed.md) | `ui::embed` dual-surface URL viewport |
+| [docs/ADR-018-files-capability.md](docs/ADR-018-files-capability.md) | Sysop-shared files (`files` + `ui::file_browser`) |
+| [docs/ADR-019-vran-language-into-loop.md](docs/ADR-019-vran-language-into-loop.md) | Vran 0.1 language ideas folded into the closed `loop::*` catalog |
+| [docs/vran-0.1-loop-grammar.md](docs/vran-0.1-loop-grammar.md) | Billy's Loop grammar, copied from vran-oss; conformance unconfirmed |
 | [docs/domains/vdc.md](docs/domains/vdc.md) | VDC / AEC domain (go-to-market, not language identity) |
 | [docs/SILC-IPC-ABI-v1.md](docs/SILC-IPC-ABI-v1.md) | Shared buffer ABI |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |

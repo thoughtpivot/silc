@@ -2,9 +2,25 @@
 
 - **Status:** Accepted
 - **Date:** 2026-10-04
+- **Updated:** 2026-10-08
 - **Related:** [ADR-014](ADR-014-loop-subject.md),
-  [ADR-016](ADR-016-generic-kernel-domain-layers.md)
+  [ADR-016](ADR-016-generic-kernel-domain-layers.md),
+  [ADR-019](ADR-019-vran-language-into-loop.md)
+- **Superseded by (partial):** [ADR-019](ADR-019-vran-language-into-loop.md)
+  for the vran-oss language draft. The pause described below is withdrawn
+  by the amendment in this file.
 - **Canonical:** [`crates/sil-core/src/loops.rs`](../crates/sil-core/src/loops.rs)
+
+## Amendment (2026-10-08)
+
+Vran is not paused. It is an internal, closed-source product.
+
+Vran workflow triggers are Manual, Webhook, Scheduled (a cron timetable), and
+Loop. Loop runs continuously: the next run starts when the last one finishes.
+Silc's `loop` is the declaration in ADR-014, not that trigger. The
+pause-until-2027 paragraphs below are the 4 October 2026 plan. The vran-oss
+language draft is superseded by
+[ADR-019](ADR-019-vran-language-into-loop.md) and will be retired.
 
 ## Context
 
@@ -20,6 +36,9 @@ all-team meeting committed to keeping the open-source tools maintained and
 generic.
 
 With Vran paused, Silc's `loop` is the loop language the organization ships.
+That sentence was the 4 October plan. The amendment at the top of this file
+replaces it: the Vran application is not paused, and the language draft is
+superseded by ADR-019.
 
 ## Decision
 
@@ -44,8 +63,12 @@ does not promise that Vran will compile Silc, or that Silc will grow Vran's
 later features. It records the borrowing and the shared target so the two
 efforts do not invent a second meaning for "loop."
 
+The 2026-10-08 amendment withdraws the 2027 resume date. Vran's Loop trigger
+is a continuous run, not a cron timetable. Silc's `loop` is the declaration.
+ADR-019 is where the language draft went.
+
 ## Consequences
 
 - Author-facing text calls this a `loop` declaration. "Subject" stays a compiler-internal word, as [intent-vs-subjects.md](intent-vs-subjects.md) already asks.
 - `scrape::*`, `loop::read`, and `mcp::call` stay generic. A construction RFI chase is an example, not a namespace.
-- A future Vran that wants the same semantics starts from this catalog and from ADR-014, rather than from a private dialect.
+- The vran-oss language draft is superseded by ADR-019. Silc's catalog stays the closed `loop::*` nodes in ADR-014.
