@@ -31,9 +31,9 @@ the grammar note is for Dan to confirm. Every row there is unconfirmed.
 
 On 8 October 2026 Dan Stephenson decided that this draft is folded into Silc
 as an ADR on the `loop` declaration, and that the vran-oss repository will be
-retired because Silc now carries the ideas. The Vran application
-(`thoughtpivot/vran`, internal and closed source) is a separate product. It
-keeps "workflow" as its product noun. ADR-015 records that split.
+retired because Silc now carries the ideas. The Vran app is a separate
+product. ADR-015's amendment is the note on it: internal, closed source, and
+not paused.
 
 Silc already shipped a closed `loop::*` catalog (ADR-014). This record maps
 the draft onto that catalog. It states what the compiler does today, which
@@ -200,6 +200,7 @@ which sends mail and chat and does not call a model.
   effect irreversible.
 - vran-oss is the source of this mapping and is to be retired. Silc does not
   vendor its grammar, lockfile, or examples.
-- The Vran application is unchanged by this ADR. Its product noun remains
-  workflow. ADR-015, as amended on this date, is the record of how that
-  product's Loop trigger differs from Silc's `loop` declaration.
+- ADR-015, as amended on this date, records that the Vran app is not paused.
+  Its Loop trigger runs continuously (the next run starts when the last one
+  finishes). That is not Silc's `loop` declaration, and it is not a cron
+  timetable. Cron, in that product, is the Scheduled trigger.

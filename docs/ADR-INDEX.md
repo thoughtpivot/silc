@@ -24,7 +24,7 @@ root [README](../README.md).
 | [012](ADR-012-webgpu-game-subject.md) | WebGPU game subject (`game::*`) | Accepted | Web-only surface; Bun+CPython+Go spine |
 | [013](ADR-013-procedural-asset-generation.md) | Procedural asset generation | Accepted | Game asset bake step |
 | [014](ADR-014-loop-subject.md) | Loop subject (`loop::*`) | Accepted | Go kernel; receipts, replay, approvals inbox |
-| [015](ADR-015-silc-loop-and-vran.md) | Silc `loop` and Vran | Accepted | Amended 2026-10-08: the Vran app is not paused; its Loop trigger is a schedule. Language draft superseded by ADR-019 |
+| [015](ADR-015-silc-loop-and-vran.md) | Silc `loop` and Vran | Accepted | Amended 2026-10-08: the Vran app is not paused. Language draft superseded by ADR-019 |
 | [016](ADR-016-generic-kernel-domain-layers.md) | Generic kernels, domain layers | Accepted | `scene::` kernel, `game::` gameplay layer; verticals stay outside the compiler |
 | [017](ADR-017-ui-embed.md) | `ui::embed` dual-surface URL viewport | Accepted | Sandboxed iframe on web; card fallback on terminal; does not relax ADR-012 |
 | [018](ADR-018-files-capability.md) | Sysop-shared files (`files` + `ui::file_browser`) | Accepted | `/files/list` + `/files/download`; folders zip via pinned CPython |

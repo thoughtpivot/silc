@@ -13,26 +13,14 @@
 
 ## Amendment (2026-10-08)
 
-Vran is not paused. The Vran application (`thoughtpivot/vran`) is an internal,
-closed-source product. Its product noun is workflow. A workflow there starts
-from one of three trigger types: Manual, Webhook, or Loop. That Loop trigger
-is a recurring schedule that starts a workflow.
+Vran is not paused. It is an internal, closed-source product.
 
-Silc's `loop` is a different thing: a declaration of automation
-(`loop Name { loop::flow(...) }`) with the closed `loop::*` catalog in
-ADR-014. It is not a trigger type on a Vran workflow, and a Vran Loop trigger
-is not a Silc declaration.
-
-The paragraphs below that say Vran is paused until 2027, and that this ADR
-exists so the two efforts do not invent a second meaning for "loop," record
-the 4 October 2026 plan. They are not the current fact. The language draft
-those paragraphs meant (the private `thoughtpivot/vran-oss` repository, which
-ADR-014 called "the loop deck and its open spec") is superseded by
-[ADR-019](ADR-019-vran-language-into-loop.md). Silc carries those language
-ideas inside `loop::*`. The vran-oss work will be retired. That removes the
-risk of a second *language* called loop. It does not rename the Vran
-application's Loop trigger, and it does not make Silc a construction workflow
-product.
+Vran workflow triggers are Manual, Webhook, Scheduled (a cron timetable), and
+Loop. Loop runs continuously: the next run starts when the last one finishes.
+Silc's `loop` is the declaration in ADR-014, not that trigger. The
+pause-until-2027 paragraphs below are the 4 October 2026 plan. The vran-oss
+language draft is superseded by
+[ADR-019](ADR-019-vran-language-into-loop.md) and will be retired.
 
 ## Context
 
@@ -75,13 +63,12 @@ does not promise that Vran will compile Silc, or that Silc will grow Vran's
 later features. It records the borrowing and the shared target so the two
 efforts do not invent a second meaning for "loop."
 
-The 2026-10-08 amendment withdraws the 2027 resume date and the claim that
-the two efforts must not both use the word loop. The Vran application is
-current, and its Loop trigger is a schedule. Silc's `loop` is the
-declaration. ADR-019 is where the language draft went.
+The 2026-10-08 amendment withdraws the 2027 resume date. Vran's Loop trigger
+is a continuous run, not a cron timetable. Silc's `loop` is the declaration.
+ADR-019 is where the language draft went.
 
 ## Consequences
 
 - Author-facing text calls this a `loop` declaration. "Subject" stays a compiler-internal word, as [intent-vs-subjects.md](intent-vs-subjects.md) already asks.
 - `scrape::*`, `loop::read`, and `mcp::call` stay generic. A construction RFI chase is an example, not a namespace.
-- The vran-oss language draft is superseded by ADR-019. The Vran application's Manual, Webhook, and Loop triggers stay product vocabulary. Silc's catalog stays the closed `loop::*` nodes in ADR-014.
+- The vran-oss language draft is superseded by ADR-019. Silc's catalog stays the closed `loop::*` nodes in ADR-014.
