@@ -24,10 +24,11 @@ root [README](../README.md).
 | [012](ADR-012-webgpu-game-subject.md) | WebGPU game subject (`game::*`) | Accepted | Web-only surface; Bun+CPython+Go spine |
 | [013](ADR-013-procedural-asset-generation.md) | Procedural asset generation | Accepted | Game asset bake step |
 | [014](ADR-014-loop-subject.md) | Loop subject (`loop::*`) | Accepted | Go kernel; receipts, replay, approvals inbox |
-| [015](ADR-015-silc-loop-and-vran.md) | Silc `loop` and Vran | Accepted | Names the borrowing; Vran (2027) may target the same semantics |
+| [015](ADR-015-silc-loop-and-vran.md) | Silc `loop` and Vran | Accepted | Amended 2026-10-08: the Vran app is not paused; its Loop trigger is a schedule. Language draft superseded by ADR-019 |
 | [016](ADR-016-generic-kernel-domain-layers.md) | Generic kernels, domain layers | Accepted | `scene::` kernel, `game::` gameplay layer; verticals stay outside the compiler |
 | [017](ADR-017-ui-embed.md) | `ui::embed` dual-surface URL viewport | Accepted | Sandboxed iframe on web; card fallback on terminal; does not relax ADR-012 |
 | [018](ADR-018-files-capability.md) | Sysop-shared files (`files` + `ui::file_browser`) | Accepted | `/files/list` + `/files/download`; folders zip via pinned CPython |
+| [019](ADR-019-vran-language-into-loop.md) | Vran 0.1 language folded into `loop::*` | Accepted | Maps the vran-oss draft onto the closed catalog. Proposed additions are not shipped |
 
 ### Partial supersession (0.4.0)
 
@@ -58,6 +59,7 @@ forward to ADR-009 for the current authoring rule.
 | --- | --- | --- |
 | [subject-first-decision.md](subject-first-decision.md) | Historical | July 2026 benchmark no-go + owner override |
 | [subject-first-declarators.md](subject-first-declarators.md) | Harness | `subject-first-bench` CLI and go/no-go criteria |
+| [vran-0.1-loop-grammar.md](vran-0.1-loop-grammar.md) | Source text | Billy's Loop grammar as implemented in vran-oss `699ec980`. Verbatim EBNF and syntax rules. Conformance to `loop::*` is unconfirmed |
 
 ## Metadata template
 
