@@ -2,9 +2,10 @@
 # Pre-1.0 SemVer: breaking changes bump the minor version (0.x → 0.(x+1)).
 semver_check = false
 # Publishing uses crates.io Trusted Publishing for thoughtpivot/silc, workflow
-# `.github/workflows/ci.yml`, job `release-plz-release`. New crates must be
-# published once with an API token before Trusted Publishing can release them.
-# Crates with Cargo.toml `publish = false` (sil-ide, sil-lsp) stay unpublished.
+# `.github/workflows/ci.yml`, job `release-plz-release`, GitHub environment
+# `crates`. New crates must be published once with an API token before Trusted
+# Publishing can release them. Crates with Cargo.toml `publish = false`
+# (sil-ide, sil-lsp) stay unpublished.
 publish = true
 # Publish whenever the manifest version is ahead of crates.io, including a
 # version that was bumped by hand. `false` only publishes a merge of a

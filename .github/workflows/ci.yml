@@ -111,12 +111,14 @@ jobs:
   # Publishes unpublished crate versions to crates.io after a release PR lands.
   # Auth: release-plz Trusted Publishing (OIDC). Do not set CARGO_REGISTRY_TOKEN.
   # Each published crate needs a crates.io Trusted Publisher for this
-  # workflow (`ci.yml`), with no environment.
+  # workflow (`ci.yml`) and the `crates` environment. Do not add
+  # rust-lang/crates-io-auth-action; release-plz exchanges the OIDC token.
   release-plz-release:
     name: release-plz release
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     needs: check
+    environment: crates
     permissions:
       contents: write
       pull-requests: read
