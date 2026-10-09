@@ -26,3 +26,8 @@ training/out/**
 # Env / secrets
 .env
 .env.*
+
+# Installed by .github/workflows/release.yml; not part of the Rust workspace.
+/node_modules/
+__pycache__/
+*.pyc

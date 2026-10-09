@@ -1,0 +1,73 @@
+name: Release
+
+# Runs after CI succeeds on a push to main or dev. The default GITHUB_TOKEN
+# cannot trigger the tag workflow that publishes crates, so git pushes use a
+# GitHub App token or SILC_RELEASE_TOKEN. See docs/RELEASING.md.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+concurrency:
+  group: silc-semantic-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: semantic-release
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      (github.event.workflow_run.head_branch == 'main' ||
+       github.event.workflow_run.head_branch == 'dev')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tested commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Create GitHub App token
+        id: app-token
+        if: vars.SILC_RELEASE_APP_CLIENT_ID != ''
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ vars.SILC_RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SILC_RELEASE_APP_PRIVATE_KEY }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install semantic-release
+        run: |
+          npm install --prefix "${RUNNER_TEMP}/silc-release" --save-exact \
+            semantic-release@25.0.9 \
+            @semantic-release/changelog@7.0.0 \
+            @semantic-release/commit-analyzer@13.0.1 \
+            @semantic-release/exec@7.1.0 \
+            @semantic-release/git@11.0.1 \
+            @semantic-release/github@12.0.10 \
+            @semantic-release/release-notes-generator@14.1.1 \
+            conventional-changelog-conventionalcommits@10.4.1
+          ln -s "${RUNNER_TEMP}/silc-release/node_modules" node_modules
+
+      - name: Release
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token || secrets.SILC_RELEASE_TOKEN }}
+          GIT_AUTHOR_NAME: Dan Stephenson
+          GIT_AUTHOR_EMAIL: ispyhumanfly@gmail.com
+          GIT_COMMITTER_NAME: Dan Stephenson
+          GIT_COMMITTER_EMAIL: ispyhumanfly@gmail.com
+          RELEASE_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: bash scripts/release.sh

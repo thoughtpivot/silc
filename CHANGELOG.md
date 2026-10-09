@@ -1,7 +1,7 @@
 # Changelog
 
 All notable changes to Silc are documented here.
-Silc remains pre-1.0; this project follows SemVer 0.x with Conventional Commits.
+Versions follow Conventional Commits: `fix` is a patch, `feat` a minor, and `feat!` or `BREAKING CHANGE` a major. `chore` does not cut a release.
 Entries before 0.5.0 are reconstructed from the commit history.
 
 ## 0.7.0 — 2026-10-05
