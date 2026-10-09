@@ -757,9 +757,10 @@ concurrent `/submit` POSTs with SQLite checks.
 
 ### Versioning
 
-Pre-1.0 SemVer 0.x: breaking language/compiler changes bump the minor.
-`1.0.0` is reserved for a future stability milestone. Releases use
-[release-plz](release-plz.toml) and Conventional Commits.
+[semantic-release](docs/RELEASING.md) cuts releases from Conventional Commits.
+`fix` is a patch, `feat` a minor, and `feat!` or `BREAKING CHANGE` a major.
+`chore` does not cut a release. Stable `vX.Y.Z` tags land on `main`. A `dev`
+branch, when it exists, gets prerelease tags `vX.Y.Z-dev.N`.
 
 ---
 
@@ -795,6 +796,7 @@ Pre-1.0 SemVer 0.x: breaking language/compiler changes bump the minor.
 | [docs/domains/vdc.md](docs/domains/vdc.md) | VDC / AEC domain (go-to-market, not language identity) |
 | [docs/SILC-IPC-ABI-v1.md](docs/SILC-IPC-ABI-v1.md) | Shared buffer ABI |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
+| [docs/RELEASING.md](docs/RELEASING.md) | Semantic-release setup, tokens, and crates.io |
 
 ---
 
