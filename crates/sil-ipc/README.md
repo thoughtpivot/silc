@@ -6,5 +6,5 @@ Shared Buffer ABI and Unix domain socket signaling for ThoughtPivot
 This crate is a library dependency of the Silc compiler. Install the CLI with:
 
 ```bash
-cargo install silc
+cargo install --locked silc
 ```

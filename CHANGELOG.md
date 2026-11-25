@@ -4,10 +4,54 @@ All notable changes to Silc are documented here.
 Silc remains pre-1.0; this project follows SemVer 0.x with Conventional Commits.
 Entries before 0.5.0 are reconstructed from the commit history.
 
-## 0.7.0 — 2026-10-05
+## Unreleased — planned for 0.8.0
 
-- `@version("0.7.0")` is the required source version and must match the compiler. Examples, `silc init`, and the assist corpus declare it. A 0.6.0 program is told to migrate.
-- Release-plz publishes new crate versions to crates.io when a release lands. `sil-ide` and `sil-lsp` stay unpublished.
+Nothing here is implemented. These are the next source changes, tracked in
+Linear.
+
+- `@version` accepts a major.minor match, so a `0.8.x` program builds on any
+  `0.8` compiler instead of requiring the exact patch version (THO-558).
+- `loop::fallback`: two or more `loop::read` attempts in order, kept when a
+  condition holds, with a terminating `loop::otherwise` (THO-559,
+  [ADR-019](docs/ADR-019-vran-language-into-loop.md)).
+- Citations on `loop::ask`: source bindings, and an answer is accepted only
+  when each quote occurs in a cited source (THO-559).
+- Multi-value `:from` on `loop::ask`, so one question can read several
+  bindings.
+- Loop embeddings, nearest-neighbor `loop::find`, and page-read `:into` plus
+  `:select` on `loop::read` (THO-551 to THO-555).
+
+## 0.7.0 — 2026-11-25
+
+The only source change is that `@version("0.7.0")` is now required, and it
+must match the compiler exactly. A `@version("0.6.0")` program is told to
+migrate. Examples, `silc init`, and the assist corpus declare the new version.
+Everything else in this release is packaging and documentation.
+
+### Changed
+
+- Crates are published to crates.io by release-plz through crates.io Trusted
+  Publishing (OIDC) from the `ci.yml` workflow, with no API token. `sil-ide`
+  and `sil-lsp` stay unpublished.
+- The minimum supported Rust version is 1.86 (was 1.82). The locked `icu` and
+  `idna` dependencies need it. Install with `cargo install --locked silc`.
+- ADR-015 is amended: the Vran app is internal, closed source, and not paused.
+  Its Loop trigger runs continuously and is not Silc's `loop` declaration.
+- README, ARCHITECTURE, the training README, and SILC-LANGUAGE section 12 now
+  describe 0.7.0 and list what is planned for 0.8.0. The `silc` crate README
+  describes Silc as an open-source loop language and compiler.
+
+### Added
+
+- [ADR-019](docs/ADR-019-vran-language-into-loop.md) folds the Vran 0.1 draft
+  grammar into `loop::*`. The mapping in
+  [docs/vran-0.1-loop-grammar.md](docs/vran-0.1-loop-grammar.md) is confirmed
+  by Dan on 24 November 2026. Each construct is Kept, Changed, Planned 0.8.0,
+  or Dropped. Planned for 0.8.0: `fallback`, `cite`, and multi-value `from`.
+
+## 0.6.0 — 2026-10-04
+
+First release published to crates.io.
 
 ### Added
 
@@ -16,11 +60,23 @@ Entries before 0.5.0 are reconstructed from the commit history.
   attachments, folders (and `zip=1`) stream a zip from the pinned CPython.
   Paths stay inside the share. Terminal lists URLs instead of transferring
   bytes ([ADR-018](docs/ADR-018-files-capability.md)).
-
 - Synthesized MCP server on `POST /mcp` for programs with an `app` (or a loop
   web surface). Tools come from resource queries/mutations and schedule/manual
   loops (`talks_list`, `talk_today_run`, …). Auth is `SILC_MCP_TOKEN`. The plan
   hash covers the tool list; `silc build` prints it.
+- `ui::embed` — dual-surface URL viewport (`:src` required, `:title?`). Web
+  lowers to a sandboxed iframe; terminal lowers to a title/URL/“Open in a
+  browser” card (THO-119, [ADR-017](docs/ADR-017-ui-embed.md)).
+- `examples/core/embedLoopApp`: one program with `ui::embed`, blank-Str `loop::ask` (“no more items”), and a live loop kernel on `app.db` (THO-119/120/121).
+- [docs/SILC-LANGUAGE.md](docs/SILC-LANGUAGE.md): the normative language
+  surface, including the list of known irregularities scheduled for 0.6.0.
+- [docs/GLOSSARY.md](docs/GLOSSARY.md): one meaning per term and the retired
+  vocabulary.
+- `examples/core/hotelSignupApp` README and index rows.
+- `mcp::call` is a registered operation. `loop::read` accepts a nested
+  operation (`loop::read(:as(x), scrape::page(:url(...)))`); the string
+  `:op("scrape::page")` remains valid for one release.
+- `silc docs` prints the generated catalog sections.
 
 ### Changed
 
@@ -30,7 +86,6 @@ Entries before 0.5.0 are reconstructed from the commit history.
 - `{$binding.path}` placeholders use one checker in `loop::` and `ui::` string options.
 - README title is generic. VDC is a domain document ([docs/domains/vdc.md](docs/domains/vdc.md)), not the language identity (ADR-015, ADR-016).
 - Examples live under `examples/core/` and `examples/domains/aec/`. The three Moz-specific loop apps are one generic MCP loop example.
-
 - Author-facing vocabulary uses full words: **operation** (was "op") and
   **option** (was "prop" / "adverb" / "colon-pair"). Compiler diagnostics,
   editor hovers, the AGENTS template, and the catalog formatters now say
@@ -53,22 +108,6 @@ Entries before 0.5.0 are reconstructed from the commit history.
   `tensor::infer`).
 - Author `sink` modules and `app.serve` are gone from the model. Component
   methods cannot be pipelines.
-
-### Added
-
-- `ui::embed` — dual-surface URL viewport (`:src` required, `:title?`). Web
-  lowers to a sandboxed iframe; terminal lowers to a title/URL/“Open in a
-  browser” card (THO-119, [ADR-017](docs/ADR-017-ui-embed.md)).
-- `examples/core/embedLoopApp`: one program with `ui::embed`, blank-Str `loop::ask` (“no more items”), and a live loop kernel on `app.db` (THO-119/120/121).
-- [docs/SILC-LANGUAGE.md](docs/SILC-LANGUAGE.md): the normative language
-  surface, including the list of known irregularities scheduled for 0.6.0.
-- [docs/GLOSSARY.md](docs/GLOSSARY.md): one meaning per term and the retired
-  vocabulary.
-- `examples/core/hotelSignupApp` README and index rows.
-- `mcp::call` is a registered operation. `loop::read` accepts a nested
-  operation (`loop::read(:as(x), scrape::page(:url(...)))`); the string
-  `:op("scrape::page")` remains valid for one release.
-- `silc docs` prints the generated catalog sections.
 
 ### Fixed
 

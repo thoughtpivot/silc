@@ -291,9 +291,9 @@ checks with one declared matrix that generates this section.
 - UI programs require an `app` with at least one `route`.
 - At most one processor operation family per program.
 
-## 12. Resolved in 0.6.0, and what remains
+## 12. Resolved by 0.7.0, and what remains
 
-Resolved in 0.6.0:
+Resolved by 0.7.0 (the 0.6.0 changes, now stable):
 
 1. `loop` and `scene` are lexer keywords, like the other roots. `loop` is still
    a legal closed value in `scene::audio(:kind(loop))`.
@@ -305,6 +305,24 @@ Resolved in 0.6.0:
 6. `llm::complete` and `loop::ask` are one local-model capability in the compatibility matrix.
 7. Kernel nodes are `scene::`. Gameplay nodes are `game::`. The root is `scene`; `game` is a one-release alias.
 8. Author `sink`, `App.serve`, and discarded component pipelines are gone.
+
+0.7.0 adds no language surface. The one source change is the required exact
+`@version("0.7.0")`. A program that declares any other version is rejected with
+a migration diagnostic.
+
+Planned for 0.8.0 (not implemented; see the Unreleased list in
+[CHANGELOG.md](../CHANGELOG.md) and
+[ADR-019](ADR-019-vran-language-into-loop.md)):
+
+1. `@version` matches on major.minor, so a `0.8.x` program builds on any
+   `0.8` compiler (THO-558).
+2. `loop::fallback`: ordered `loop::read` attempts, kept when a condition
+   holds, with a terminating `loop::otherwise` (THO-559).
+3. Citations on `loop::ask`, accepted only when each quote occurs in a cited
+   source (THO-559).
+4. Multi-value `:from` on `loop::ask`.
+5. Loop embeddings, nearest-neighbor `loop::find`, and page-read `:into` plus
+   `:select` on `loop::read` (THO-551 to THO-555).
 
 Still irregular:
 

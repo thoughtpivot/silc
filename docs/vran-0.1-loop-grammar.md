@@ -1,6 +1,6 @@
 # Vran 0.1 Loop grammar (verbatim)
 
-- **Status:** Recorded for review. Conformance to Silc is not claimed.
+- **Status:** Source text, copied verbatim. The mapping table is confirmed by Dan, 24 Nov 2026.
 - **Date:** 2026-10-08
 - **Source:** private repository `thoughtpivot/vran-oss`, branch `main`, commit `699ec980` (29 September 2026). No parser or compiler shipped with that commit.
 - **Credit:** Billy (Bilyal Mestanov) proposed the Loop grammar. The files below are the version of that proposal implemented in vran-oss. He committed them as `docs(spec): add Vran 0.1 language spec, plugin model, grammar, and construction examples`.
@@ -13,41 +13,64 @@ This page copies the draft into Silc so vran-oss can be retired without losing t
 
 Execution, diagnostics, plugins, rationale, the Plan IR note, and the construction examples are not copied here. [ADR-019](ADR-019-vran-language-into-loop.md) is the design disposition of those ideas. It is not a conformance result.
 
-## To be confirmed by Dan
+## Mapping to Silc `loop` (confirmed by Dan, 24 Nov 2026)
 
-The middle column names a Silc form a reviewer might compare with the grammar. It is a pointer, not a finding that the construct is honored. Every status is **unconfirmed**.
+This mapping was confirmed by Dan Stephenson on 24 November 2026. It records
+the disposition of each grammar construct under [ADR-019](ADR-019-vran-language-into-loop.md).
+The middle column names the Silc form. The grammar in Appendix A is a historical
+copy and is not a Silc specification.
+
+Status values:
+
+- **Kept**: Silc has the construct in `loop::*` with the draft's meaning. The
+  spelling may differ.
+- **Changed**: Silc adopted the idea in a different shape, as the middle column
+  says.
+- **Planned 0.8.0**: not in the 0.7.0 catalog. It is scheduled for 0.8.0
+  (THO-559; see [CHANGELOG.md](../CHANGELOG.md)).
+- **Dropped**: Silc does not take it.
 
 | Grammar construct | Silc `loop` equivalent | Status |
 | --- | --- | --- |
-| `vran` header, `.vran` source file | Silc `.silc` program and `@version` | unconfirmed |
-| `use` of a local module or `package@major` | no `loop::*` import form | unconfirmed |
-| `input` | no loop input declaration | unconfirmed |
-| `enum`, `type`, bounded `list` | `contract` and Silc types | unconfirmed |
-| `register` (`of`, `key`, `sequence`, `stored in`, `readonly`, `person owns`, `derived`) | `resource` | unconfirmed |
-| `workflow` name, optional `timezone`, one trigger, then steps | `loop` name and `loop::flow` | unconfirmed |
-| `on manual` | `loop::manual` | unconfirmed |
-| `on schedule every … at … in …` | `loop::schedule` `:cron` and `:tz` | unconfirmed |
-| `on schedule cron "…" in …` | `loop::schedule` `:cron` and `:tz` | unconfirmed |
-| `catch up` | `loop::schedule` `:catch_up` | unconfirmed |
-| plugin trigger (`on` `alias.op`) and `once per` | no plugin trigger; `loop::on_mutation` is a resource trigger | unconfirmed |
-| `read` | `loop::read` | unconfirmed |
-| `ask` (`returns`, `from`, `cite`, `using`, `prompt`, `else`) | `loop::ask` | unconfirmed |
-| `let` | `loop::let` | unconfirmed |
-| `find` / `find one` | `loop::find` | unconfirmed |
-| `check` | `loop::gate` | unconfirmed |
-| `match` / `when` / `else` | `loop::branch`, `loop::when`, `loop::otherwise` | unconfirmed |
-| `each` … `max` | `loop::each` | unconfirmed |
-| `fallback` | no `loop::fallback` node | unconfirmed |
-| `signoff` (`by`, `via`, `within`, `when declined`, `when timed_out`) | `loop::approve`, `loop::declined`, `loop::timed_out` | unconfirmed |
-| `upsert` | `loop::write` | unconfirmed |
-| `do` | `loop::notify` (in-app notice) | unconfirmed |
-| `stop`, `fail`, `skip` | `loop::stop`, `loop::fail`, `loop::skip` | unconfirmed |
-| `key` | `:key` on `loop::write` and `loop::notify` | unconfirmed |
-| `retry` | `:retry` on `loop::read` and `loop::ask` | unconfirmed |
-| `unchecked` | `:unchecked` on `loop::write` and `loop::notify` | unconfirmed |
-| `unattended` | no catalog option | unconfirmed |
-| `.vrani` `plugin` interface (`trigger`, `read`, `effect`, `storage`, `channel`, `reason`, `pure`) | no plugin interface; catalog is closed | unconfirmed |
-| indentation, two spaces, hard keywords, `{path}` interpolation | Silc surface syntax and `{$binding.path}` in loop string options | unconfirmed |
+| `.vran` source file and the `vran 0.1` header (indentation syntax) | Silc `.silc` program and `@version` | Dropped |
+| `use` of a local module or `package@major` | no import form | Dropped |
+| `input` | no loop input declaration; a loop reads data with `loop::find` and `loop::read` | Dropped |
+| `enum`, `type`, bounded `list` | `contract` and Silc types | Changed |
+| `register` with `of` and `key` | `resource` | Changed |
+| `register` `stored in` (plugin storage) | program resources and the loop tables | Dropped |
+| `register` features: `person owns`, `derived`, `sequence`, `readonly` | none | Dropped |
+| `workflow` name, optional `timezone`, one trigger, then steps | `loop` name and `loop::flow` | Changed |
+| `on manual` | `loop::manual` | Kept |
+| `on schedule every … at … in …` | `loop::schedule` with a five-field `:cron` and `:tz`; the English recurrences are spellings of cron and are not added | Changed |
+| `on schedule cron "…" in …` | `loop::schedule` `:cron` and `:tz` | Kept |
+| `catch up` | `loop::schedule` `:catch_up` | Kept |
+| plugin trigger (`on` `alias.op`) and `once per` | none; `loop::on_mutation` is a resource trigger | Dropped |
+| `read` | `loop::read` | Kept |
+| `ask` `returns`, `retry`, and `else` | `loop::ask` `:into`, `:retry`, and `loop::otherwise` | Kept |
+| `ask` single-value `from` | `loop::ask` `:from` | Kept |
+| `ask` multi-value `from` | `loop::ask` `:from` with several bindings | Planned 0.8.0 |
+| `ask` `cite` | citations on `loop::ask` | Planned 0.8.0 |
+| `ask` `using` (model choice) | none; the model is silclm | Dropped |
+| `let` | `loop::let` | Kept |
+| `find` / `find one` | `loop::find` | Kept |
+| `check` | `loop::gate` | Kept |
+| `match` / `when` / `else` | `loop::branch`, `loop::when`, `loop::otherwise` | Kept |
+| `each` … `max` | `loop::each` | Kept |
+| `fallback` | `loop::fallback` | Planned 0.8.0 |
+| `signoff` `by`, `within`, `when declined`, `when timed_out` | `loop::approve`, `loop::declined`, `loop::timed_out` | Kept |
+| `signoff` `via` (approval channel) | none; approval is the synthesized `/loops` inbox | Dropped |
+| `upsert` | `loop::write` to a Silc resource mutation | Changed |
+| `do` (in-app notice) | `loop::notify` | Changed |
+| `do` outside effects (email, chat, files, and other connectors) | none | Dropped |
+| `stop`, `fail`, `skip` | `loop::stop`, `loop::fail`, `loop::skip` | Kept |
+| `key` | `:key` on `loop::write` and `loop::notify` | Kept |
+| `retry` | `:retry` on `loop::read` and `loop::ask` | Kept |
+| `unchecked` | `:unchecked` on `loop::write` and `loop::notify` | Kept |
+| `unattended` | none; it qualifies irreversible outside effects, which Silc does not have | Dropped |
+| `.vrani` `plugin` interface (`trigger`, `read`, `effect`, `storage`, `channel`, `reason`, `pure`) | none; the catalog is closed | Dropped |
+| `vran.lock` | none | Dropped |
+| two-space indentation, hard keywords | Silc surface syntax | Dropped |
+| `{path}` interpolation | `{$binding.path}` in loop string options | Changed |
 
 ## Appendix A — `spec/grammar.ebnf`
 

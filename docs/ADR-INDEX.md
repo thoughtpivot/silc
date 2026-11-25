@@ -59,7 +59,7 @@ forward to ADR-009 for the current authoring rule.
 | --- | --- | --- |
 | [subject-first-decision.md](subject-first-decision.md) | Historical | July 2026 benchmark no-go + owner override |
 | [subject-first-declarators.md](subject-first-declarators.md) | Harness | `subject-first-bench` CLI and go/no-go criteria |
-| [vran-0.1-loop-grammar.md](vran-0.1-loop-grammar.md) | Source text | Billy's Loop grammar as implemented in vran-oss `699ec980`. Verbatim EBNF and syntax rules. Conformance to `loop::*` is unconfirmed |
+| [vran-0.1-loop-grammar.md](vran-0.1-loop-grammar.md) | Source text | Billy's Loop grammar as implemented in vran-oss `699ec980`. Verbatim EBNF and syntax rules. The mapping to `loop::*` is confirmed by Dan (24 Nov 2026) |
 
 ## Metadata template
 

@@ -7,5 +7,5 @@ Published because `sil-rlm` (used by the `silc` CLI) depends on it. Install the
 compiler with:
 
 ```bash
-cargo install silc
+cargo install --locked silc
 ```
