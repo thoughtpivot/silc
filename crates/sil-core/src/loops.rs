@@ -172,16 +172,18 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
     LoopNodeSpec {
         name: "read",
         role: LoopNodeRole::Step,
-        description: "Fetches outside data with a bounded retry and records it for replay. `scrape::page` is an HTTP GET (title and text); `mcp::call` calls one tool on an MCP server over streamable HTTP.",
+        description: "Fetches outside data with a bounded retry and records it for replay. `scrape::page` is an HTTP GET (title and text), optionally narrowed by a CSS `:select` and bound `:into` a contract; `mcp::call` calls one tool on an MCP server over streamable HTTP.",
         props: &[
-            lp("as", LoopPropKind::Ident, true, "Binding name: a page (`url`, `status`, `title`, `text`) or a tool result (`text`, `data`)."),
+            lp("as", LoopPropKind::Ident, true, "Binding name: a page (`url`, `status`, `title`, `text`), a row of the `:into` contract, or a tool result (`text`, `data`)."),
+            lp("into", LoopPropKind::Ident, false, "`scrape::page`: contract the page binds as. Fields named `url`, `status`, `title`, `text` take the page's values (`text` is the selected text); other fields come from `:fields` or are unknown."),
             lp_closed("op", LoopPropKind::String, true, "Read operation: \"scrape::page\" or \"mcp::call\".", LOOP_READ_OPS),
             lp("url", LoopPropKind::Expr, false, "`scrape::page`: absolute http(s) URL, literal or from a binding."),
             lp("server", LoopPropKind::String, false, "`mcp::call`: MCP server URL, e.g. \"https://example.run.app/mcp\"."),
             lp("tool", LoopPropKind::String, false, "`mcp::call`: tool name on that server."),
             lp("args", LoopPropKind::Expr, false, "`mcp::call`: tool arguments as `Contract.new(...)`; field names are sent as written."),
             lp("auth_env", LoopPropKind::String, false, "`mcp::call`: environment variable holding the bearer token. Tokens never go in source."),
-            lp("select", LoopPropKind::String, false, "`mcp::call`: dotted path into the result kept as `data`, e.g. \"records.parsed\" (lists map over items)."),
+            lp("select", LoopPropKind::String, false, "`mcp::call`: dotted path into the result kept as `data`, e.g. \"records.parsed\" (lists map over items). `scrape::page`: CSS selector; the page narrows to the first match before `text` is taken, e.g. \"article\"."),
+            lp("fields", LoopPropKind::Expr, false, "`scrape::page` with `:into`: per-field CSS selectors inside the selection, e.g. `Release.new(:version(\"h2\"))`; the first match's text fills the field."),
             lp("retry", LoopPropKind::Number, false, "Retries after a failed fetch (default 2, max 10)."),
         ],
         children: LoopChildPolicy::None,
@@ -661,6 +663,136 @@ pub fn template_placeholders(template: &str) -> Result<Vec<Vec<String>>, String>
         rest = &after[end + 1..];
     }
     Ok(out)
+}
+
+/// Check a `scrape::page(:select(...))` selector against the closed CSS subset
+/// the Go loop kernel runs (cascadia): type or `*`, `.class`, `#id`,
+/// `[attr]` / `[attr=value]` (also `~=`, `^=`, `$=`, `*=`), the combinators
+/// descendant, `>`, `+`, `~`, and `,` lists. Pseudo-classes are not accepted.
+pub fn validate_css_selector(sel: &str) -> Result<(), String> {
+    fn ident(chars: &[char], i: &mut usize) -> bool {
+        let start = *i;
+        while *i < chars.len()
+            && (chars[*i].is_ascii_alphanumeric() || chars[*i] == '-' || chars[*i] == '_')
+        {
+            *i += 1;
+        }
+        *i > start && !chars[start].is_ascii_digit()
+    }
+    fn skip_ws(chars: &[char], i: &mut usize) -> bool {
+        let start = *i;
+        while *i < chars.len() && chars[*i].is_whitespace() {
+            *i += 1;
+        }
+        *i > start
+    }
+    fn attr(chars: &[char], i: &mut usize) -> Result<(), String> {
+        *i += 1;
+        skip_ws(chars, i);
+        if !ident(chars, i) {
+            return Err("`[` must be followed by an attribute name".into());
+        }
+        skip_ws(chars, i);
+        if *i < chars.len() && chars[*i] != ']' {
+            if "~^$*".contains(chars[*i]) {
+                *i += 1;
+            }
+            if *i >= chars.len() || chars[*i] != '=' {
+                return Err("attribute selectors are `[name]` or `[name=value]`".into());
+            }
+            *i += 1;
+            skip_ws(chars, i);
+            match chars.get(*i) {
+                Some(&q) if q == '"' || q == '\'' => {
+                    *i += 1;
+                    while *i < chars.len() && chars[*i] != q {
+                        if chars[*i] == '\\' {
+                            return Err("escapes are not supported in attribute values".into());
+                        }
+                        *i += 1;
+                    }
+                    if *i >= chars.len() {
+                        return Err("unterminated quoted attribute value".into());
+                    }
+                    *i += 1;
+                }
+                _ => {
+                    if !ident(chars, i) {
+                        return Err("attribute value must be a name or a quoted string".into());
+                    }
+                }
+            }
+            skip_ws(chars, i);
+        }
+        if chars.get(*i) != Some(&']') {
+            return Err("unclosed `[`".into());
+        }
+        *i += 1;
+        Ok(())
+    }
+    // Returns false when no compound selector starts at `i`.
+    fn compound(chars: &[char], i: &mut usize) -> Result<bool, String> {
+        let start = *i;
+        if chars.get(*i) == Some(&'*') {
+            *i += 1;
+        } else if chars.get(*i).is_some_and(|c| c.is_ascii_alphabetic()) {
+            ident(chars, i);
+        }
+        loop {
+            match chars.get(*i) {
+                Some('.') | Some('#') => {
+                    let mark = chars[*i];
+                    *i += 1;
+                    if !ident(chars, i) {
+                        return Err(format!("`{mark}` must be followed by a name"));
+                    }
+                }
+                Some('[') => attr(chars, i)?,
+                Some(':') => {
+                    return Err("pseudo-classes such as `:first-child` are not supported".into())
+                }
+                _ => break,
+            }
+        }
+        Ok(*i > start)
+    }
+
+    if sel.trim().is_empty() {
+        return Err("the selector is empty".into());
+    }
+    let chars: Vec<char> = sel.chars().collect();
+    let mut i = 0;
+    loop {
+        skip_ws(&chars, &mut i);
+        if !compound(&chars, &mut i)? {
+            return Err(match chars.get(i) {
+                Some(c) => format!("unexpected `{c}`"),
+                None => "a selector is missing after `,` or a combinator".into(),
+            });
+        }
+        loop {
+            let ws = skip_ws(&chars, &mut i);
+            match chars.get(i) {
+                None => return Ok(()),
+                Some(',') => {
+                    i += 1;
+                    break;
+                }
+                Some('>') | Some('+') | Some('~') => {
+                    i += 1;
+                    skip_ws(&chars, &mut i);
+                }
+                Some(c) if !ws => return Err(format!("unexpected `{c}`")),
+                Some(_) => {}
+            }
+            if !compound(&chars, &mut i)? {
+                return Err(match chars.get(i) {
+                    Some(c) => format!("unexpected `{c}`"),
+                    None => "a selector is missing after a combinator".into(),
+                });
+            }
+        }
+    }
 }
 
 /// Root binding names referenced by an expression.
@@ -1432,6 +1564,79 @@ impl<'a> Checker<'a> {
         Ok(())
     }
 
+    /// `:into(Contract)` and `:fields(Contract.new(...))` on a `scrape::page` read.
+    fn check_page_into(&self, step: &LoopNode) -> Result<BindTy, String> {
+        let Some(into) = step.ident_prop("into") else {
+            if step.prop("fields").is_some() {
+                return Err(self.err(
+                    step,
+                    ":fields needs :into(Contract) to name the row it fills",
+                ));
+            }
+            return Ok(BindTy::Page);
+        };
+        let Some(cfields) = self.contract_fields(into) else {
+            return Err(self.err(step, format!("unknown contract `{into}` in :into")));
+        };
+        let is_named = |ty: &TypeExpr, want: &str| match ty {
+            TypeExpr::Named(n) => n == want,
+            TypeExpr::Optional(inner) => matches!(inner.as_ref(), TypeExpr::Named(n) if n == want),
+            _ => false,
+        };
+        let mut selected: Vec<&str> = Vec::new();
+        if let Some(fields) = step.prop("fields") {
+            let Expr::New { ty, fields } = fields else {
+                return Err(self.err(
+                    step,
+                    format!(":fields must be `{into}.new(:field(\"css\"), ...)`"),
+                ));
+            };
+            if ty != into {
+                return Err(self.err(step, format!(":fields must be `{into}.new(...)` to match :into({into}), not `{ty}.new(...)`")));
+            }
+            for (fname, value) in fields {
+                let Some((_, fty)) = cfields.iter().find(|(f, _)| f == fname) else {
+                    return Err(self.err(step, format!("contract `{into}` has no field `{fname}`")));
+                };
+                if !is_named(fty, "Str") {
+                    return Err(self.err(step, format!(":fields fills `{fname}` with page text, so `{into}.{fname}` must be Str")));
+                }
+                let Some(css) = value.as_string_literal() else {
+                    return Err(self.err(
+                        step,
+                        format!(":fields `{fname}` must be a CSS selector string"),
+                    ));
+                };
+                validate_css_selector(css).map_err(|e| {
+                    self.err(
+                        step,
+                        format!(
+                            ":fields `{fname}`(\"{css}\") is not a supported CSS selector: {e}"
+                        ),
+                    )
+                })?;
+                selected.push(fname.as_str());
+            }
+        }
+        for (fname, fty) in &cfields {
+            if selected.contains(fname) {
+                continue;
+            }
+            let want = match *fname {
+                "status" => "Int",
+                "url" | "title" | "text" => "Str",
+                _ => continue,
+            };
+            if !is_named(fty, want) {
+                return Err(self.err(
+                    step,
+                    format!("`{into}.{fname}` takes the page's `{fname}`, so it must be {want}"),
+                ));
+            }
+        }
+        Ok(BindTy::Row(into.to_string()))
+    }
+
     fn block_terminates(steps: &[LoopNode]) -> bool {
         match steps.last() {
             Some(last) if TERMINATORS.contains(&last.name.as_str()) => true,
@@ -1489,10 +1694,16 @@ impl<'a> Checker<'a> {
     /// Check one read operation's options; returns the shape of its result.
     fn check_read(&self, step: &LoopNode, scope: &Scope) -> Result<BindTy, String> {
         let op = step.string_prop("op").unwrap_or_default();
-        let mcp_props = ["server", "tool", "args", "auth_env", "select"];
+        let mcp_props = ["server", "tool", "args", "auth_env"];
         let ty = if op == "mcp::call" {
             if step.prop("url").is_some() {
                 return Err(self.err(step, "`mcp::call` takes :server and :tool, not :url"));
+            }
+            if let Some(extra) = ["into", "fields"].iter().find(|p| step.prop(p).is_some()) {
+                return Err(self.err(
+                    step,
+                    format!(":{extra} only applies to `scrape::page`; an `mcp::call` result binds `text` and `data`"),
+                ));
             }
             let Some(server) = step.string_prop("server") else {
                 return Err(self.err(step, "`mcp::call` requires :server(\"https://.../mcp\")"));
@@ -1529,7 +1740,7 @@ impl<'a> Checker<'a> {
                 if !valid {
                     return Err(self.err(
                         step,
-                        ":select must be a dotted field path like \"records.parsed\"",
+                        ":select must be a dotted field path like \"records.parsed\"; CSS selectors apply to `scrape::page`",
                     ));
                 }
             }
@@ -1547,7 +1758,15 @@ impl<'a> Checker<'a> {
                     return Err(self.err(step, ":url must be an absolute http(s) URL"));
                 }
             }
-            BindTy::Page
+            if let Some(sel) = step.string_prop("select") {
+                validate_css_selector(sel).map_err(|e| {
+                    self.err(
+                        step,
+                        format!(":select(\"{sel}\") is not a supported CSS selector: {e}; dotted JSON paths apply to `mcp::call`"),
+                    )
+                })?;
+            }
+            self.check_page_into(step)?
         };
 
         self.check_retry(step)?;
@@ -1596,6 +1815,12 @@ impl<'a> Checker<'a> {
                         format!(
                             "attempts must use one read operation so the result has one shape; found `{first_op}` and `{op}`"
                         ),
+                    ));
+                }
+                Some((first_ty, _)) if *first_ty != ty => {
+                    return Err(self.err(
+                        step,
+                        "attempts must bind one shape; give every `scrape::page` attempt the same :into (or none)",
                     ));
                 }
                 Some(_) => {}

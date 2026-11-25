@@ -255,13 +255,18 @@ loop RfiChase {
   ```
 
   The attempts are `loop::read` children without `:as` (the accepted result
-  binds to the fallback's `:as`) and share one read operation, so `$page` has
-  one shape. `:accept` is written over that binding and follows the gate
+  binds to the fallback's `:as`) and share one read operation (and, for page
+  reads, the same `:into`), so `$page` has one shape. `:accept` is written over that binding and follows the gate
   rules: false or unknown rejects the attempt. A fetch that fails after its
   own `:retry` also moves on. `:retry` repeats one read; `fallback` tries a
   different read. The `loop::otherwise` is required, runs when no attempt is
   accepted, and ends in `stop`, `fail`, or `skip`. Every attempt is recorded
   for replay, and `silc build` counts each attempt's reads in the worst case.
+- Page reads: `scrape::page(:url(...), :select("article"))` narrows the page
+  to the first element matching a CSS selector before `text` is taken.
+  `loop::read(:as(x), :into(Contract), scrape::page(...))` binds `$x` as a row
+  of that contract (rules in [ADR-014](ADR-014-loop-subject.md), decision 6).
+  `:select` on `mcp::call` stays a dotted JSON path.
 - A program with no `app`, no `scene` (and no `game` alias), and only `loop::manual` triggers is a
   **loop command**: no surfaces are built; `silc main.silc` runs each loop
   once, prints notices to stdout, and exits. `loop::approve` is a compile
@@ -363,8 +368,9 @@ multi-value `:from` are implemented on `main`; the rest is not:
 4. Multi-value `:from` on `loop::ask`: `:from($release, $seen)` equals
    `:from([$release, $seen])`, and the model sees an object labelled by
    binding path (THO-555, on main).
-5. Loop embeddings, nearest-neighbor `loop::find`, and page-read `:into` plus
-   `:select` on `loop::read` (THO-551 to THO-555).
+5. Loop embeddings and nearest-neighbor `loop::find` (THO-551 to THO-555).
+   Page-read `:into` plus `:select` on `loop::read` is implemented on main
+   (THO-554).
 
 Still irregular:
 

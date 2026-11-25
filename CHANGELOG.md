@@ -37,7 +37,8 @@ Entries before 0.5.0 are reconstructed from the commit history.
 ### Planned
 
 These are the next source changes, tracked in Linear. `loop::fallback`, the
-`Contract.new` type check, multi-value `:from` on `loop::ask`, and the THO-560
+`Contract.new` type check, multi-value `:from` on `loop::ask`, page-read
+`:select` / `:into`, and the THO-560
 items below are implemented on `main`; the rest is not yet.
 
 - Implemented: `llama-cpp-python` is pinned at 0.3.38, up from 0.3.7, which no
@@ -78,9 +79,16 @@ items below are implemented on `main`; the rest is not yet.
   vector, or a value of unknown type is rejected at validation with a message
   naming the field, the expected type, and the found type. Nothing coerces
   (THO-578).
-- Embedding steps in `loop::let` (THO-552), nearest-neighbor `loop::find`
-  (THO-553), and page-read `:into` plus `:select` on `loop::read` (THO-551 to
-  THO-555).
+- Embedding steps in `loop::let` (THO-552) and nearest-neighbor `loop::find`
+  (THO-553).
+- **Implemented:** page reads in loops (THO-554).
+  `scrape::page(:select("css"))` narrows the page to the first matching
+  element, and `loop::read(:into(Contract))` binds a typed row, so
+  `$release.version` type-checks. Page-named fields take the page's values,
+  `:fields(Contract.new(:field("css")))` fills the rest, and an unmatched
+  field is unknown. Both work on `loop::fallback` attempts, which must share
+  one `:into`. The Go loop kernel now depends on cascadia and
+  `golang.org/x/net/html`.
 
 ## 0.7.0 — 2026-11-25
 

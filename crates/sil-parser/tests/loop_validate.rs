@@ -960,3 +960,305 @@ fn comma_list_is_only_valid_on_ask_from() {
     let err = check(&other_ask_option).unwrap_err();
     assert!(err.contains("only valid on `loop::ask :from`"), "{err}");
 }
+
+// ---------------------------------------------------------------- page reads (THO-554)
+
+const PAGE_PRELUDE: &str = r#"
+contract Dependency {
+    has Str $.id;
+    has Str $.changelog;
+}
+contract Source {
+    has Str $.id;
+    has Str $.url;
+}
+contract Release { has Str $.version; has Str $.text; }
+contract Article { has Str $.title; has Str $.text; }
+resource Dependencies for Dependency {
+    query list;
+}
+resource Sources for Source {
+    query list;
+}
+"#;
+
+/// The site's UpstreamWatch read, verbatim, inside an `each` over `$dep`.
+const RELEASE_READ: &str = r#"loop::read(:as(release), :into(Release),
+  scrape::page(:url($dep.changelog), :select("article")))"#;
+
+/// The site's ArticleIngest read, verbatim, inside an `each` over `$src`.
+const ARTICLE_READ: &str = r#"loop::read(:as(article), :into(Article),
+  scrape::page(:url($src.url), :select("article")))"#;
+
+fn page_loop(read: &str, after: &str) -> String {
+    format!(
+        r#"loop::flow(
+    loop::schedule(:cron("0 6 * * *"), :tz("UTC")),
+    loop::find(:as(deps), :from(Dependencies.list), :max(20)),
+    loop::each(:in($deps), :as(dep), :max(20),
+        {read},
+        {after}
+    )
+)"#
+    )
+}
+
+fn release_loop(read: &str) -> String {
+    page_loop(
+        read,
+        r#"loop::ask(:as(draft), :into(Draft), :from($release.text), :prompt("Summarize release {$release.version}")),
+        loop::gate(:that($draft.text != ""), :reason("never write an empty note")),
+        loop::write(:to(Notes.create), :key("{$dep.id}:{$release.version}"), :value(Note.new(:rfi($dep.id), :text($draft.text))))"#,
+    )
+}
+
+fn check_page(body: &str) -> Result<sil_core::Program, String> {
+    let src = format!("{PRELUDE}{PAGE_PRELUDE}\nloop Watch {{\n{body}\n}}\n");
+    let program = parse(&src).map_err(|e| format!("parse: {}", e.message))?;
+    program.validate()?;
+    Ok(program)
+}
+
+fn expect_page_err(body: &str, needle: &str) {
+    match check_page(body) {
+        Ok(_) => panic!("expected error containing `{needle}`, but it validated:\n{body}"),
+        Err(e) => assert!(e.contains(needle), "expected `{needle}` in error, got: {e}"),
+    }
+}
+
+#[test]
+fn site_release_read_types_version_and_text() {
+    check_page(&release_loop(RELEASE_READ)).unwrap();
+}
+
+#[test]
+fn site_article_read_types_text() {
+    let body = format!(
+        r#"loop::flow(
+    loop::schedule(:cron("0 6 * * *"), :tz("UTC")),
+    loop::find(:as(sources), :from(Sources.list), :max(20)),
+    loop::each(:in($sources), :as(src), :max(20),
+        {ARTICLE_READ},
+        loop::ask(:as(draft), :into(Draft), :from($article.text), :prompt("Summarize {{$article.title}}")),
+        loop::gate(:that($draft.text != ""), :reason("never write an empty note")),
+        loop::write(:to(Notes.create), :key("{{$src.id}}:article"), :value(Note.new(:rfi($src.id), :text($draft.text))))
+    )
+)"#
+    );
+    check_page(&body).unwrap();
+}
+
+#[test]
+fn page_read_into_unknown_contract_is_rejected() {
+    expect_page_err(
+        &release_loop(&RELEASE_READ.replace(":into(Release)", ":into(Changelog)")),
+        "unknown contract `Changelog` in :into",
+    );
+}
+
+#[test]
+fn page_read_into_closes_the_row_fields() {
+    expect_page_err(
+        &release_loop(RELEASE_READ).replace("{$release.version}\")", "{$release.tag}\")"),
+        "`$release` has no field `tag`",
+    );
+    expect_page_err(
+        &release_loop(&RELEASE_READ.replace(
+            r#":select("article")"#,
+            r#":select("article"), :fields(Release.new(:tag("h2")))"#,
+        )),
+        "contract `Release` has no field `tag`",
+    );
+    // Without :into a page binds the fixed page shape.
+    expect_page_err(
+        &release_loop(&RELEASE_READ.replace(":into(Release),", "")),
+        "`$release` has no field `version`",
+    );
+}
+
+#[test]
+fn page_read_fields_are_checked() {
+    let with_fields = |fields: &str| {
+        release_loop(&RELEASE_READ.replace(
+            r#":select("article")"#,
+            &format!(r#":select("article"), :fields({fields})"#),
+        ))
+    };
+    check_page(&with_fields(r#"Release.new(:version("h2"))"#)).unwrap();
+    expect_page_err(
+        &with_fields(r#"Article.new(:title("h1"))"#),
+        ":fields must be `Release.new(...)`",
+    );
+    expect_page_err(
+        &with_fields(r#"Release.new(:version("h2:first-child"))"#),
+        "pseudo-classes",
+    );
+    expect_page_err(
+        &release_loop(&RELEASE_READ.replace(":into(Release),", "").replace(
+            r#":select("article")"#,
+            r#":select("article"), :fields(Release.new(:version("h2")))"#,
+        )),
+        ":fields needs :into(Contract)",
+    );
+}
+
+#[test]
+fn page_fields_must_match_page_types() {
+    let src = format!(
+        "{PRELUDE}{PAGE_PRELUDE}contract Hit {{ has Str $.text; has Str $.status; }}\nloop Watch {{\n{}\n}}\n",
+        page_loop(
+            r#"loop::read(:as(hit), :into(Hit), scrape::page(:url($dep.changelog)))"#,
+            r#"loop::stop()"#,
+        )
+    );
+    let err = parse(&src).unwrap().validate().unwrap_err();
+    assert!(
+        err.contains("`Hit.status` takes the page's `status`, so it must be Int"),
+        "{err}"
+    );
+}
+
+#[test]
+fn page_select_rejects_bad_css() {
+    for (sel, needle) in [
+        ("", "the selector is empty"),
+        ("article[", "attribute name"),
+        ("article > ", "missing after a combinator"),
+        ("a:hover", "pseudo-classes"),
+        ("main, ", "missing after `,`"),
+        ("1st", "unexpected `1`"),
+    ] {
+        expect_page_err(
+            &release_loop(&RELEASE_READ.replace("\"article\"", &format!("\"{sel}\""))),
+            needle,
+        );
+    }
+    for good in [
+        "article",
+        "main > article.post",
+        "#notes h2, section[data-kind=\"release\"]",
+        "* + p ~ div",
+    ] {
+        sil_core::validate_css_selector(good).unwrap_or_else(|e| panic!("{good}: {e}"));
+    }
+}
+
+#[test]
+fn select_on_mcp_and_into_on_mcp_are_rejected_clearly() {
+    expect_mcp_err(
+        &GOOD_MCP.replace("records.parsed", "main > article"),
+        "CSS selectors apply to `scrape::page`",
+    );
+    expect_mcp_err(
+        &GOOD_MCP.replace("loop::read(:as(kb),", "loop::read(:as(kb), :into(Draft),"),
+        ":into only applies to `scrape::page`",
+    );
+    expect_page_err(
+        &release_loop(&RELEASE_READ.replace("\"article\"", "\"records..parsed\"")),
+        "dotted JSON paths apply to `mcp::call`",
+    );
+}
+
+#[test]
+fn page_read_into_and_select_leave_the_reads_count_alone() {
+    let reads = |read: &str| {
+        let program = check_page(&page_loop(read, "loop::skip(:reason(\"done\"))")).unwrap();
+        sil_core::loop_bounds(&program.loops[0]).reads
+    };
+    let plain = reads(
+        &RELEASE_READ
+            .replace(":into(Release),", "")
+            .replace(r#", :select("article")"#, ""),
+    );
+    assert_eq!(plain, 20 * 3, "20 items × (1 fetch + 2 retries)");
+    assert_eq!(reads(RELEASE_READ), plain);
+    let program = check_page(&release_loop(RELEASE_READ)).unwrap();
+    let report = sil_core::format_loop_cost_report(&program).unwrap();
+    assert!(report.contains("reads 60"), "{report}");
+}
+
+#[test]
+fn fallback_attempts_take_select_and_one_shared_into() {
+    let fallback = |second_into: &str| {
+        page_loop(
+            &format!(
+                r#"loop::fallback(:as(release), :accept($release.version != ""),
+            loop::read(:into(Release), scrape::page(:url($dep.changelog), :select("article"), :fields(Release.new(:version("h2"))))),
+            loop::read({second_into}scrape::page(:url($dep.changelog), :select("main"))),
+            loop::otherwise(loop::skip(:reason("no release"))))"#
+            ),
+            r#"loop::notify(:to("Maintainers"), :text("{$release.version}: {$release.text}"), :key("{$dep.id}:{$release.version}"))"#,
+        )
+    };
+    check_page(&fallback(":into(Release), ")).unwrap();
+    expect_page_err(&fallback(""), "attempts must bind one shape");
+    expect_page_err(
+        &fallback(":into(Article), "),
+        "attempts must bind one shape",
+    );
+    expect_page_err(
+        &fallback(":into(Release), ").replace(r#":select("main")"#, r#":select("main:hover")"#),
+        "pseudo-classes",
+    );
+}
+
+const INTO_TYPED_PRELUDE: &str = r#"
+@version("0.7.1")
+contract Dep { has Str $.id; has Str $.changelog; }
+contract Release { has Str $.version; has Str $.text; }
+contract Hit { has Str $.title; has Int $.status; }
+contract Stat { has Str $.id; has Int $.code; has Str $.label; }
+resource Deps for Dep {
+    query list;
+}
+resource Stats for Stat {
+    mutation create;
+}
+"#;
+
+fn check_into_write(read: &str, value: &str) -> Result<(), String> {
+    let src = format!(
+        "{INTO_TYPED_PRELUDE}\nloop Typed {{\nloop::flow(\n    loop::manual(),\n    loop::find(:as(deps), :from(Deps.list), :max(5)),\n    loop::each(:in($deps), :as(dep), :max(5),\n        {read},\n        loop::write(:to(Stats.create), :key(\"s:{{$dep.id}}\"), :value({value}))\n    )\n)\n}}\n"
+    );
+    let program = parse(&src).map_err(|e| format!("parse: {}", e.message))?;
+    program.validate()
+}
+
+fn expect_into_write_err(read: &str, value: &str, needles: &[&str]) {
+    match check_into_write(read, value) {
+        Ok(()) => panic!("expected a type error, but it validated: {value}"),
+        Err(e) => {
+            for needle in needles {
+                assert!(e.contains(needle), "expected `{needle}` in error, got: {e}");
+            }
+        }
+    }
+}
+
+#[test]
+fn into_row_fields_take_the_contract_types_without_coercion() {
+    let hit = r#"loop::read(:as(hit), :into(Hit), scrape::page(:url($dep.changelog), :select("article")))"#;
+    let release = r#"loop::read(:as(release), :into(Release), scrape::page(:url($dep.changelog), :select("article")))"#;
+    check_into_write(hit, "Stat.new(:code($hit.status), :label($hit.title))").unwrap();
+    check_into_write(release, "Stat.new(:label($release.version))").unwrap();
+    expect_into_write_err(
+        release,
+        "Stat.new(:code($release.version))",
+        &["field `code`", "expects Int", "`$release.version` is Str"],
+    );
+    expect_into_write_err(
+        hit,
+        "Stat.new(:label($hit.status))",
+        &["field `label`", "expects Str", "`$hit.status` is Int"],
+    );
+    let fallback = r#"loop::fallback(:as(hit), :accept($hit.status == 200),
+            loop::read(:into(Hit), scrape::page(:url($dep.changelog), :select("article"))),
+            loop::read(:into(Hit), scrape::page(:url($dep.changelog), :select("main"))),
+            loop::otherwise(loop::skip(:reason("no page"))))"#;
+    check_into_write(fallback, "Stat.new(:code($hit.status))").unwrap();
+    expect_into_write_err(
+        fallback,
+        "Stat.new(:label($hit.status))",
+        &["field `label`", "expects Str", "is Int"],
+    );
+}
