@@ -167,6 +167,17 @@ Capabilities expand to CRUD over SQLite and HTTP (`GET/POST /api/{table}`,
 `GET/PUT/DELETE /api/{table}/:id`). Seeds are idempotent and require a stable
 `:id`.
 
+`query nearest;` ranks rows by cosine similarity to an embedded needle, best
+first ([ADR-010](ADR-010-tensor-minilm-pipeline.md) amendment). The contract
+needs `vector_embedding` typed `Vec[num32; N]` for the program's embedding
+model (`subset Emb384 of Vec[num32; 384];` for the default MiniLM). Bind it
+with `query $.hits = Files.nearest($.needle, 50);`: the needle is a string
+literal or a `$.field`, and the limit is an integer literal from 1 to 10000.
+A blank needle returns no rows. A processor method
+`$e.text_excerpt ==> tensor::tokenize ==> tensor::infer` on the contract
+embeds that field on every write; vectors are never stored in the loop event
+log and are recomputed on replay.
+
 ### App
 
 ```silc
