@@ -83,6 +83,13 @@ impl Resource {
     }
 }
 
+/// `query nearest;` ranks rows by cosine similarity of their stored
+/// `vector_embedding` to the embedded needle, best first.
+pub const NEAREST_QUERY: &str = "nearest";
+
+/// Field `query nearest` ranks on.
+pub const NEAREST_VECTOR_FIELD: &str = crate::model_catalog::DEFAULT_TENSOR_OUTPUT_FIELD;
+
 fn synthesize_capability(
     kind: &ResourceKind,
     name: &str,
@@ -105,11 +112,32 @@ fn synthesize_capability(
         (ResourceKind::Query, "get") => {
             Ok((vec![item], Some(TypeExpr::Named(contract.to_string()))))
         }
+        (ResourceKind::Query, NEAREST_QUERY) => Ok((
+            vec![
+                Param {
+                    name: "needle".into(),
+                    ty: Some(TypeExpr::Named("Str".into())),
+                    named: false,
+                    default: None,
+                    span: Span::default(),
+                },
+                Param {
+                    name: "limit".into(),
+                    ty: Some(TypeExpr::Named("Int".into())),
+                    named: false,
+                    default: None,
+                    span: Span::default(),
+                },
+            ],
+            Some(TypeExpr::Array(Box::new(TypeExpr::Named(
+                contract.to_string(),
+            )))),
+        )),
         (ResourceKind::Mutation, "create" | "add" | "update" | "delete" | "remove") => {
             Ok((vec![item], None))
         }
         (ResourceKind::Query, other) => Err(format!(
-            "unknown resource query capability `{other}`; supported: list, get"
+            "unknown resource query capability `{other}`; supported: list, get, nearest"
         )),
         (ResourceKind::Mutation, other) => Err(format!(
             "unknown resource mutation capability `{other}`; supported: create, update, delete"

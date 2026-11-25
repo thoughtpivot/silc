@@ -4,9 +4,11 @@
 //! 3B Instruct Q4_K_M weights under that catalog id; future fine-tunes keep
 //! the same authoring surface.
 //!
-//! **minilm-l6-v2** is the closed Silc 0.7.0 embedding model for
-//! `tensor::infer` (384-d, CPU / ONNX). Its model and tokenizer artifacts are
-//! pinned to one upstream sentence-transformers commit.
+//! **minilm-l6-v2** is the default embedding model for `tensor::infer`
+//! (384-d, CPU / ONNX) and needs no configuration. Its model and tokenizer
+//! artifacts are pinned to one upstream sentence-transformers commit. Other
+//! catalog entries name served models through [`EmbeddingProvider`]; each
+//! declares its dimension.
 
 /// Default catalog id when `:model` / `model_ref` is omitted for LLM.
 pub const DEFAULT_MODEL_ID: &str = "silclm";
@@ -17,7 +19,7 @@ pub const LEGACY_MODEL_ID: &str = "llama3.2-1b";
 /// Default llama.cpp context window for generated silclm workers.
 pub const DEFAULT_LLM_N_CTX: u32 = 8192;
 
-/// Closed Silc 0.7.0 embedding model id for `tensor::infer`.
+/// Default embedding model id for `tensor::infer`.
 pub const MINILM_MODEL_ID: &str = "minilm-l6-v2";
 
 /// Default embedding catalog id when `:model` is omitted on `tensor::infer`.
@@ -63,14 +65,48 @@ pub struct ModelArtifact {
     pub size_bytes: u64,
 }
 
-/// Compiler-owned embedding model bundle.
+/// How an embedding model is served. The CPython embed worker has one adapter
+/// per variant (`embedding_models.py`); adding a model is one catalog entry,
+/// adding a serving shape is one variant plus one adapter.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmbeddingProvider {
+    /// Compiler-pinned ONNX bundle run on CPU: mean-pool, then L2-normalize.
+    OnnxCpu,
+    /// A server that speaks the OpenAI `/v1/embeddings` request shape, local
+    /// (Ollama, llama.cpp server) or hosted. Vectors are L2-normalized by the
+    /// worker so cosine ranking matches the ONNX path.
+    OpenAiCompatible {
+        /// Default base URL, ending before `/embeddings`.
+        base_url: &'static str,
+        /// Environment variable that overrides `base_url` at run time.
+        base_url_env: &'static str,
+        /// Environment variable holding a bearer token. Tokens never go in source.
+        api_key_env: Option<&'static str>,
+        /// Model name sent in the request body.
+        remote_model: &'static str,
+    },
+}
+
+impl EmbeddingProvider {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            EmbeddingProvider::OnnxCpu => "onnx-cpu",
+            EmbeddingProvider::OpenAiCompatible { .. } => "openai-compatible",
+        }
+    }
+}
+
+/// Compiler-owned embedding model. `dimension` is the declared output size;
+/// a `vector_embedding` field fed by this model must be `Vec[num32; dimension]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct EmbeddingModelCatalogEntry {
     pub id: &'static str,
     pub dimension: u32,
     pub cpu_only: bool,
     pub upstream_license: &'static str,
+    /// Files provisioned under `~/.silc/models/<id>/`; empty for served models.
     pub artifacts: &'static [ModelArtifact],
+    pub provider: EmbeddingProvider,
 }
 
 pub const MINILM_ARTIFACTS: &[ModelArtifact] = &[
@@ -88,14 +124,48 @@ pub const MINILM_ARTIFACTS: &[ModelArtifact] = &[
     },
 ];
 
-/// Closed Silc 0.7.0 embedding catalog.
-pub const EMBEDDING_MODEL_CATALOG: &[EmbeddingModelCatalogEntry] = &[EmbeddingModelCatalogEntry {
-    id: MINILM_MODEL_ID,
-    dimension: MINILM_EMBEDDING_DIM,
-    cpu_only: true,
-    upstream_license: "Apache-2.0",
-    artifacts: MINILM_ARTIFACTS,
-}];
+/// Run-time override for the base URL of every OpenAI-compatible embedding model.
+pub const EMBED_BASE_URL_ENV: &str = "SILC_EMBED_BASE_URL";
+
+/// Embedding catalog. `minilm-l6-v2` is the default and needs no configuration.
+pub const EMBEDDING_MODEL_CATALOG: &[EmbeddingModelCatalogEntry] = &[
+    EmbeddingModelCatalogEntry {
+        id: MINILM_MODEL_ID,
+        dimension: MINILM_EMBEDDING_DIM,
+        cpu_only: true,
+        upstream_license: "Apache-2.0",
+        artifacts: MINILM_ARTIFACTS,
+        provider: EmbeddingProvider::OnnxCpu,
+    },
+    // Local model served by Ollama (`ollama pull nomic-embed-text`).
+    EmbeddingModelCatalogEntry {
+        id: "nomic-embed-text",
+        dimension: 768,
+        cpu_only: false,
+        upstream_license: "Apache-2.0",
+        artifacts: &[],
+        provider: EmbeddingProvider::OpenAiCompatible {
+            base_url: "http://127.0.0.1:11434/v1",
+            base_url_env: EMBED_BASE_URL_ENV,
+            api_key_env: None,
+            remote_model: "nomic-embed-text",
+        },
+    },
+    // Hosted model; the key is read from the environment at run time.
+    EmbeddingModelCatalogEntry {
+        id: "text-embedding-3-small",
+        dimension: 1536,
+        cpu_only: false,
+        upstream_license: "hosted (OpenAI terms)",
+        artifacts: &[],
+        provider: EmbeddingProvider::OpenAiCompatible {
+            base_url: "https://api.openai.com/v1",
+            base_url_env: EMBED_BASE_URL_ENV,
+            api_key_env: Some("OPENAI_API_KEY"),
+            remote_model: "text-embedding-3-small",
+        },
+    },
+];
 
 fn normalize_model_id(id: &str) -> &str {
     let trimmed = id.trim().trim_matches('"').trim_matches('\'');
@@ -175,11 +245,40 @@ mod tests {
     }
 
     #[test]
+    fn served_embedding_models_declare_dimension_and_endpoint() {
+        for entry in EMBEDDING_MODEL_CATALOG {
+            assert!(entry.dimension > 0, "{}", entry.id);
+            match entry.provider {
+                EmbeddingProvider::OnnxCpu => {
+                    assert!(entry.cpu_only);
+                    assert!(!entry.artifacts.is_empty(), "{}", entry.id);
+                }
+                EmbeddingProvider::OpenAiCompatible {
+                    base_url,
+                    base_url_env,
+                    remote_model,
+                    ..
+                } => {
+                    assert!(entry.artifacts.is_empty(), "{}", entry.id);
+                    assert!(base_url.starts_with("http"), "{}", entry.id);
+                    assert_eq!(base_url_env, EMBED_BASE_URL_ENV);
+                    assert!(!remote_model.is_empty());
+                }
+            }
+        }
+        let nomic = validate_embedding_model_id("nomic-embed-text").unwrap();
+        assert_eq!(nomic.dimension, 768);
+        assert_eq!(nomic.provider.kind(), "openai-compatible");
+        assert_eq!(DEFAULT_EMBEDDING_MODEL_ID, MINILM_MODEL_ID);
+    }
+
+    #[test]
     fn minilm_is_closed_embedding_catalog() {
         let entry = validate_embedding_model_id(MINILM_MODEL_ID).unwrap();
         assert_eq!(entry.id, "minilm-l6-v2");
         assert_eq!(entry.dimension, 384);
         assert!(entry.cpu_only);
+        assert_eq!(entry.provider, EmbeddingProvider::OnnxCpu);
         assert_eq!(entry.upstream_license, "Apache-2.0");
         assert_eq!(entry.artifacts, MINILM_ARTIFACTS);
         assert_eq!(entry.artifacts.len(), 2);

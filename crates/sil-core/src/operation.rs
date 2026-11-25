@@ -6,7 +6,7 @@ use crate::expr::Expr;
 use crate::game::{GameCapabilities, DEFAULT_GAME_FPS, DEFAULT_GAME_PORT};
 use crate::model_catalog::{
     validate_embedding_model_id, validate_model_id, DEFAULT_EMBEDDING_MODEL_ID, DEFAULT_MODEL_ID,
-    DEFAULT_TENSOR_INPUT_FIELD, DEFAULT_TENSOR_OUTPUT_FIELD, MINILM_EMBEDDING_DIM,
+    DEFAULT_TENSOR_INPUT_FIELD, DEFAULT_TENSOR_OUTPUT_FIELD,
 };
 use crate::module::{Module, ModuleKind};
 use crate::pipeline::PipelineStep;
@@ -27,8 +27,12 @@ pub fn executable_ops() -> Vec<(&'static str, &'static str)> {
 const SUPPORTED_OPS_HELP: &str =
     "`app` routes (dual-surface UI synthesized), `game` (WebGPU scene synthesized), `resource Name for Contract` capabilities, optional text::score or llm::complete, scrape::*, doc::extract, tensor::tokenize/infer pipeline, or service::http API-only";
 
-const TENSOR_CPU_ONLY: &str =
-    "tensor::infer is CPU-only in Silc 0.7.0; remove :prefer(CUDA) (default/CPU accepted)";
+fn tensor_cpu_only() -> String {
+    format!(
+        "tensor::infer is CPU-only in {}; remove :prefer(CUDA) (default/CPU accepted)",
+        crate::silc_release()
+    )
+}
 
 const SCRAPE_MIGRATE_HINT: &str =
     "use scrape::page / scrape::site / scrape::select instead of http::get / html::* (see ADR-006)";
@@ -169,6 +173,44 @@ impl DocCapabilities {
     }
 }
 
+/// One `$p.field ==> tensor::tokenize ==> tensor::infer` feed in an app or
+/// loop program. Every write of a `contract` row to one of `tables` (resource
+/// mutation or `loop::write`) embeds `input_field` into `output_field`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmbeddingFeed {
+    pub processor: String,
+    pub contract: String,
+    pub tables: Vec<String>,
+    pub input_field: String,
+    pub output_field: String,
+}
+
+/// A resource that declares `query nearest;`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NearestIndex {
+    pub resource: String,
+    pub table: String,
+    pub field: String,
+}
+
+/// Embeddings outside the pipeline-only processor slot (ADR-010 amendment).
+/// They run in their own CPython worker, never call silclm, and never count
+/// as model calls.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmbeddingPlan {
+    pub model: &'static crate::model_catalog::EmbeddingModelCatalogEntry,
+    pub feeds: Vec<EmbeddingFeed>,
+    pub nearest: Vec<NearestIndex>,
+}
+
+impl EmbeddingPlan {
+    pub fn feed_for_table(&self, table: &str) -> Option<&EmbeddingFeed> {
+        self.feeds
+            .iter()
+            .find(|f| f.tables.iter().any(|t| t == table))
+    }
+}
+
 /// One declarative HTTP API route bound to a Contract (`service::http`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApiRoute {
@@ -216,6 +258,9 @@ pub struct ExecutableGraph {
     /// Every loop is `loop::manual` and nothing declares a surface: `silc
     /// main.silc` runs the loops once, prints notices to stdout, and exits.
     pub loop_command: bool,
+    /// Embedding feeds and `query nearest` for app and loop programs. `None`
+    /// for pipeline-only programs, which use the processor slot instead.
+    pub embedding: Option<EmbeddingPlan>,
 }
 
 impl ExecutableGraph {
@@ -285,6 +330,11 @@ impl ExecutableGraph {
 
     pub fn needs_tensor(&self) -> bool {
         self.processor_op.needs_tensor()
+    }
+
+    /// The CPython embed worker runs: an app or loop embeds rows or ranks them.
+    pub fn needs_embed_worker(&self) -> bool {
+        self.embedding.is_some()
     }
 
     pub fn needs_doc_extract(&self) -> bool {
@@ -501,7 +551,11 @@ fn embedding_dim_of_type(program: &Program, ty: &TypeExpr) -> Option<u32> {
     }
 }
 
-fn validate_tensor_contract(program: &Program, scrape: &ScrapeCapabilities) -> Result<(), String> {
+fn validate_tensor_contract(
+    program: &Program,
+    scrape: &ScrapeCapabilities,
+    model: &crate::model_catalog::EmbeddingModelCatalogEntry,
+) -> Result<(), String> {
     let contract_name = scrape
         .extract_into
         .as_deref()
@@ -536,14 +590,205 @@ fn validate_tensor_contract(program: &Program, scrape: &ScrapeCapabilities) -> R
         })?;
 
     if let Some(dim) = embedding_dim_of_type(program, &output.ty) {
-        if dim != MINILM_EMBEDDING_DIM {
+        if dim != model.dimension {
             return Err(format!(
-                "tensor pipeline embedding dimension must be {MINILM_EMBEDDING_DIM} (got {dim} on `{DEFAULT_TENSOR_OUTPUT_FIELD}`)"
+                "tensor pipeline embedding dimension must be {} for `{}` (got {dim} on `{DEFAULT_TENSOR_OUTPUT_FIELD}`)",
+                model.dimension, model.id
             ));
         }
     }
 
     Ok(())
+}
+
+fn method_runs_infer(steps: &[PipelineStep]) -> bool {
+    steps.iter().any(|s| {
+        matches!(s, PipelineStep::Call { namespace: Some(ns), name, .. } if ns == "tensor" && name == "infer")
+    })
+}
+
+/// A processor whose methods embed (`tensor::infer`). In app and loop
+/// programs it is an on-write feed, not the single processor slot.
+fn is_embedding_processor(module: &Module) -> bool {
+    module.kind == ModuleKind::Processor
+        && module
+            .methods
+            .iter()
+            .any(|m| method_runs_infer(&m.pipeline.steps))
+}
+
+/// `vector_embedding` on `contract` must be `Vec[num32; N]` with N equal to
+/// the model's declared dimension.
+fn check_vector_field(
+    program: &Program,
+    contract_name: &str,
+    model: &crate::model_catalog::EmbeddingModelCatalogEntry,
+    context: &str,
+) -> Result<(), String> {
+    let contract = program
+        .contracts
+        .iter()
+        .find(|c| c.name == contract_name)
+        .ok_or_else(|| format!("{context} references unknown contract `{contract_name}`"))?;
+    let alias = format!("Emb{}", model.dimension);
+    let field = contract
+        .fields
+        .iter()
+        .find(|f| f.name == DEFAULT_TENSOR_OUTPUT_FIELD)
+        .ok_or_else(|| {
+            format!(
+                "{context} needs `{DEFAULT_TENSOR_OUTPUT_FIELD}: {alias}` on contract `{contract_name}` (declare `subset {alias} of Vec[num32; {}];`)",
+                model.dimension
+            )
+        })?;
+    match embedding_dim_of_type(program, &field.ty) {
+        Some(dim) if dim == model.dimension => Ok(()),
+        Some(dim) => Err(format!(
+            "{context}: `{contract_name}.{DEFAULT_TENSOR_OUTPUT_FIELD}` has dimension {dim} but model `{}` declares {}",
+            model.id, model.dimension
+        )),
+        None => Err(format!(
+            "{context}: `{contract_name}.{DEFAULT_TENSOR_OUTPUT_FIELD}` must be `Vec[num32; {}]` (for example `{alias}`)",
+            model.dimension
+        )),
+    }
+}
+
+fn embedding_feeds(
+    program: &Program,
+    model: &crate::model_catalog::EmbeddingModelCatalogEntry,
+) -> Result<Vec<EmbeddingFeed>, String> {
+    let mut feeds: Vec<EmbeddingFeed> = Vec::new();
+    for module in program.modules.iter().filter(|m| is_embedding_processor(m)) {
+        for method in &module.methods {
+            let steps = &method.pipeline.steps;
+            if !method_runs_infer(steps) {
+                continue;
+            }
+            let tokenize_at = steps.iter().position(|s| {
+                matches!(s, PipelineStep::Call { namespace: Some(ns), name, .. } if ns == "tensor" && name == "tokenize")
+            });
+            let source = tokenize_at
+                .and_then(|i| i.checked_sub(1))
+                .and_then(|i| steps.get(i));
+            let Some(PipelineStep::FieldAccess { base, field }) = source else {
+                return Err(format!(
+                    "processor `{}` method `{}`: embed a contract field, e.g. `$e.text_excerpt ==> tensor::tokenize ==> tensor::infer`",
+                    module.name, method.name
+                ));
+            };
+            let base = base.trim_start_matches('$');
+            let contract = method
+                .params
+                .iter()
+                .find(|p| p.name.trim_start_matches('$') == base)
+                .and_then(|p| match &p.ty {
+                    Some(TypeExpr::Named(name))
+                        if program.contracts.iter().any(|c| c.name == *name) =>
+                    {
+                        Some(name.clone())
+                    }
+                    _ => None,
+                })
+                .ok_or_else(|| {
+                    format!(
+                        "processor `{}` method `{}`: `${base}` must be a Contract parameter",
+                        module.name, method.name
+                    )
+                })?;
+            let contract_def = program
+                .contracts
+                .iter()
+                .find(|c| c.name == contract)
+                .expect("contract checked above");
+            match contract_def.fields.iter().find(|f| f.name == *field) {
+                Some(f) if matches!(&f.ty, TypeExpr::Named(n) if is_string_type(program, n)) => {}
+                Some(_) => {
+                    return Err(format!(
+                        "tensor::tokenize input `{contract}.{field}` must be a string field"
+                    ))
+                }
+                None => {
+                    return Err(format!(
+                        "tensor::tokenize input `{contract}.{field}` is not a field of `{contract}`"
+                    ))
+                }
+            }
+            check_vector_field(
+                program,
+                &contract,
+                model,
+                &format!("tensor feed `{}.{}`", module.name, method.name),
+            )?;
+            let tables: Vec<String> = program
+                .resources
+                .iter()
+                .filter(|r| r.contract.as_deref() == Some(contract.as_str()))
+                .map(|r| r.table_name())
+                .collect();
+            if tables.is_empty() {
+                return Err(format!(
+                    "tensor feed on `{contract}` needs a `resource … for {contract}` to store vectors"
+                ));
+            }
+            if feeds.iter().any(|f| f.contract == contract) {
+                return Err(format!(
+                    "contract `{contract}` has more than one tensor feed; embed one field per contract"
+                ));
+            }
+            feeds.push(EmbeddingFeed {
+                processor: module.name.clone(),
+                contract,
+                tables,
+                input_field: field.clone(),
+                output_field: DEFAULT_TENSOR_OUTPUT_FIELD.into(),
+            });
+        }
+    }
+    Ok(feeds)
+}
+
+fn is_string_type(program: &Program, name: &str) -> bool {
+    if name == "Str" {
+        return true;
+    }
+    program
+        .subsets
+        .iter()
+        .find(|s| s.name == name)
+        .is_some_and(|s| matches!(&s.base, TypeExpr::Named(base) if is_string_type(program, base)))
+}
+
+fn nearest_indexes(
+    program: &Program,
+    model: &crate::model_catalog::EmbeddingModelCatalogEntry,
+) -> Result<Vec<NearestIndex>, String> {
+    let mut out = Vec::new();
+    for resource in &program.resources {
+        if !resource.methods.iter().any(|m| {
+            matches!(m.kind, ResourceKind::Query) && m.name == crate::resource::NEAREST_QUERY
+        }) {
+            continue;
+        }
+        let contract = resource.contract.as_deref().ok_or_else(|| {
+            format!(
+                "resource `{}` declares `query nearest;` but has no `for Contract`",
+                resource.name
+            )
+        })?;
+        check_vector_field(
+            program,
+            contract,
+            model,
+            &format!("resource `{}` `query nearest`", resource.name),
+        )?;
+        out.push(NearestIndex {
+            resource: resource.name.clone(),
+            table: resource.table_name(),
+            field: DEFAULT_TENSOR_OUTPUT_FIELD.into(),
+        });
+    }
+    Ok(out)
 }
 
 fn derive_actions(resources: &[Resource]) -> Vec<ActionDef> {
@@ -661,6 +906,7 @@ fn infer_game_graph(program: &Program) -> Result<Option<ExecutableGraph>, String
         loops: Vec::new(),
         loop_ask: false,
         loop_command: false,
+        embedding: None,
     }))
 }
 
@@ -1073,31 +1319,72 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
     }
     if let Some(prefer) = &tensor_prefer {
         if prefer.eq_ignore_ascii_case("CUDA") {
-            return Err(TENSOR_CPU_ONLY.into());
+            return Err(tensor_cpu_only());
         }
         if !prefer.eq_ignore_ascii_case("CPU") {
             return Err(format!(
-                "unsupported tensor::infer :prefer({prefer}); Silc 0.7.0 accepts CPU only"
+                "unsupported tensor::infer :prefer({prefer}); {} accepts CPU only",
+                crate::silc_release()
             ));
         }
     }
 
     let loop_ask = crate::loops::loops_use_ask(program);
 
+    // A scrape-only program keeps tensor::infer in the processor slot
+    // (pipeline mode). Elsewhere embedding processors are on-write feeds and
+    // leave the slot to text::score or llm::complete.
+    let tensor_pipeline = saw_infer
+        && !saw_score
+        && !saw_llm
+        && has_scrape
+        && !has_ui
+        && !has_api
+        && program.loops.is_empty();
     let processor_op = if saw_score {
         ProcessorOp::Score
     } else if saw_llm {
         ProcessorOp::LlmComplete
-    } else if saw_infer {
+    } else if tensor_pipeline {
         ProcessorOp::TensorInfer
     } else {
         ProcessorOp::None
+    };
+    let slot_processors: Vec<&Module> = if tensor_pipeline {
+        processors.clone()
+    } else {
+        processors
+            .iter()
+            .copied()
+            .filter(|m| !is_embedding_processor(m))
+            .collect()
+    };
+
+    let has_nearest = program.resources.iter().any(|r| {
+        r.methods.iter().any(|m| {
+            matches!(m.kind, ResourceKind::Query) && m.name == crate::resource::NEAREST_QUERY
+        })
+    });
+    let embedding = if !tensor_pipeline && (saw_infer || has_nearest) {
+        let model = resolve_embedding_model_ref(embedding_model_from_op.clone())?;
+        let feeds = if saw_infer {
+            embedding_feeds(program, model)?
+        } else {
+            Vec::new()
+        };
+        Some(EmbeddingPlan {
+            model,
+            feeds,
+            nearest: nearest_indexes(program, model)?,
+        })
+    } else {
+        None
     };
 
     let (model_ref, embedding_dim, tensor_device, tensor_input_field, tensor_output_field) =
         if processor_op.needs_llm() {
             (
-                Some(resolve_model_ref(&processors, model_from_op)?),
+                Some(resolve_model_ref(&slot_processors, model_from_op)?),
                 None,
                 None,
                 None,
@@ -1105,7 +1392,7 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
             )
         } else if processor_op.needs_tensor() {
             let entry = resolve_embedding_model_ref(embedding_model_from_op)?;
-            validate_tensor_contract(program, &scrape)?;
+            validate_tensor_contract(program, &scrape, entry)?;
             (
                 Some(entry.id.to_string()),
                 Some(entry.dimension),
@@ -1128,13 +1415,13 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
     // Persistence is synthesized from the processor — authors never declare sinks.
     let mut synthesized_sink = String::new();
     if processor_op != ProcessorOp::None {
-        if processors.len() != 1 {
+        if slot_processors.len() != 1 {
             return Err(
                 "programs using text::score, llm::complete, or tensor::infer need exactly one processor"
                     .into(),
             );
         }
-        let processor = processors[0];
+        let processor = slot_processors[0];
         let contract = processor
             .methods
             .iter()
@@ -1168,17 +1455,12 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
         if services.len() != 1 {
             return Err("tensor pipeline programs need exactly one service module".into());
         }
-        if has_ui || has_api {
-            return Err(
-                "tensor pipeline programs are pipeline-only (no UI or service::http)".into(),
-            );
-        }
     }
 
     if has_ui && services.len() > 1 {
         return Err("UI programs may declare at most one service module".into());
     }
-    if has_api && !has_ui && !processors.is_empty() {
+    if has_api && !has_ui && !slot_processors.is_empty() {
         return Err("API-only programs cannot declare processor or sink modules".into());
     }
 
@@ -1237,7 +1519,7 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
         app,
         game_decl: None,
         service: service_name,
-        processor: processors
+        processor: slot_processors
             .first()
             .map(|m| m.name.clone())
             .unwrap_or_default(),
@@ -1265,6 +1547,7 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
         loops: program.loops.iter().map(|l| l.name.clone()).collect(),
         loop_ask,
         loop_command: crate::loops::loops_are_command(program),
+        embedding,
     }))
 }
 

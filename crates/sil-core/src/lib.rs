@@ -50,16 +50,18 @@ pub use loops::{
 };
 pub use model_catalog::{
     is_known_embedding_model_id, is_known_model_id, lookup_embedding_model, lookup_model,
-    validate_embedding_model_id, validate_model_id, EmbeddingModelCatalogEntry, ModelArtifact,
-    ModelCatalogEntry, DEFAULT_EMBEDDING_MODEL_ID, DEFAULT_LLM_N_CTX, DEFAULT_MODEL_ID,
-    DEFAULT_TENSOR_INPUT_FIELD, DEFAULT_TENSOR_OUTPUT_FIELD, EMBEDDING_MODEL_CATALOG,
-    LEGACY_MODEL_ID, MINILM_ARTIFACTS, MINILM_EMBEDDING_DIM, MINILM_MODEL_ID, MODEL_CATALOG,
+    validate_embedding_model_id, validate_model_id, EmbeddingModelCatalogEntry, EmbeddingProvider,
+    ModelArtifact, ModelCatalogEntry, DEFAULT_EMBEDDING_MODEL_ID, DEFAULT_LLM_N_CTX,
+    DEFAULT_MODEL_ID, DEFAULT_TENSOR_INPUT_FIELD, DEFAULT_TENSOR_OUTPUT_FIELD,
+    EMBEDDING_MODEL_CATALOG, EMBED_BASE_URL_ENV, LEGACY_MODEL_ID, MINILM_ARTIFACTS,
+    MINILM_EMBEDDING_DIM, MINILM_MODEL_ID, MODEL_CATALOG,
 };
 pub use module::{Method, Module, ModuleKind, Param};
 pub use operation::{
     classify_program, infer_graph, is_executable_op, scan_author_calls, ApiRoute, DocCapabilities,
-    ExecutableGraph, ExecutionMode, ProcessorOp, ScrapeCapabilities, ScrapeSelect, UiCapabilities,
-    DEFAULT_API_PORT, DEFAULT_TERMINAL_PORT, DEFAULT_WEB_PORT, KNOWN_NAMESPACES,
+    EmbeddingFeed, EmbeddingPlan, ExecutableGraph, ExecutionMode, NearestIndex, ProcessorOp,
+    ScrapeCapabilities, ScrapeSelect, UiCapabilities, DEFAULT_API_PORT, DEFAULT_TERMINAL_PORT,
+    DEFAULT_WEB_PORT, KNOWN_NAMESPACES,
 };
 pub use pipeline::{Pipeline, PipelineStep};
 pub use program::Program;
@@ -69,7 +71,7 @@ pub use registry::{
 };
 pub use resource::{
     sink_table_for_contract, snake_case as resource_snake_case, ActionDef, Resource, ResourceKind,
-    ResourceMethod, ResourceSeed,
+    ResourceMethod, ResourceSeed, NEAREST_QUERY, NEAREST_VECTOR_FIELD,
 };
 pub use scrape_catalog::{
     parse_js_mode, parse_same_host, parse_site_depth, JsMode, DEFAULT_JS_MODE, DEFAULT_SITE_DEPTH,
@@ -82,6 +84,18 @@ pub use ui::{
     validate_builtin_node, validate_template, ChildPolicy, ComponentSpec, EventSpec, PropKind,
     PropSpec, SlotSpec, Surface, UI_COMPONENT_CATALOG,
 };
+
+/// "Silc 0.7" for a 0.7.x compiler. Diagnostics name the release this way so
+/// a patch bump does not leave a stale version in user-facing text.
+pub fn silc_release() -> &'static str {
+    static LABEL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    LABEL.get_or_init(|| {
+        let mut parts = env!("CARGO_PKG_VERSION").split('.');
+        let major = parts.next().unwrap_or("0");
+        let minor = parts.next().unwrap_or("0");
+        format!("Silc {major}.{minor}")
+    })
+}
 
 #[cfg(test)]
 mod tests {
@@ -100,6 +114,15 @@ mod tests {
             err.contains("scrape::page") || err.contains("ADR-006") || err.contains("stub-only"),
             "expected ADR-006 / stub mix diagnostic, got {err}"
         );
+    }
+
+    #[test]
+    fn release_label_is_major_minor() {
+        let label = silc_release();
+        let version = env!("CARGO_PKG_VERSION");
+        assert!(label.starts_with("Silc "));
+        assert!(version.starts_with(label.trim_start_matches("Silc ")));
+        assert_eq!(label.matches('.').count(), 1, "{label}");
     }
 
     #[test]

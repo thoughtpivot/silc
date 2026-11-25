@@ -259,6 +259,19 @@ impl Program {
                         method.params.len()
                     ));
                 }
+                if query.method == crate::resource::NEAREST_QUERY {
+                    let limit = match &query.args[1] {
+                        Expr::Number(n) => n.parse::<u64>().ok(),
+                        _ => None,
+                    };
+                    let max = crate::loops::MAX_LOOP_LIST;
+                    if !limit.is_some_and(|n| (1..=max).contains(&n)) {
+                        return Err(format!(
+                            "component `{}` query `{}`: the second argument of `{}.nearest` must be an integer literal between 1 and {max}",
+                            component.name, query.name, query.resource
+                        ));
+                    }
+                }
             }
             for emit in &component.emits {
                 if let Some(payload) = &emit.payload {
