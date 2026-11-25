@@ -382,8 +382,8 @@ fn canonical_silc_sources_omit_runtime_plumbing() {
     for rel in &roots {
         let src = read_workspace(rel);
         assert!(
-            src.contains("@version(\"0.7.0\")"),
-            "{rel} must declare @version(\"0.7.0\")"
+            src.contains("@version(\"0.7.1\")"),
+            "{rel} must declare @version(\"0.7.1\")"
         );
         for needle in forbidden {
             assert!(

@@ -2102,7 +2102,7 @@ mod tests {
     #[test]
     fn parses_component_and_app() {
         let src = r#"
-@version("0.7.0")
+@version("0.7.1")
 contract Product {
     has Str $.name;
     has num64 $.price;
@@ -2145,7 +2145,7 @@ app ShopApp {
     #[test]
     fn parses_intent_declarations() {
         let src = r#"
-@version("0.7.0")
+@version("0.7.1")
 contract Record { has Str $.id; }
 component Page { method render() { ui::page() } }
 resource Records for Record {
@@ -2170,7 +2170,7 @@ processor Worker {}
 
     #[test]
     fn rejects_removed_task_declarator() {
-        let src = "@version(\"0.7.0\")\ntask Cleanup {}\n";
+        let src = "@version(\"0.7.1\")\ntask Cleanup {}\n";
         let err = parse(src).expect_err("task removed");
         assert!(err.message.contains("removed"), "{err}");
     }
@@ -2178,7 +2178,7 @@ processor Worker {}
     #[test]
     fn parses_resource_seeds() {
         let src = r#"
-@version("0.7.0")
+@version("0.7.1")
 contract Article {
     has Str $.id;
     has Str $.title;
@@ -2200,7 +2200,7 @@ resource Articles for Article {
     #[test]
     fn rejects_seed_wrong_contract() {
         let src = r#"
-@version("0.7.0")
+@version("0.7.1")
 contract Article { has Str $.id; }
 contract Other { has Str $.id; }
 resource Articles for Article {
@@ -2215,7 +2215,7 @@ resource Articles for Article {
     #[test]
     fn validate_rejects_seed_without_id() {
         let src = r#"
-@version("0.7.0")
+@version("0.7.1")
 contract Article {
     has Str $.id;
     has Str $.title;
@@ -2263,7 +2263,7 @@ app Demo { route "/" => Page; }
     #[test]
     fn parses_subset_where_contains() {
         let src = r#"
-@version("0.7.0")
+@version("0.7.1")
 subset Uri of Str where { .contains("://") }
 contract Item {
     has Uri $.url;
@@ -2290,7 +2290,7 @@ subset Uri of Str where { .len > 0 }
     #[test]
     fn validate_rejects_bad_subset_literal() {
         let src = r#"
-@version("0.7.0")
+@version("0.7.1")
 subset Uri of Str where { .contains("://") }
 contract Product {
     has Uri $.url;
@@ -2315,7 +2315,7 @@ app App {
     #[test]
     fn parses_minimal_game_scene() {
         let src = r#"
-@version("0.7.0")
+@version("0.7.1")
 game Foo {
     scene::scene(
         :title("T"),
@@ -2430,7 +2430,7 @@ game Foo {
     #[test]
     fn loop_stays_an_identifier_outside_top_level() {
         let src = r#"
-@version("0.7.0")
+@version("0.7.1")
 game Foo {
     scene::scene(
         :title("T"),
@@ -2444,7 +2444,7 @@ game Foo {
 
     #[test]
     fn rejects_loop_without_namespace_root() {
-        let err = parse("@version(\"0.7.0\")\nloop Foo { flow() }").unwrap_err();
+        let err = parse("@version(\"0.7.1\")\nloop Foo { flow() }").unwrap_err();
         assert!(err.message.contains("loop::"), "{}", err.message);
     }
 }

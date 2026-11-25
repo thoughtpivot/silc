@@ -743,7 +743,7 @@ mod tests {
             }],
             ..Program::default()
         };
-        let err = program.validate_source_version("0.7.0").unwrap_err();
+        let err = program.validate_source_version("0.7.1").unwrap_err();
         assert!(
             err.contains("Renamed nodes: `game::scene` → `scene::scene`; `game::entity` → `scene::entity`; `game::mesh` → `scene::mesh`"),
             "{err}"
@@ -757,10 +757,10 @@ mod tests {
             version: Some("0.5.0".into()),
             ..Program::default()
         };
-        let err = program.validate_source_version("0.7.0").unwrap_err();
+        let err = program.validate_source_version("0.7.1").unwrap_err();
         assert_eq!(
             err,
-            "source declares Silc 0.5.0; migrate to `@version(\"0.7.0\")`"
+            "source declares Silc 0.5.0; migrate to `@version(\"0.7.1\")`"
         );
     }
 }

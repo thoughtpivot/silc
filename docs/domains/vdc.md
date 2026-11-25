@@ -52,7 +52,7 @@ gameplay layer's way to possess a viewer; the rest of the tree is `scene::`.
 
 ```silc
 #!/usr/bin/env silc
-@version("0.7.0")
+@version("0.7.1")
 
 scene ProjectWalkthrough {
     scene::scene(
