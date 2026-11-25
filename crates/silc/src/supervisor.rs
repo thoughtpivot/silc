@@ -779,20 +779,12 @@ pub fn build_llm_python(lock: &RuntimeLock, runtime_root: &Path) -> Result<PathB
     }
     // pip chatter belongs with the other build status on stderr: a loop
     // command's stdout is its result.
-    let status = Command::new(&python)
-        .args(["-m", "pip", "install", "--disable-pip-version-check", "-r"])
-        .arg(&requirements)
-        .stdout(stdout_as_stderr())
-        .status()
-        .map_err(|e| format!("failed to install llm::complete Python dependency: {e}"))?;
-    if !status.success() {
-        return Err("Silc install of compiler-pinned llama-cpp-python failed".into());
-    }
+    crate::pyinstall::install_llama_cpp_python(&python, &requirements, stdout_as_stderr)?;
     Ok(python)
 }
 
 /// A child's stdout handle that writes to this process's stderr.
-fn stdout_as_stderr() -> Stdio {
+pub(crate) fn stdout_as_stderr() -> Stdio {
     use std::os::fd::{AsRawFd, FromRawFd};
     let fd = unsafe { libc::dup(std::io::stderr().as_raw_fd()) };
     if fd < 0 {

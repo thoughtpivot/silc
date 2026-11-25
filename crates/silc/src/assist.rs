@@ -725,14 +725,7 @@ fn ensure_assist_python() -> Result<PathBuf, String> {
             style(format!("{GEAR}setup")).cyan(),
             style("installing llama-cpp-python…").dim()
         );
-        let status = Command::new(&python)
-            .args(["-m", "pip", "install", "--disable-pip-version-check", "-r"])
-            .arg(&requirements)
-            .status()
-            .map_err(|e| format!("pip install assist deps: {e}"))?;
-        if !status.success() {
-            return Err("Silc install of assist llama-cpp-python failed".into());
-        }
+        crate::pyinstall::install_llama_cpp_python(&python, &requirements, Stdio::inherit)?;
         fs::write(&marker, b"ok").map_err(|e| format!("write {}: {e}", marker.display()))?;
     }
     Ok(python)

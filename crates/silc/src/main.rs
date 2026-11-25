@@ -1,6 +1,7 @@
 mod assist;
 mod init;
 mod models;
+mod pyinstall;
 mod runtimes;
 mod supervisor;
 
