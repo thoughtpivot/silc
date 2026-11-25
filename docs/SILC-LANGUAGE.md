@@ -350,8 +350,8 @@ a migration diagnostic.
 
 Planned for 0.8.0 (see the Unreleased list in
 [CHANGELOG.md](../CHANGELOG.md) and
-[ADR-019](ADR-019-vran-language-into-loop.md)). `loop::fallback` is
-implemented on `main`; the rest is not:
+[ADR-019](ADR-019-vran-language-into-loop.md)). `loop::fallback` and
+multi-value `:from` are implemented on `main`; the rest is not:
 
 1. `@version` matches on major.minor, so a `0.8.x` program builds on any
    `0.8` compiler (THO-558).
@@ -360,7 +360,9 @@ implemented on `main`; the rest is not:
    see section 8).
 3. Citations on `loop::ask`, accepted only when each quote occurs in a cited
    source (THO-559, Part 2; deferred, not in 0.8.0).
-4. Multi-value `:from` on `loop::ask`.
+4. Multi-value `:from` on `loop::ask`: `:from($release, $seen)` equals
+   `:from([$release, $seen])`, and the model sees an object labelled by
+   binding path (THO-555, on main).
 5. Loop embeddings, nearest-neighbor `loop::find`, and page-read `:into` plus
    `:select` on `loop::read` (THO-551 to THO-555).
 

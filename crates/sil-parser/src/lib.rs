@@ -1158,7 +1158,21 @@ impl Parser {
                         self.advance();
                         props.push((key, Expr::Bool(true)));
                     } else {
-                        let expr = self.parse_game_prop_expr()?;
+                        let mut expr = self.parse_game_prop_expr()?;
+                        if matches!(self.peek(), Some(Token::Comma)) {
+                            if name == "ask" && key == "from" {
+                                let mut items = vec![expr];
+                                while matches!(self.peek(), Some(Token::Comma)) {
+                                    self.advance();
+                                    items.push(self.parse_expr()?);
+                                }
+                                expr = Expr::List(items);
+                            } else {
+                                return Err(self.error_here(&format!(
+                                    "a comma list is only valid on `loop::ask :from`; use the bracket form `:{key}([a, b])` for a list"
+                                )));
+                            }
+                        }
                         self.expect_simple(Token::RParen, "`)` after loop option")?;
                         props.push((key, expr));
                     }

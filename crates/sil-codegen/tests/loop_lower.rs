@@ -333,3 +333,51 @@ fn reemit_keeps_previous_pinned_plans() {
     }
     let _ = std::fs::remove_dir_all(&out);
 }
+
+#[test]
+fn ask_from_comma_list_and_bracket_list_lower_to_the_same_plan() {
+    let source = |from: &str| {
+        format!(
+            r#"@version("0.7.1")
+contract Release {{
+    has Str $.id;
+}}
+contract Seen {{
+    has Str $.id;
+}}
+contract Impact {{
+    has Str $.text;
+}}
+resource Releases for Release {{
+    query list;
+}}
+resource SeenItems for Seen {{
+    query list;
+}}
+loop Watch {{
+    loop::flow(
+        loop::manual(),
+        loop::find(:as(release), :from(Releases.list), :max(5)),
+        loop::find(:as(seen), :from(SeenItems.list), :max(5)),
+        loop::ask(:as(impact), :into(Impact), :retry(2), :from({from}), :prompt("What changed?")),
+        loop::gate(:that($impact.text != ""), :reason("never notify on an empty answer")),
+        loop::notify(:to("owner"), :key("watch:{{$today}}"), :text("{{$impact.text}}"))
+    )
+}}
+"#
+        )
+    };
+    let plan = |from: &str| lower_loop_plan(&parse_valid(&source(from)), "test");
+    let comma = plan("$release, $seen");
+    let bracket = plan("[$release, $seen]");
+    assert_eq!(comma["hash"], bracket["hash"]);
+    assert_eq!(comma, bracket);
+    let single = plan("$release");
+    assert_ne!(comma["hash"], single["hash"]);
+    assert!(
+        serde_json::to_string(&comma)
+            .unwrap()
+            .contains(r#""k":"list""#),
+        "the ask context lowers to a list expression"
+    );
+}

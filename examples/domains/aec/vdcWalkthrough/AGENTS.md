@@ -270,6 +270,7 @@ if any run failed.
 - `loop::read` — options: `as`, `op`, `url?`, `server?`, `tool?`, `args?`, `auth_env?`, `select?`, `retry?`; children: none
 - `loop::fallback` — options: `as`, `accept`; children: `read`, `otherwise`
 - `loop::ask` — options: `as`, `into`, `prompt`, `from?`, `retry?`; children: `otherwise`
+  - `:from($a, $b)` passes several values and equals `:from([$a, $b])`. The model sees one JSON object labelled by binding path (`a`, `b`, `kb.data`), so a prompt can refer to each by name. A comma list is valid only on `loop::ask :from`; other options take one expression.
 - `loop::gate` — options: `that`, `reason`; children: `otherwise`
 - `loop::branch` — options: none; children: `when`, `otherwise`
 - `loop::when` — options: `that`; children: steps
