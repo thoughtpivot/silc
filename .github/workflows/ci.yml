@@ -42,6 +42,12 @@ jobs:
           cargo test -p sil-codegen emits_resource_app_with_actions
 
       - name: Build standalone example apps
+        # THO-560: llama-cpp-python 0.3.7 does not compile on the current
+        # ubuntu-latest toolchain (missing <cstdint>). Force-include it until
+        # the pin is bumped in 0.8.0. Linux only; macOS builds without it.
+        env:
+          CFLAGS: ${{ runner.os == 'Linux' && '-include stdint.h' || '' }}
+          CXXFLAGS: ${{ runner.os == 'Linux' && '-include cstdint' || '' }}
         run: |
           cargo build -p silc
           cargo test -p silc --test docs_conformance -- --test-threads=1
@@ -99,6 +105,11 @@ jobs:
           key: silc-0.7.0-onnx-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('crates/sil-codegen/templates/*requirements.txt', 'crates/sil-core/src/model_catalog.rs') }}
 
       - name: Build all standalone examples
+        # THO-560: force-include <cstdint> so llama-cpp-python 0.3.7 builds on
+        # the current ubuntu-latest toolchain. Remove with the 0.8.0 pin bump.
+        env:
+          CFLAGS: "-include stdint.h"
+          CXXFLAGS: "-include cstdint"
         run: |
           cargo build -p silc
           find examples -name main.silc -print | sort | while read -r src; do
