@@ -1,7 +1,7 @@
 # Compiler fixture for loop::fallback (THO-559): a command loop that tries a
 # changelog page, then a releases page, and skips a dependency when neither
 # reads. The first read that satisfies :accept binds `page`.
-@version("0.7.1")
+@version("0.7")
 
 contract Dep {
     has Str $.id;

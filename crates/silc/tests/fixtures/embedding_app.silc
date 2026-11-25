@@ -1,7 +1,7 @@
 #!/usr/bin/env silc
 # Fixture for embeddings in an app and a loop (THO-132): one program with an
 # app, a loop, llm::complete, doc::extract, a tensor feed, and query nearest.
-@version("0.7.1")
+@version("0.7")
 
 subset Emb384 of Vec[num32; 384];
 

@@ -1,4 +1,4 @@
-@version("0.7.1")
+@version("0.7")
 
 # Shopping application without a Shopping/Inventory portal profile.
 # Empty product DB; admin CRUD; storefront; persistent cart; dual surfaces.

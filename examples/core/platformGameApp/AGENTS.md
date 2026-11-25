@@ -49,7 +49,7 @@ meaningful edit. Stop and report limits instead of inventing substrates.
 
 | Construct | Role |
 | --- | --- |
-| `@version("0.7.1")` | Required exact source-version annotation |
+| `@version("0.7")` | Required language-version annotation: major.minor, accepted by every patch release |
 | `subset Name of Base where { … }` | Semantic type alias; v1 `where` predicates (Str): `.contains` / `.starts-with` / `.ends-with` (ADR-002) |
 | `contract X { has T $.f; }` | **Contract** — typed data schema |
 | `component X` | **Component** — options (`has`), `has state`, slots, `emit`, handlers, `render()` |

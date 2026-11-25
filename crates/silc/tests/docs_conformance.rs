@@ -339,6 +339,64 @@ fn tracked_example_agents_embed_template_common_block() {
     }
 }
 
+/// Every checked-in `.silc` source under examples, templates, the assist
+/// corpus, and test fixtures.
+fn all_silc_sources() -> Vec<String> {
+    fn walk(dir: &std::path::Path, root: &std::path::Path, out: &mut Vec<String>) {
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries {
+            let path = entry.expect("dir entry").path();
+            let name = path.file_name().unwrap().to_string_lossy();
+            if name.starts_with('.') || name == "target" || name == "node_modules" {
+                continue;
+            }
+            if path.is_dir() {
+                walk(&path, root, out);
+            } else if path.extension().is_some_and(|ext| ext == "silc") {
+                out.push(path.strip_prefix(root).unwrap().display().to_string());
+            }
+        }
+    }
+    let root = workspace_root();
+    let mut out = Vec::new();
+    walk(&root.join("examples"), &root, &mut out);
+    walk(&root.join("crates"), &root, &mut out);
+    out.sort();
+    out
+}
+
+#[test]
+fn sources_survive_a_patch_release() {
+    let current = env!("CARGO_PKG_VERSION");
+    let mut parts = current.split('.');
+    let major = parts.next().unwrap();
+    let minor = parts.next().unwrap();
+    let patch: u64 = parts.next().unwrap().parse().unwrap();
+    let compilers = [
+        format!("{major}.{minor}.0"),
+        current.to_string(),
+        format!("{major}.{minor}.{}", patch + 1),
+        format!("{major}.{minor}.{}", patch + 9),
+    ];
+
+    let sources = all_silc_sources();
+    assert!(
+        sources.len() > 20,
+        "expected the example sources, found {sources:?}"
+    );
+    for rel in &sources {
+        let src = read_workspace(rel);
+        let program = sil_parser::parse(&src).unwrap_or_else(|e| panic!("parse {rel}: {e}"));
+        for compiler in &compilers {
+            program
+                .validate_source_version(compiler)
+                .unwrap_or_else(|e| panic!("{rel} on a {compiler} compiler: {e}"));
+        }
+    }
+}
+
 #[test]
 fn canonical_silc_sources_omit_runtime_plumbing() {
     let mut roots: Vec<String> = example_dirs()
@@ -379,12 +437,10 @@ fn canonical_silc_sources_omit_runtime_plumbing() {
         "@version(\"0.2.0\")",
     ];
 
+    let pragma = format!("@version(\"{}\")", sil_core::LANGUAGE_VERSION);
     for rel in &roots {
         let src = read_workspace(rel);
-        assert!(
-            src.contains("@version(\"0.7.1\")"),
-            "{rel} must declare @version(\"0.7.1\")"
-        );
+        assert!(src.contains(&pragma), "{rel} must declare {pragma}");
         for needle in forbidden {
             assert!(
                 !src.contains(needle),

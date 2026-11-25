@@ -51,7 +51,7 @@ pub fn resolve_hover(doc: &Document, offset: u32) -> Option<HoverContent> {
                 "annotation",
                 &format!("@{name}"),
                 "Source annotation attached to the following declaration. \
-                 `@version(\"0.7.1\")` pins the Silc language version so tooling and the \
+                 `@version(\"0.7\")` pins the Silc language version so tooling and the \
                  compiler agree on syntax and runnable operations.",
                 None,
             ),

@@ -65,7 +65,7 @@ pub use operation::{
     DEFAULT_WEB_PORT, KNOWN_NAMESPACES,
 };
 pub use pipeline::{Pipeline, PipelineStep};
-pub use program::Program;
+pub use program::{Program, LANGUAGE_VERSION};
 pub use registry::{
     executable_ops, lookup_operation, Capability, CompatRule, Engine, OperationSpec, COMPATIBILITY,
     OPERATION_CATALOG,

@@ -1,4 +1,4 @@
-@version("0.7.1")
+@version("0.7")
 
 # Stub-only data pipeline (non-UI operation routing).
 

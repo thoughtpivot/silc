@@ -1,4 +1,4 @@
-@version("0.7.1")
+@version("0.7")
 
 # One-shot static-page ingestion: scrape::page and scrape::extract, then tensor inference, then synthesized SQLite.
 

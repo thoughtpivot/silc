@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 pub use crate::schema::{PromptRecord, TaskSeed};
 
 const TARGET_MODEL: &str = "silclm";
-const AGENTS_MD_VERSION: &str = "0.5.0";
+const AGENTS_MD_VERSION: &str = sil_core::LANGUAGE_VERSION;
 
 pub fn load_tasks(tasks_dir: &Path) -> Result<Vec<TaskSeed>, String> {
     if !tasks_dir.is_dir() {
