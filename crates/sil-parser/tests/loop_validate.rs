@@ -770,3 +770,121 @@ fn fallback_inside_each_multiplies_attempts() {
     program.validate().unwrap();
     assert_eq!(sil_core::loop_bounds(&program.loops[0]).reads, 5 * 4);
 }
+
+const TYPED_PRELUDE: &str = r#"
+@version("0.7.1")
+subset Emb384 of Vec[num32; 384];
+subset Emb768 of Vec[num32; 768];
+contract Src {
+    has Str $.id;
+    has Str $.url;
+    has Int $.hits;
+    has Emb384 $.vector_embedding;
+    has Emb768 $.wide_embedding;
+}
+contract Row {
+    has Str $.id;
+    has Int $.n;
+    has Emb384 $.vector_embedding;
+}
+resource Srcs for Src {
+    query list;
+}
+resource Rows for Row {
+    mutation create;
+}
+"#;
+
+fn check_typed(write_value: &str) -> Result<(), String> {
+    let src = format!(
+        "{TYPED_PRELUDE}\nloop Typed {{\nloop::flow(\n    loop::manual(),\n    loop::find(:as(s), :from(Srcs.list), :max(5)),\n    loop::each(:in($s), :as(x), :max(2),\n        loop::write(:to(Rows.create), :key(\"r:{{$x.id}}\"), :value({write_value}))\n    )\n)\n}}\n"
+    );
+    let program = parse(&src).map_err(|e| format!("parse: {}", e.message))?;
+    program.validate()
+}
+
+fn expect_typed_err(write_value: &str, needles: &[&str]) {
+    match check_typed(write_value) {
+        Ok(()) => panic!("expected a type error, but it validated: {write_value}"),
+        Err(e) => {
+            for needle in needles {
+                assert!(e.contains(needle), "expected `{needle}` in error, got: {e}");
+            }
+        }
+    }
+}
+
+#[test]
+fn write_rejects_str_into_int_field() {
+    expect_typed_err(
+        "Row.new(:n($x.url))",
+        &["field `n`", "expects Int", "`$x.url` is Str"],
+    );
+}
+
+#[test]
+fn write_rejects_str_into_emb384_field() {
+    expect_typed_err(
+        "Row.new(:vector_embedding($x.url))",
+        &[
+            "field `vector_embedding`",
+            "expects Vec[num32; 384] (Emb384)",
+            "`$x.url` is Str",
+        ],
+    );
+}
+
+#[test]
+fn write_rejects_the_reference_repro() {
+    expect_typed_err(
+        "Row.new(:n($x.url), :vector_embedding($x.url))",
+        &[
+            "field `n`",
+            "expects Int",
+            "field `vector_embedding`",
+            "expects Vec[num32; 384] (Emb384)",
+        ],
+    );
+}
+
+#[test]
+fn write_rejects_wrong_dimension_vector() {
+    expect_typed_err(
+        "Row.new(:vector_embedding($x.wide_embedding))",
+        &["expects Vec[num32; 384] (Emb384)", "is Vec[num32; 768]"],
+    );
+}
+
+#[test]
+fn write_rejects_number_and_text_literals_in_vector_field() {
+    expect_typed_err("Row.new(:vector_embedding(1))", &["is Int"]);
+    expect_typed_err("Row.new(:vector_embedding(\"abc\"))", &["is Str"]);
+}
+
+#[test]
+fn write_rejects_int_into_str_field() {
+    expect_typed_err(
+        "Row.new(:id($x.hits))",
+        &["field `id`", "expects Str", "is Int"],
+    );
+}
+
+#[test]
+fn write_rejects_unknown_type_into_typed_field() {
+    let src = format!(
+        "{TYPED_PRELUDE}\nloop Typed {{\nloop::flow(\n    loop::manual(),\n    loop::read(:as(r), :op(\"mcp::call\"), :server(\"https://example.com/mcp\"), :tool(\"t\")),\n    loop::write(:to(Rows.create), :key(\"r\"), :value(Row.new(:n($r.data))))\n)\n}}\n"
+    );
+    let err = parse(&src).unwrap().validate().unwrap_err();
+    assert!(
+        err.contains("field `n`") && err.contains("is not known"),
+        "{err}"
+    );
+}
+
+#[test]
+fn write_accepts_correctly_typed_values() {
+    check_typed("Row.new(:id($x.id), :n($x.hits), :vector_embedding($x.vector_embedding))")
+        .unwrap();
+    check_typed("Row.new(:id(\"fixed\"), :n(3))").unwrap();
+    check_typed("Row.new(:id(\"{$x.id}:{$x.url}\"), :n($x.hits))").unwrap();
+}

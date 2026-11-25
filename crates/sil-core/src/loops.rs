@@ -814,6 +814,31 @@ pub fn loop_bounds(lp: &Loop) -> LoopBounds {
     block(lp.steps())
 }
 
+fn render_expr(expr: &Expr) -> String {
+    fn path(expr: &Expr) -> Option<String> {
+        match expr {
+            Expr::Var(n) => Some(format!("${n}")),
+            Expr::Member { base, field } => path(base).map(|b| format!("{b}.{field}")),
+            _ => None,
+        }
+    }
+    match expr {
+        Expr::String(s)
+            if template_placeholders(s)
+                .map(|p| p.is_empty())
+                .unwrap_or(true) =>
+        {
+            format!("\"{s}\"")
+        }
+        Expr::String(_) => "this text template".into(),
+        Expr::Number(n) => n.clone(),
+        Expr::Bool(b) => b.to_string(),
+        other => path(other)
+            .map(|p| format!("`{p}`"))
+            .unwrap_or_else(|| "this expression".into()),
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 enum BindTy {
     Value,
@@ -822,6 +847,47 @@ enum BindTy {
     Approval,
     Page,
     Fields(&'static [&'static str]),
+    Typed(ValTy),
+}
+
+/// Static type of a loop value, used to compare `Contract.new(:field(expr))`
+/// arguments with the field's declared type.
+#[derive(Debug, Clone, PartialEq)]
+enum ValTy {
+    Str,
+    Int,
+    Num,
+    Bool,
+    Vector { elem: String, len: Option<u64> },
+    Row(String),
+    List,
+    Unknown,
+}
+
+impl ValTy {
+    fn display(&self) -> String {
+        match self {
+            ValTy::Str => "Str".into(),
+            ValTy::Int => "Int".into(),
+            ValTy::Num => "Num".into(),
+            ValTy::Bool => "Bool".into(),
+            ValTy::Vector { elem, len: Some(n) } => format!("Vec[{elem}; {n}]"),
+            ValTy::Vector { elem, len: None } => format!("Vec[{elem}]"),
+            ValTy::Row(c) => c.clone(),
+            ValTy::List => "a list".into(),
+            ValTy::Unknown => "an unknown type".into(),
+        }
+    }
+
+    /// Whether a value of type `value` may be stored in a field of this type.
+    /// Nothing coerces: `Str` never becomes `Int` or a vector. `Int` widens to `Num`.
+    fn accepts(&self, value: &ValTy) -> bool {
+        match (self, value) {
+            (ValTy::Num, ValTy::Int) => true,
+            (ValTy::Unknown, _) => true,
+            (a, b) => a == b && *b != ValTy::Unknown,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -934,6 +1000,7 @@ impl<'a> Checker<'a> {
                 BindTy::Approval => APPROVAL_FIELDS.contains(&field.as_str()),
                 BindTy::Page => PAGE_FIELDS.contains(&field.as_str()),
                 BindTy::Fields(fields) => fields.contains(&field.as_str()),
+                BindTy::Typed(_) => false,
                 BindTy::Value => true,
             };
             if !ok {
@@ -993,11 +1060,18 @@ impl<'a> Checker<'a> {
                     return Err(self.err(node, format!("unknown contract `{ty}` in `{ty}.new(...)`")));
                 };
                 let mut t = false;
+                let mut type_errors = Vec::new();
                 for (fname, value) in fields {
-                    if !cfields.iter().any(|(f, _)| f == fname) {
+                    let Some((_, fty)) = cfields.iter().find(|(f, _)| f == fname) else {
                         return Err(self.err(node, format!("contract `{ty}` has no field `{fname}`")));
-                    }
+                    };
                     t |= self.check_expr(node, scope, row, value)?;
+                    if let Err(e) = self.check_field_type(node, scope, row, ty, fname, fty, value) {
+                        type_errors.push(e);
+                    }
+                }
+                if !type_errors.is_empty() {
+                    return Err(type_errors.join("\n"));
                 }
                 Ok(t)
             }
@@ -1054,6 +1128,174 @@ impl<'a> Checker<'a> {
             }
             _ => BindTy::Value,
         }
+    }
+
+    fn resolve_val_ty(&self, ty: &TypeExpr, depth: usize) -> ValTy {
+        match ty {
+            TypeExpr::Optional(inner) => self.resolve_val_ty(inner, depth),
+            TypeExpr::Array(_) => ValTy::List,
+            TypeExpr::Vec { elem, len } => ValTy::Vector {
+                elem: elem.clone(),
+                len: *len,
+            },
+            TypeExpr::Named(name) => match name.as_str() {
+                "Str" | "UUID" => ValTy::Str,
+                "Int" | "int32" | "int64" => ValTy::Int,
+                "num32" | "num64" => ValTy::Num,
+                "Bool" => ValTy::Bool,
+                _ => {
+                    if let Some(subset) = self.program.subsets.iter().find(|s| s.name == *name) {
+                        if depth < 8 {
+                            return self.resolve_val_ty(&subset.base, depth + 1);
+                        }
+                        ValTy::Unknown
+                    } else if self.contract_fields(name).is_some() {
+                        ValTy::Row(name.clone())
+                    } else {
+                        ValTy::Unknown
+                    }
+                }
+            },
+        }
+    }
+
+    fn infer_val_ty(&self, scope: &Scope, row: Option<&str>, expr: &Expr) -> ValTy {
+        match expr {
+            Expr::String(_) => ValTy::Str,
+            Expr::Number(n) => {
+                if n.contains('.') || n.contains('e') || n.contains('E') {
+                    ValTy::Num
+                } else {
+                    ValTy::Int
+                }
+            }
+            Expr::Bool(_) => ValTy::Bool,
+            Expr::Var(name) => {
+                if let Some(contract) = row {
+                    if let Some(fields) = self.contract_fields(contract) {
+                        if let Some((_, fty)) = fields.iter().find(|(f, _)| f == name) {
+                            return self.resolve_val_ty(fty, 0);
+                        }
+                    }
+                }
+                match name.as_str() {
+                    "today" | "now" => return ValTy::Str,
+                    _ => {}
+                }
+                match scope.get(name).map(|b| &b.ty) {
+                    Some(BindTy::Row(c)) => ValTy::Row(c.clone()),
+                    Some(BindTy::Typed(t)) => t.clone(),
+                    Some(BindTy::List(_)) => ValTy::List,
+                    _ => ValTy::Unknown,
+                }
+            }
+            Expr::Member { base, field } => {
+                let base_ty = match base.as_ref() {
+                    Expr::Var(root) => scope.get(root).map(|b| b.ty.clone()),
+                    other => match self.infer_val_ty(scope, row, other) {
+                        ValTy::Row(c) => Some(BindTy::Row(c)),
+                        _ => None,
+                    },
+                };
+                match base_ty {
+                    Some(BindTy::Row(c)) => self
+                        .contract_fields(&c)
+                        .and_then(|fs| {
+                            fs.iter()
+                                .find(|(f, _)| f == field)
+                                .map(|(_, t)| self.resolve_val_ty(t, 0))
+                        })
+                        .unwrap_or(ValTy::Unknown),
+                    Some(BindTy::List(_)) if field == "count" => ValTy::Int,
+                    Some(BindTy::Page) => match field.as_str() {
+                        "status" => ValTy::Int,
+                        _ => ValTy::Str,
+                    },
+                    Some(BindTy::Approval) => ValTy::Str,
+                    Some(BindTy::Fields(_)) => match field.as_str() {
+                        "data" => ValTy::Unknown,
+                        "late" => ValTy::Bool,
+                        _ => ValTy::Str,
+                    },
+                    _ => ValTy::Unknown,
+                }
+            }
+            Expr::BinOp { op, left, right } => match op {
+                BinOp::Eq
+                | BinOp::Ne
+                | BinOp::Lt
+                | BinOp::Le
+                | BinOp::Gt
+                | BinOp::Ge
+                | BinOp::And
+                | BinOp::Or => ValTy::Bool,
+                _ => {
+                    let l = self.infer_val_ty(scope, row, left);
+                    let r = self.infer_val_ty(scope, row, right);
+                    match (l, r) {
+                        (ValTy::Int, ValTy::Int) => ValTy::Int,
+                        (ValTy::Int | ValTy::Num, ValTy::Int | ValTy::Num) => ValTy::Num,
+                        _ => ValTy::Unknown,
+                    }
+                }
+            },
+            Expr::Unary { op, expr } => match op {
+                crate::expr::UnaryOp::Not => ValTy::Bool,
+                crate::expr::UnaryOp::Neg => self.infer_val_ty(scope, row, expr),
+            },
+            Expr::List(_) => ValTy::List,
+            Expr::New { ty, .. } => ValTy::Row(ty.clone()),
+            _ => ValTy::Unknown,
+        }
+    }
+
+    /// Reject a `Contract.new(:field(expr))` argument whose type does not match
+    /// the field's declared type. Unknown value types fail closed.
+    #[allow(clippy::too_many_arguments)]
+    fn check_field_type(
+        &self,
+        node: &LoopNode,
+        scope: &Scope,
+        row: Option<&str>,
+        contract: &str,
+        field: &str,
+        declared: &TypeExpr,
+        value: &Expr,
+    ) -> Result<(), String> {
+        let expected = self.resolve_val_ty(declared, 0);
+        if expected == ValTy::Unknown {
+            return Ok(());
+        }
+        let found = self.infer_val_ty(scope, row, value);
+        if expected.accepts(&found) {
+            return Ok(());
+        }
+        let declared_name = declared.display();
+        let expected_name = match &expected {
+            ValTy::Vector { .. } if declared_name != expected.display() => {
+                format!("{} ({declared_name})", expected.display())
+            }
+            _ if declared_name != expected.display() => {
+                format!("{declared_name} (a {})", expected.display())
+            }
+            _ => expected.display(),
+        };
+        let what = render_expr(value);
+        if found == ValTy::Unknown {
+            return Err(self.err(
+                node,
+                format!(
+                    "field `{field}` of `{contract}.new(...)` expects {expected_name}, but the type of {what} is not known; only a value with a declared type can be written"
+                ),
+            ));
+        }
+        Err(self.err(
+            node,
+            format!(
+                "field `{field}` of `{contract}.new(...)` expects {expected_name}, but {what} is {}; nothing coerces into a typed field, so convert explicitly",
+                found.display()
+            ),
+        ))
     }
 
     fn clear_taint(scope: &mut Scope, expr: Option<&Expr>, template: Option<&str>) {
@@ -1401,7 +1643,13 @@ impl<'a> Checker<'a> {
             "let" => {
                 let value = step.prop("value").unwrap();
                 let tainted = self.check_expr(step, scope, None, value)?;
-                let ty = self.expr_ty(scope, value);
+                let mut ty = self.expr_ty(scope, value);
+                if ty == BindTy::Value {
+                    let inferred = self.infer_val_ty(scope, None, value);
+                    if inferred != ValTy::Unknown {
+                        ty = BindTy::Typed(inferred);
+                    }
+                }
                 let name = step.ident_prop("as").unwrap().to_string();
                 self.bind(step, scope, &name, Binding { ty, tainted })?;
             }
