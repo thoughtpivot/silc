@@ -107,7 +107,11 @@ jobs:
 
       - name: Build all standalone examples
         # THO-560: force-include <cstdint> so llama-cpp-python 0.3.7 builds on
-XX        run: |
+        # the current ubuntu-latest toolchain. Remove with the 0.8.0 pin bump.
+        # CMAKE_ARGS reaches only the pip/CMake build, not cargo's cc-rs.
+        env:
+          CMAKE_ARGS: '-DCMAKE_CXX_FLAGS="-include cstdint"'
+        run: |
           cargo build -p silc
           find examples -name main.silc -print | sort | while read -r src; do
             ./target/debug/silc build "$src"
