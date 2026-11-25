@@ -12,13 +12,11 @@ SCHEMA_ID = __SCHEMA_ID__
 HEADER_SIZE = 128
 PROCESSOR = "__PROCESSOR_OP__"
 MODEL_PATH = os.environ.get("SILC_MODEL_PATH", "")
-TENSOR_MODEL_PATH = os.environ.get("SILC_TENSOR_MODEL_PATH", "")
-TENSOR_TOKENIZER_PATH = os.environ.get("SILC_TENSOR_TOKENIZER_PATH", "")
 SOCKET_PATH = os.environ.get("SILC_SOCKET", "__SOCKET_PATH__")
 IPC_DIR = os.environ.get("SILC_IPC_DIR", "ipc")
 DEFAULT_N_CTX = 8192
-TENSOR_DIMENSION = 384
-TENSOR_MAX_TOKENS = 256
+# Compiler-selected tensor::infer model (see embedding_models.py), or None.
+EMBED_MODEL_SPEC = json.loads(r'''__EMBED_MODEL_JSON__''')
 
 
 def _env_positive_int(name: str, default: int) -> int:
@@ -37,8 +35,7 @@ def _env_positive_int(name: str, default: int) -> int:
 N_CTX = _env_positive_int("SILC_LLM_N_CTX", DEFAULT_N_CTX)
 
 _llm = None
-_tensor_session = None
-_tensor_tokenizer = None
+_embedding_model = None
 
 
 def encode_frame(value):
@@ -93,66 +90,15 @@ def complete(prompt: str, max_tokens: int = 256, temperature: float = 0.7) -> st
     return out["choices"][0]["text"].strip()
 
 
-def ensure_tensor_runtime():
-    global _tensor_session, _tensor_tokenizer
-    if _tensor_session is not None and _tensor_tokenizer is not None:
-        return _tensor_session, _tensor_tokenizer
-    if not TENSOR_MODEL_PATH or not TENSOR_TOKENIZER_PATH:
-        raise RuntimeError("tensor.infer requires compiler-provisioned model and tokenizer paths")
-
-    import onnxruntime as ort
-    from tokenizers import Tokenizer
-
-    _tensor_tokenizer = Tokenizer.from_file(TENSOR_TOKENIZER_PATH)
-    _tensor_session = ort.InferenceSession(
-        TENSOR_MODEL_PATH,
-        providers=["CPUExecutionProvider"],
-    )
-    return _tensor_session, _tensor_tokenizer
-
-
 def infer_embedding(text: str) -> list[float]:
-    import numpy as np
+    global _embedding_model
+    if _embedding_model is None:
+        from embedding_models import load_model
 
-    session, tokenizer = ensure_tensor_runtime()
-    encoding = tokenizer.encode(text or "")
-    ids = encoding.ids[:TENSOR_MAX_TOKENS]
-    attention = encoding.attention_mask[:TENSOR_MAX_TOKENS]
-    token_types = encoding.type_ids[:TENSOR_MAX_TOKENS]
-    if not ids:
-        ids = [0]
-        attention = [0]
-        token_types = [0]
-
-    available = {item.name for item in session.get_inputs()}
-    inputs = {}
-    if "input_ids" in available:
-        inputs["input_ids"] = np.asarray([ids], dtype=np.int64)
-    if "attention_mask" in available:
-        inputs["attention_mask"] = np.asarray([attention], dtype=np.int64)
-    if "token_type_ids" in available:
-        inputs["token_type_ids"] = np.asarray([token_types], dtype=np.int64)
-
-    outputs = session.run(None, inputs)
-    token_embeddings = np.asarray(outputs[0], dtype=np.float32)
-    if token_embeddings.ndim == 3:
-        mask = np.asarray(attention, dtype=np.float32)[None, :, None]
-        vector = (token_embeddings * mask).sum(axis=1) / np.clip(mask.sum(axis=1), 1e-9, None)
-    elif token_embeddings.ndim == 2:
-        vector = token_embeddings
-    else:
-        raise RuntimeError(f"tensor.infer returned unexpected shape {token_embeddings.shape}")
-
-    vector = vector[0]
-    if vector.shape != (TENSOR_DIMENSION,):
-        raise RuntimeError(
-            f"tensor.infer expected {TENSOR_DIMENSION} floats, got shape {vector.shape}"
-        )
-    norm = float(np.linalg.norm(vector))
-    if not np.isfinite(norm) or norm <= 0.0:
-        raise RuntimeError("tensor.infer produced a non-normalizable embedding")
-    normalized = vector / norm
-    return [float(value) for value in normalized]
+        if EMBED_MODEL_SPEC is None:
+            raise RuntimeError("tensor.infer has no compiler-selected embedding model")
+        _embedding_model = load_model(EMBED_MODEL_SPEC)
+    return _embedding_model.embed([text or ""])[0]
 
 
 SILCLM_IDENTITY = (

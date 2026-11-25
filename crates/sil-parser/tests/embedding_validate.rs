@@ -117,6 +117,13 @@ fn nearest_limit_is_a_bounded_integer_literal() {
         &FIXTURE.replace("Files.nearest($.needle, 50)", "Files.nearest($.needle)"),
         "expected 2",
     );
+    expect_err(
+        &FIXTURE.replace(
+            "Files.nearest($.needle, 50)",
+            "Files.nearest($.missing, 50)",
+        ),
+        "string literal or a `$.field`",
+    );
 }
 
 #[test]

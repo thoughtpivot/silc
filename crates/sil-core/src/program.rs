@@ -260,6 +260,21 @@ impl Program {
                     ));
                 }
                 if query.method == crate::resource::NEAREST_QUERY {
+                    let needle_ok = match &query.args[0] {
+                        Expr::String(_) => true,
+                        Expr::Var(name) => {
+                            let name = name.trim_start_matches(['$', '.']);
+                            component.state.iter().any(|f| f.name == name)
+                                || component.props.iter().any(|f| f.name == name)
+                        }
+                        _ => false,
+                    };
+                    if !needle_ok {
+                        return Err(format!(
+                            "component `{}` query `{}`: the first argument of `{}.nearest` must be a string literal or a `$.field` of the component",
+                            component.name, query.name, query.resource
+                        ));
+                    }
                     let limit = match &query.args[1] {
                         Expr::Number(n) => n.parse::<u64>().ok(),
                         _ => None,

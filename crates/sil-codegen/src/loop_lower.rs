@@ -722,10 +722,29 @@ pub fn lower_loop_plan(program: &Program, compiler_version: &str) -> serde_json:
     if let Some(mcp) = crate::mcp_serve::mcp_manifest_section(program) {
         plan["mcp"] = mcp;
     }
+    if let Some(embedding) = plan_embedding(program) {
+        plan["embedding"] = embedding;
+    }
     let canonical = serde_json::to_string(&plan).unwrap_or_default();
     let hash = format!("{:x}", Sha256::digest(canonical.as_bytes()));
     plan["hash"] = json!(hash);
     plan
+}
+
+/// Tables whose `loop::write` embeds a field, and tables that answer
+/// `query nearest` (ADR-010). Absent when the program has no embeddings.
+fn plan_embedding(program: &Program) -> Option<serde_json::Value> {
+    let plan = sil_core::infer_graph(program).ok().flatten()?.embedding?;
+    Some(serde_json::json!({
+        "model": plan.model.id,
+        "dimension": plan.model.dimension,
+        "feeds": plan.feeds.iter().flat_map(|f| f.tables.iter().map(move |t| {
+            (t.clone(), serde_json::json!({ "input": f.input_field, "output": f.output_field }))
+        })).collect::<serde_json::Map<_, _>>(),
+        "nearest": plan.nearest.iter().map(|n| {
+            (n.table.clone(), serde_json::json!(n.field))
+        }).collect::<serde_json::Map<_, _>>(),
+    }))
 }
 
 /// Write `loop/plan.json`, the pinned `loop/plans/<hash>.json`, and the Go

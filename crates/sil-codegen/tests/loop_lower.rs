@@ -218,6 +218,16 @@ fn loop_kernel_replay_traces() {
     )
     .unwrap();
 
+    let embed = synthesize_loop_surface(&parse_valid(include_str!(
+        "../../silc/tests/fixtures/embedding_app.silc"
+    )))
+    .expect("synthesize embedding fixture");
+    std::fs::write(
+        dir.join("embed_plan.json"),
+        serde_json::to_string_pretty(&lower_loop_plan(&embed, "test")).unwrap(),
+    )
+    .unwrap();
+
     let go_cmd = |args: &[&str]| {
         std::process::Command::new(&go)
             .current_dir(&dir)
@@ -272,6 +282,26 @@ fn fallback_lowers_attempts_accept_and_otherwise() {
     }
     assert_eq!(fallback["otherwise"][0]["op"], "skip");
     assert_eq!(plan["loops"][0]["bounds"]["reads"], 10 * 2);
+}
+
+#[test]
+fn embedding_plan_names_feed_and_nearest_tables() {
+    let program = synthesize_loop_surface(&parse_valid(include_str!(
+        "../../silc/tests/fixtures/embedding_app.silc"
+    )))
+    .expect("synthesize");
+    let plan = lower_loop_plan(&program, "test");
+    let embedding = &plan["embedding"];
+    assert_eq!(embedding["model"], "minilm-l6-v2");
+    assert_eq!(embedding["dimension"], 384);
+    assert_eq!(embedding["feeds"]["files"]["input"], "text_excerpt");
+    assert_eq!(embedding["feeds"]["files"]["output"], "vector_embedding");
+    assert_eq!(embedding["nearest"]["files"], "vector_embedding");
+    for lp in plan["loops"].as_array().unwrap() {
+        assert_eq!(lp["bounds"]["model_calls"], 0, "embeds are not model calls");
+    }
+    let digest = synthesize_loop_surface(&digest_program()).expect("synthesize digest");
+    assert!(lower_loop_plan(&digest, "test").get("embedding").is_none());
 }
 
 #[test]

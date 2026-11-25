@@ -57,6 +57,17 @@ const DOC_EXTRACT_PY = process.env.SILC_DOC_EXTRACT_PY || join(root, "..", "pyth
 const DOC_PYTHON_BIN = process.env.SILC_DOC_PYTHON_BIN || process.env.SILC_PYTHON_BIN || "python3";
 // Sysop-shared directory (ADR-018). `files "<dir>";` in the app; the path is
 // relative to the entry file, i.e. three levels above typescript/ (.runtime/<program>/typescript).
+// Embedding feeds and `query nearest` (ADR-010): null when the program has none.
+const EMBED: null | {
+  model: string;
+  dimension: number;
+  feeds: Record<string, { input: string; output: string }>;
+  nearest: Record<string, string>;
+  max_limit: number;
+} = __EMBED_JSON__;
+const EMBED_SOCKET = process.env.SILC_EMBED_SOCKET || "";
+const EMBED_SWEEP_MS = 2000;
+const EMBED_SWEEP_BATCH = 32;
 const HAS_FILES = __HAS_FILES__;
 const FILES_DIR = process.env.SILC_FILES_DIR || resolve(root, "..", "..", "..", "__FILES_DIR__");
 const FILES_ZIP_PY = process.env.SILC_FILES_ZIP_PY || join(root, "..", "python", "files_zip_worker.py");
@@ -287,8 +298,103 @@ function validateSubsetFields(
   return null;
 }
 
+async function embedCall(path: string, body: unknown): Promise<any> {
+  if (!EMBED || !EMBED_SOCKET) throw new Error("embed worker is not running");
+  const res = await fetch(`http://silc-embed${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+    unix: EMBED_SOCKET,
+  } as RequestInit);
+  const out = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok) throw new Error(String(out.error || `embed worker HTTP ${res.status}`));
+  return out;
+}
+
+// Vectors are compiler-owned: drop any client-sent vector, then embed the feed
+// field. On failure the row is stored without a vector and the sweep retries.
+async function withEmbedding(
+  table: string,
+  data: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const feed = EMBED?.feeds[table];
+  if (!feed) return data;
+  const { [feed.output]: _dropped, ...rest } = data;
+  const text = rest[feed.input];
+  if (typeof text !== "string") return rest;
+  try {
+    const out = await embedCall("/embed", { texts: [text] });
+    return { ...rest, [feed.output]: out.vectors[0] };
+  } catch (error) {
+    console.error(`silc: embed ${table}.${feed.input} failed: ${(error as Error).message}`);
+    return rest;
+  }
+}
+
+let embedSweepRunning = false;
+
+async function sweepEmbeddings(): Promise<void> {
+  if (!EMBED || embedSweepRunning) return;
+  embedSweepRunning = true;
+  try {
+    for (const [table, feed] of Object.entries(EMBED.feeds)) {
+      const rows = db
+        .query(
+          `SELECT id, data FROM ${table}
+           WHERE json_type(data, '$.${feed.output}') IS NULL
+             AND json_type(data, '$.${feed.input}') = 'text'
+           LIMIT ${EMBED_SWEEP_BATCH}`,
+        )
+        .all() as Array<{ id: string; data: string }>;
+      if (rows.length === 0) continue;
+      const parsed = rows.map((r) => ({ id: r.id, data: JSON.parse(r.data) }));
+      const out = await embedCall("/embed", {
+        texts: parsed.map((r) => String(r.data[feed.input])),
+      });
+      const update = db.query(
+        `UPDATE ${table} SET data = ? WHERE id = ? AND json_type(data, '$.${feed.output}') IS NULL`,
+      );
+      parsed.forEach((r, i) => {
+        update.run(JSON.stringify({ ...r.data, [feed.output]: out.vectors[i] }), r.id);
+      });
+    }
+  } catch (error) {
+    console.error(`silc: embedding sweep failed: ${(error as Error).message}`);
+  } finally {
+    embedSweepRunning = false;
+  }
+}
+
+if (EMBED && Object.keys(EMBED.feeds).length > 0) {
+  setInterval(() => void sweepEmbeddings(), EMBED_SWEEP_MS);
+}
+
+async function handleNearest(req: Request, pathname: string): Promise<Response | null> {
+  if (!EMBED || req.method !== "GET") return null;
+  const match = pathname.match(/^\/api\/([a-z0-9_]+)\/nearest$/);
+  if (!match || !EMBED.nearest[match[1]]) return null;
+  const url = new URL(req.url);
+  const needle = url.searchParams.get("q") ?? "";
+  const k = Number(url.searchParams.get("k") ?? "");
+  if (!Number.isInteger(k) || k < 1) return json({ error: "k must be a positive integer" }, 400);
+  if (!needle.trim()) return json([]);
+  try {
+    const out = await embedCall("/nearest", {
+      table: match[1],
+      needle,
+      limit: Math.min(k, EMBED.max_limit),
+    });
+    return json(out.rows);
+  } catch (error) {
+    return json({ error: (error as Error).message }, 502);
+  }
+}
+
 async function handleResource(req: Request, pathname: string): Promise<Response | null> {
+  const nearest = await handleNearest(req, pathname);
+  if (nearest) return nearest;
   for (const action of ACTIONS) {
+    if (action.method === "nearest") continue;
     const base = action.path.replace(/\/:id$/, "");
     const isItem = pathname.startsWith(base + "/") && action.path.includes(":id");
     const isCollection = pathname === action.path || pathname === base;
@@ -311,16 +417,18 @@ async function handleResource(req: Request, pathname: string): Promise<Response 
       const { id: _i, ...rest } = body;
       const subsetErr = validateSubsetFields(table, rest as Record<string, unknown>);
       if (subsetErr) return json({ error: subsetErr }, 400);
-      db.query(`INSERT INTO ${table} (id, data) VALUES (?, ?)`).run(id, JSON.stringify(rest));
-      return json({ id, ...rest }, 201);
+      const stored = await withEmbedding(table, rest as Record<string, unknown>);
+      db.query(`INSERT INTO ${table} (id, data) VALUES (?, ?)`).run(id, JSON.stringify(stored));
+      return json({ id, ...stored }, 201);
     }
     if (action.http_method === "PUT" && isItem) {
       const id = pathname.slice(base.length + 1);
       const body = await req.json();
       const subsetErr = validateSubsetFields(table, body as Record<string, unknown>);
       if (subsetErr) return json({ error: subsetErr }, 400);
-      db.query(`UPDATE ${table} SET data = ?, updated_at = datetime('now') WHERE id = ?`).run(JSON.stringify(body), id);
-      return json({ id, ...body });
+      const stored = await withEmbedding(table, body as Record<string, unknown>);
+      db.query(`UPDATE ${table} SET data = ?, updated_at = datetime('now') WHERE id = ?`).run(JSON.stringify(stored), id);
+      return json({ id, ...stored });
     }
     if (action.http_method === "DELETE" && isItem) {
       const id = pathname.slice(base.length + 1);

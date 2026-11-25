@@ -8,6 +8,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/binary"
@@ -46,6 +47,22 @@ type Plan struct {
 	Contracts       map[string][]FieldSpec `json:"contracts"`
 	Tables          PlanTables             `json:"tables"`
 	ResourceTables  []string               `json:"resource_tables"`
+	Embedding       *PlanEmbedding         `json:"embedding,omitempty"`
+}
+
+// PlanEmbedding names the tables whose writes embed a field (tensor::infer
+// feeds) and the tables that answer `query nearest` (ADR-010). Vectors live
+// in the row in app.db and are never copied into loop_events.
+type PlanEmbedding struct {
+	Model     string               `json:"model"`
+	Dimension int                  `json:"dimension"`
+	Feeds     map[string]EmbedFeed `json:"feeds"`
+	Nearest   map[string]string    `json:"nearest"`
+}
+
+type EmbedFeed struct {
+	Input  string `json:"input"`
+	Output string `json:"output"`
 }
 
 type PlanTables struct {
@@ -188,6 +205,13 @@ type Asker interface {
 	Ask(req AskRequest) (string, error)
 }
 
+// Embedder is the CPython embed worker. Embeds are not model calls: they
+// never reach silclm and never count against a loop's model-call budget.
+type Embedder interface {
+	Embed(texts []string) ([][]float64, error)
+	Nearest(table, needle string, limit int) ([]map[string]any, error)
+}
+
 type Page struct {
 	URL    string `json:"url"`
 	Status int    `json:"status"`
@@ -202,6 +226,7 @@ type Kernel struct {
 	plans    map[string]*Plan
 	now      func() time.Time
 	asker    Asker
+	embedder Embedder
 	fetch    func(url string) (Page, error)
 	mcp      func(server, tool string, args map[string]any, token string) (map[string]any, error)
 	// crash is a test hook called at effect checkpoints ("after_reserve").
@@ -940,6 +965,37 @@ func (c *runCtx) step(st *Step, sc *scope, path string, inEach bool) outcome {
 		if waiting > 0 {
 			return outcome{s: sigSuspend}
 		}
+	case "embed":
+		// Not recorded: a replay recomputes the vector from the same text.
+		v, _ := eval(st.From, sc)
+		text, isStr := v.(string)
+		if !isStr {
+			return outcome{sigFail, "embed :from is not a string"}
+		}
+		vec, err := c.k.embed(text)
+		if err != nil {
+			return outcome{sigFail, "embed: " + err.Error()}
+		}
+		list := make([]any, len(vec))
+		for i, f := range vec {
+			list[i] = f
+		}
+		sc.vars[st.As] = list
+	case "nearest":
+		raw, ok := c.recordedValue(path, "nearest")
+		if !ok {
+			rows, err := c.nearest(st, sc)
+			if err != nil {
+				return outcome{sigFail, fmt.Sprintf("nearest %s: %v", st.Resource, err)}
+			}
+			raw = c.record(path, "nearest", rows)
+		}
+		var rows []any
+		_ = json.Unmarshal([]byte(raw), &rows)
+		if rows == nil {
+			rows = []any{}
+		}
+		sc.vars[st.As] = rows
 	case "write":
 		out := c.write(st, sc, path)
 		if out.s == sigNone {
@@ -987,6 +1043,7 @@ func (c *runCtx) find(st *Step, sc *scope) ([]any, error) {
 			continue
 		}
 		row["id"] = id
+		c.k.stripVector(st.Table, row)
 		if st.Where != nil {
 			rowScope := sc.child()
 			for _, f := range st.RowFields {
@@ -1026,6 +1083,89 @@ func (c *runCtx) find(st *Step, sc *scope) ([]any, error) {
 	}
 	if out == nil {
 		out = []any{}
+	}
+	return out, nil
+}
+
+// vectorField is the stored vector column of a feed or `query nearest` table.
+func (k *Kernel) vectorField(table string) string {
+	if k.plan.Embedding == nil {
+		return ""
+	}
+	if f, ok := k.plan.Embedding.Feeds[table]; ok {
+		return f.Output
+	}
+	return k.plan.Embedding.Nearest[table]
+}
+
+// stripVector keeps vectors out of loop_events and loop scopes.
+func (k *Kernel) stripVector(table string, row map[string]any) {
+	if field := k.vectorField(table); field != "" {
+		delete(row, field)
+	}
+}
+
+func (k *Kernel) embed(text string) ([]float64, error) {
+	if k.embedder == nil {
+		return nil, fmt.Errorf("the embed worker is not running")
+	}
+	vecs, err := k.embedder.Embed([]string{text})
+	if err != nil {
+		return nil, err
+	}
+	if len(vecs) != 1 {
+		return nil, fmt.Errorf("embed worker returned %d vectors", len(vecs))
+	}
+	if d := k.plan.Embedding; d != nil && d.Dimension > 0 && len(vecs[0]) != d.Dimension {
+		return nil, fmt.Errorf("embed worker returned %d floats, expected %d", len(vecs[0]), d.Dimension)
+	}
+	return vecs[0], nil
+}
+
+// embedRow sets the feed's vector on a row about to be written. Failure is
+// logged, not fatal: the row is stored without a vector and the app worker's
+// sweep fills it in.
+func (k *Kernel) embedRow(table string, row map[string]any) {
+	if k.plan.Embedding == nil {
+		return
+	}
+	feed, ok := k.plan.Embedding.Feeds[table]
+	if !ok {
+		return
+	}
+	delete(row, feed.Output)
+	text, isStr := row[feed.Input].(string)
+	if !isStr {
+		return
+	}
+	vec, err := k.embed(text)
+	if err != nil {
+		k.logf("embed %s.%s failed: %v", table, feed.Input, err)
+		return
+	}
+	row[feed.Output] = vec
+}
+
+func (c *runCtx) nearest(st *Step, sc *scope) ([]any, error) {
+	if c.k.embedder == nil {
+		return nil, fmt.Errorf("the embed worker is not running")
+	}
+	v, _ := eval(st.From, sc)
+	needle, isStr := v.(string)
+	if !isStr {
+		return nil, fmt.Errorf(":from is not a string")
+	}
+	out := []any{}
+	if strings.TrimSpace(needle) == "" {
+		return out, nil
+	}
+	rows, err := c.k.embedder.Nearest(st.Table, needle, st.Max)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		c.k.stripVector(st.Table, row)
+		out = append(out, row)
 	}
 	return out, nil
 }
@@ -1331,6 +1471,7 @@ func (c *runCtx) write(st *Step, sc *scope, path string) outcome {
 					row[f] = fv
 				}
 			}
+			c.k.embedRow(st.Table, row)
 			if _, err := tx.Exec(fmt.Sprintf(`UPDATE %s SET data = ?, updated_at = datetime('now') WHERE id = ?`, st.Table), encodeData(row), id); err != nil {
 				return nil, err
 			}
@@ -1346,6 +1487,7 @@ func (c *runCtx) write(st *Step, sc *scope, path string) outcome {
 				row[f] = fv
 			}
 		}
+		c.k.embedRow(st.Table, row)
 		if _, err := tx.Exec(fmt.Sprintf(`INSERT OR IGNORE INTO %s (id, data) VALUES (?, ?)`, st.Table), id, encodeData(row)); err != nil {
 			return nil, err
 		}
@@ -1951,6 +2093,7 @@ func (k *Kernel) checkMutations(lp *LoopPlan) error {
 			c.row = map[string]any{}
 			if json.Unmarshal([]byte(data), &c.row) == nil {
 				c.row["id"] = c.id
+				k.stripVector(lp.Trigger.Table, c.row)
 				changes = append(changes, c)
 			}
 		}
@@ -2318,6 +2461,68 @@ func (a *udsAsker) Ask(req AskRequest) (string, error) {
 	}
 }
 
+// udsEmbedder talks HTTP/JSON to the embed worker on SILC_EMBED_SOCKET.
+type udsEmbedder struct {
+	client *http.Client
+}
+
+func dialEmbedder(path string) *udsEmbedder {
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "unix", path)
+		},
+	}
+	return &udsEmbedder{client: &http.Client{Transport: transport, Timeout: 2 * time.Minute}}
+}
+
+func (e *udsEmbedder) post(path string, body any, out any) error {
+	b, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	resp, err := e.client.Post("http://silc-embed"+path, "application/json", bytes.NewReader(b))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != http.StatusOK {
+		var failure struct {
+			Error string `json:"error"`
+		}
+		_ = json.Unmarshal(data, &failure)
+		if failure.Error == "" {
+			failure.Error = resp.Status
+		}
+		return errors.New(failure.Error)
+	}
+	return json.Unmarshal(data, out)
+}
+
+func (e *udsEmbedder) Embed(texts []string) ([][]float64, error) {
+	var out struct {
+		Vectors [][]float64 `json:"vectors"`
+	}
+	if err := e.post("/embed", map[string]any{"texts": texts}, &out); err != nil {
+		return nil, err
+	}
+	return out.Vectors, nil
+}
+
+func (e *udsEmbedder) Nearest(table, needle string, limit int) ([]map[string]any, error) {
+	var out struct {
+		Rows []map[string]any `json:"rows"`
+	}
+	if err := e.post("/nearest", map[string]any{"table": table, "needle": needle, "limit": limit}, &out); err != nil {
+		return nil, err
+	}
+	return out.Rows, nil
+}
+
 func contains(list []string, s string) bool {
 	for _, v := range list {
 		if v == s {
@@ -2434,6 +2639,9 @@ func main() {
 		} else {
 			k.asker = asker
 		}
+	}
+	if sock := os.Getenv("SILC_EMBED_SOCKET"); sock != "" && plan.Embedding != nil {
+		k.embedder = dialEmbedder(sock)
 	}
 	if os.Getenv("SILC_LOOP_ONCE") == "1" {
 		// Command mode: run every manual loop once, print notices, exit.

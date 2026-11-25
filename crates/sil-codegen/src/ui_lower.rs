@@ -85,6 +85,7 @@ pub fn render_web_app(
     // Resource queries stay current without a push channel: refetch when the
     // tab regains focus or becomes visible, and poll lightly while visible.
     out.push_str(LIVE_QUERY_HOOK);
+    out.push_str(NEAREST_QUERY_HOOK);
     out.push_str("\n");
 
     for component in program.all_components() {
@@ -117,6 +118,29 @@ function __useLiveQuery(path, set) {
       document.removeEventListener("visibilitychange", load);
     };
   }, [path]);
+}
+"#;
+
+/// `query $.hits = R.nearest($.needle, k);` ranks rows by cosine similarity
+/// to the needle. It refetches when the needle changes (debounced), never
+/// lists the table, and a blank needle yields no rows without a request.
+const NEAREST_QUERY_HOOK: &str = r#"const __NEAREST_DEBOUNCE_MS = 250;
+function __useNearestQuery(path, needle, k, set) {
+  useEffect(() => {
+    let active = true;
+    const text = typeof needle === "string" ? needle : String(needle ?? "");
+    if (!text.trim()) {
+      set([]);
+      return () => { active = false; };
+    }
+    const timer = setTimeout(() => {
+      fetch(`${path}?q=${encodeURIComponent(text)}&k=${k}`)
+        .then(r => r.json())
+        .then((rows) => { if (active) set(Array.isArray(rows) ? rows : []); })
+        .catch(console.error);
+    }, __NEAREST_DEBOUNCE_MS);
+    return () => { active = false; clearTimeout(timer); };
+  }, [path, needle, k]);
 }
 "#;
 
@@ -229,6 +253,26 @@ fn render_web_component(component: &Component, program: &Program) -> String {
             .find(|r| r.name == query.resource)
             .map(|r| r.table_name())
             .unwrap_or_else(|| query.resource.to_ascii_lowercase());
+        if query.method == sil_core::NEAREST_QUERY {
+            let needle = query
+                .args
+                .first()
+                .map(expr_to_js)
+                .unwrap_or_else(|| "\"\"".into());
+            let k = query
+                .args
+                .get(1)
+                .map(expr_to_js)
+                .unwrap_or_else(|| "1".into());
+            state_decls.push_str(&format!(
+                r#"  const [{name}, set{pascal}] = useState([]);
+  __useNearestQuery("/api/{table}/nearest", {needle}, {k}, set{pascal});
+"#,
+                name = query.name,
+                pascal = pascal(&query.name),
+            ));
+            continue;
+        }
         state_decls.push_str(&format!(
             r#"  const [{name}, set{pascal}] = useState([]);
   __useLiveQuery("/api/{table}", set{pascal});
@@ -1834,7 +1878,7 @@ fn expr_to_js_stmt(
                     let qname = component
                         .queries
                         .iter()
-                        .find(|q| q.resource == *resource)
+                        .find(|q| q.resource == *resource && q.method != sil_core::NEAREST_QUERY)
                         .map(|q| q.name.clone())
                         .unwrap_or_else(|| "items".into());
                     return format!(

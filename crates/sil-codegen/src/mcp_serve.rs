@@ -108,6 +108,11 @@ pub fn derive_mcp_tools(program: &Program) -> Vec<McpTool> {
         // Prefer the actual table name for the tool prefix so `Talks` → `talks`.
         let prefix = table.clone();
         for method in &resource.methods {
+            // Ranking needs the embed worker; MCP tools only read app.db rows.
+            if matches!(method.kind, ResourceKind::Query) && method.name == sil_core::NEAREST_QUERY
+            {
+                continue;
+            }
             let name = format!("{prefix}_{}", method.name);
             let (kind, http_method, path, description, input_schema) =
                 match (&method.kind, method.name.as_str()) {

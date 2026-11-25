@@ -46,6 +46,8 @@ const SCRAPE_REQUIREMENTS: &str = include_str!("../templates/scrape_requirements
 const DOC_EXTRACT_PY: &str = include_str!("../templates/doc_extract_worker.py");
 const FILES_ZIP_PY: &str = include_str!("../templates/files_zip_worker.py");
 const DOC_REQUIREMENTS: &str = include_str!("../templates/doc_requirements.txt");
+const EMBEDDING_MODELS_PY: &str = include_str!("../templates/embedding_models.py");
+const EMBED_WORKER_PY: &str = include_str!("../templates/embed_worker.py");
 
 pub const SCRAPE_BUN_ADAPTER: &str = "bun-fetch-v1";
 pub const SCRAPE_COLLY_ADAPTER: &str = "go-colly-v1";
@@ -529,6 +531,31 @@ pub fn emit(
                 "catalog": sil_core::catalog_loop_node_names(),
             });
         }
+        if let Some(plan) = &g.embedding {
+            entrypoints.insert(
+                "python_embed".into(),
+                serde_json::json!("python/embed_worker.py"),
+            );
+            manifest["embedding"] = serde_json::json!({
+                "model": embedding_spec_json(plan.model),
+                "feeds": plan.feeds.iter().map(|f| serde_json::json!({
+                    "processor": f.processor,
+                    "contract": f.contract,
+                    "tables": f.tables,
+                    "input_field": f.input_field,
+                    "output_field": f.output_field,
+                })).collect::<Vec<_>>(),
+                "nearest": plan.nearest.iter().map(|n| serde_json::json!({
+                    "resource": n.resource,
+                    "table": n.table,
+                    "field": n.field,
+                })).collect::<Vec<_>>(),
+                "max_limit": sil_core::loops::MAX_LOOP_LIST,
+                "store": "sqlite-vec",
+                "worker": "python/embed_worker.py",
+                "provenance": "compiler-owned tensor::infer feed + query nearest → CPython embed worker + sqlite-vec (ADR-010)",
+            });
+        }
         if let Some(mcp) = mcp_serve::mcp_manifest_section(program) {
             manifest["mcp"] = mcp;
         }
@@ -614,6 +641,40 @@ fn emit_runnable(
     }
     if graph.is_pipeline_only() {
         emit_pipeline(root, program, graph, schema_id, compiler_version, generated)?;
+    }
+    if graph.needs_embed_worker() {
+        emit_embed_worker(root, program, graph, schema_id, compiler_version, generated)?;
+    }
+    Ok(())
+}
+
+/// CPython embed worker for tensor feeds and `query nearest` in app and loop
+/// programs. Runs from `python/.venv-tensor`.
+fn emit_embed_worker(
+    root: &Path,
+    program: &Program,
+    graph: &ExecutableGraph,
+    schema_id: u32,
+    compiler_version: &str,
+    generated: &mut Vec<PathBuf>,
+) -> Result<(), String> {
+    let files = [
+        (
+            root.join("python/embed_worker.py"),
+            render_template(EMBED_WORKER_PY, program, graph, schema_id, compiler_version),
+        ),
+        (
+            root.join("python/embedding_models.py"),
+            EMBEDDING_MODELS_PY.replace("__COMPILER_VERSION__", compiler_version),
+        ),
+        (
+            root.join("python/tensor_requirements.txt"),
+            TENSOR_REQUIREMENTS.to_string(),
+        ),
+    ];
+    for (path, contents) in files {
+        fs::write(&path, contents).map_err(|error| format!("write {}: {error}", path.display()))?;
+        generated.push(path);
     }
     Ok(())
 }
@@ -842,6 +903,10 @@ fn emit_pipeline(
                 schema_id,
                 compiler_version,
             ),
+        ),
+        (
+            root.join("python/embedding_models.py"),
+            EMBEDDING_MODELS_PY.replace("__COMPILER_VERSION__", compiler_version),
         ),
         (
             root.join("python/tensor_requirements.txt"),
@@ -1475,6 +1540,45 @@ fn doc_manifest(graph: &ExecutableGraph) -> serde_json::Value {
     })
 }
 
+/// The embedding model this graph runs: the app/loop embedding plan's model,
+/// or the pipeline-only `tensor::infer` model.
+fn embedding_model_entry(
+    graph: &ExecutableGraph,
+) -> Option<&'static sil_core::EmbeddingModelCatalogEntry> {
+    if let Some(plan) = &graph.embedding {
+        return Some(plan.model);
+    }
+    if graph.needs_tensor() {
+        return graph
+            .model_ref
+            .as_deref()
+            .and_then(|id| sil_core::validate_embedding_model_id(id).ok());
+    }
+    None
+}
+
+/// What `embedding_models.load_model` reads. Secrets are named by env var only.
+fn embedding_spec_json(entry: &sil_core::EmbeddingModelCatalogEntry) -> serde_json::Value {
+    let mut spec = serde_json::json!({
+        "id": entry.id,
+        "dimension": entry.dimension,
+        "provider": entry.provider.kind(),
+    });
+    if let sil_core::EmbeddingProvider::OpenAiCompatible {
+        base_url,
+        base_url_env,
+        api_key_env,
+        remote_model,
+    } = entry.provider
+    {
+        spec["base_url"] = serde_json::json!(base_url);
+        spec["base_url_env"] = serde_json::json!(base_url_env);
+        spec["api_key_env"] = serde_json::json!(api_key_env);
+        spec["remote_model"] = serde_json::json!(remote_model);
+    }
+    spec
+}
+
 fn render_template(
     template: &str,
     program: &Program,
@@ -1557,8 +1661,39 @@ fn render_template(
         "false"
     };
 
+    let embed_model = embedding_model_entry(graph)
+        .map(embedding_spec_json)
+        .unwrap_or(serde_json::Value::Null);
+    let embed_nearest = serde_json::Value::Object(
+        graph
+            .embedding
+            .iter()
+            .flat_map(|plan| plan.nearest.iter())
+            .map(|n| (n.table.clone(), serde_json::json!(n.field)))
+            .collect(),
+    );
+    let embed_ts = match &graph.embedding {
+        Some(plan) => serde_json::json!({
+            "model": plan.model.id,
+            "dimension": plan.model.dimension,
+            "feeds": plan.feeds.iter().flat_map(|f| f.tables.iter().map(move |t| {
+                (t.clone(), serde_json::json!({ "input": f.input_field, "output": f.output_field }))
+            })).collect::<serde_json::Map<_, _>>(),
+            "nearest": embed_nearest,
+            "max_limit": sil_core::loops::MAX_LOOP_LIST,
+        }),
+        None => serde_json::Value::Null,
+    };
+
     template
         .replace("__COMPILER_VERSION__", compiler_version)
+        .replace("__EMBED_MODEL_JSON__", &embed_model.to_string())
+        .replace("__EMBED_NEAREST_JSON__", &embed_nearest.to_string())
+        .replace(
+            "__EMBED_MAX_LIMIT__",
+            &sil_core::loops::MAX_LOOP_LIST.to_string(),
+        )
+        .replace("__EMBED_JSON__", &embed_ts.to_string())
         .replace("__PORT__", &graph.http_port.to_string())
         .replace("__ROUTE__", &graph.http_route)
         .replace(
@@ -1941,23 +2076,70 @@ processor EmbeddingEngine {
 
         let bun = fs::read_to_string(output.join("typescript/worker.ts")).unwrap();
         let python = fs::read_to_string(output.join("python/worker.py")).unwrap();
+        let models = fs::read_to_string(output.join("python/embedding_models.py")).unwrap();
         let requirements =
             fs::read_to_string(output.join("python/tensor_requirements.txt")).unwrap();
         let go = fs::read_to_string(output.join("go/worker.go")).unwrap();
         let manifest = fs::read_to_string(&result.manifest).unwrap();
         assert!(bun.contains("fetchExtract"));
         assert!(bun.contains("maxExtractedBytes"));
-        assert!(python.contains("CPUExecutionProvider"));
+        assert!(models.contains("CPUExecutionProvider"));
         assert!(python.contains("infer_embedding"));
+        assert!(python.contains(r#""provider":"onnx-cpu""#));
+        assert!(!output.join("python/embed_worker.py").exists());
         assert!(requirements.contains("onnxruntime=="));
         assert!(go.contains("modernc.org/sqlite"));
         assert!(manifest.contains("\"dimension\": 384"));
         assert!(manifest.contains("\"slot_capacity\": 65536"));
-        for source in [&bun, &python, &go] {
+        for source in [&bun, &python, &go, &models] {
             assert!(!source.contains("__SCHEMA_ID__"));
             assert!(!source.contains("__COMPILER_VERSION__"));
             assert!(source.contains("silc test"));
             assert!(!source.contains("TODO"));
+        }
+        fs::remove_dir_all(output).ok();
+    }
+
+    #[test]
+    fn emits_embed_worker_for_app_loop_and_llm_program() {
+        let (_program, result, output) = parse_emit(
+            include_str!("../../silc/tests/fixtures/embedding_app.silc"),
+            "embedding-app",
+        );
+        let graph = result.graph.as_ref().unwrap();
+        assert_eq!(graph.processor_op, ProcessorOp::LlmComplete);
+        assert!(graph.needs_embed_worker());
+
+        let worker = fs::read_to_string(output.join("python/embed_worker.py")).unwrap();
+        let models = fs::read_to_string(output.join("python/embedding_models.py")).unwrap();
+        let requirements =
+            fs::read_to_string(output.join("python/tensor_requirements.txt")).unwrap();
+        let bun = fs::read_to_string(output.join("typescript/worker.ts")).unwrap();
+        let app = fs::read_to_string(output.join("typescript/src/App.tsx")).unwrap();
+        let plan = fs::read_to_string(output.join("loop/plan.json")).unwrap();
+        let manifest: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&result.manifest).unwrap()).unwrap();
+
+        assert!(worker.contains(r#""dimension":384"#));
+        assert!(worker.contains(r#"{"files":"vector_embedding"}"#));
+        assert!(worker.contains("vec_distance_cosine"));
+        assert!(worker.contains("MAX_LIMIT = 10000"));
+        assert!(models.contains("class OpenAICompatible"));
+        assert!(requirements.contains("sqlite-vec=="));
+        assert!(bun
+            .contains(r#""feeds":{"files":{"input":"text_excerpt","output":"vector_embedding"}}"#));
+        assert!(bun.contains("handleNearest"));
+        assert!(app.contains(r#"__useNearestQuery("/api/files/nearest", needle, 50, setHits)"#));
+        assert!(!app.contains(r#"__useLiveQuery("/api/files", setHits)"#));
+        assert!(plan.contains(r#""embedding""#));
+        assert_eq!(manifest["embedding"]["store"], "sqlite-vec");
+        assert_eq!(manifest["embedding"]["model"]["id"], "minilm-l6-v2");
+        assert_eq!(manifest["embedding"]["model"]["provider"], "onnx-cpu");
+        assert_eq!(manifest["embedding"]["feeds"][0]["tables"][0], "files");
+        assert_eq!(manifest["embedding"]["nearest"][0]["table"], "files");
+        for source in [&worker, &models, &bun] {
+            assert!(!source.contains("__EMBED_"));
+            assert!(!source.contains("__COMPILER_VERSION__"));
         }
         fs::remove_dir_all(output).ok();
     }
