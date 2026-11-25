@@ -193,6 +193,7 @@ fn supervise_loop_kernel(
     output: &EmitResult,
     socket: &Path,
     db_path: &Path,
+    embed_socket: Option<&Path>,
     stop: Arc<AtomicBool>,
 ) -> Result<(thread::JoinHandle<()>, Arc<Mutex<Option<Child>>>), String> {
     let bin = output.root.join("go/loop/kernel");
@@ -205,6 +206,7 @@ fn supervise_loop_kernel(
     let plan = output.root.join("loop/plan.json");
     let socket = socket.to_path_buf();
     let db_path = db_path.to_path_buf();
+    let embed_socket = embed_socket.map(Path::to_path_buf);
     let slot: Arc<Mutex<Option<Child>>> = Arc::new(Mutex::new(None));
     let spawn = {
         let bin = bin.clone();
@@ -215,8 +217,11 @@ fn supervise_loop_kernel(
                 .env("SILC_DB_PATH", &db_path)
                 .env("SILC_LOOP_PLAN", &plan)
                 .stdout(Stdio::inherit())
-                .stderr(Stdio::inherit())
-                .spawn()
+                .stderr(Stdio::inherit());
+            if let Some(path) = &embed_socket {
+                cmd.env("SILC_EMBED_SOCKET", path);
+            }
+            cmd.spawn()
         }
     };
     let first = spawn().map_err(|e| format!("failed to spawn Silc loop kernel: {e}"))?;
@@ -1130,6 +1135,10 @@ pub fn run_loop_command(output: &EmitResult, lock: &RuntimeLock) -> Result<(), S
             )?);
             wait_for_pool(&workers, "python", 1, Duration::from_secs(300))?;
         }
+        let embed_socket = embed_socket_path(&socket_path);
+        if let Some(child) = spawn_embed_worker(output, graph, &embed_socket, &db_path)? {
+            children.push(child);
+        }
         eprintln!("silc: running {} once", graph.loops.join(", "));
         let mut kernel_cmd = Command::new(&kernel_bin);
         configure_worker(&mut kernel_cmd)
@@ -1139,6 +1148,9 @@ pub fn run_loop_command(output: &EmitResult, lock: &RuntimeLock) -> Result<(), S
             .env("SILC_LOOP_ONCE", "1")
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit());
+        if graph.needs_embed_worker() {
+            kernel_cmd.env("SILC_EMBED_SOCKET", &embed_socket);
+        }
         let mut kernel = kernel_cmd
             .spawn()
             .map_err(|e| format!("failed to spawn Silc loop kernel: {e}"))?;
@@ -1347,7 +1359,23 @@ fn run_graph(
         wait_for_http_health(api_port, Duration::from_secs(30))?;
     }
 
+    let embed_socket = embed_socket_path(&socket_path);
+    let embed_running = match spawn_embed_worker(output, graph, &embed_socket, &db_path) {
+        Ok(Some(child)) => {
+            children.push(child);
+            true
+        }
+        Ok(None) => false,
+        Err(error) => {
+            kill_all_workers(&mut children);
+            return Err(error);
+        }
+    };
+
     let mut bun_cmd = Command::new(&lock.bun_bin);
+    if embed_running {
+        bun_cmd.env("SILC_EMBED_SOCKET", &embed_socket);
+    }
     bun_cmd
         .arg(output.root.join("typescript/worker.ts"))
         .env("SILC_SOCKET", &socket_path)
@@ -1424,7 +1452,13 @@ fn run_graph(
     wait_for_pool(&workers, "bun", 1, Duration::from_secs(30))?;
 
     let loop_kernel = if graph.has_loops() {
-        let kernel = supervise_loop_kernel(output, &socket_path, &db_path, Arc::clone(&stop))?;
+        let kernel = supervise_loop_kernel(
+            output,
+            &socket_path,
+            &db_path,
+            embed_running.then_some(embed_socket.as_path()),
+            Arc::clone(&stop),
+        )?;
         wait_for_pool(&workers, "loop", 1, Duration::from_secs(30))?;
         Some(kernel)
     } else {
@@ -2241,6 +2275,100 @@ fn wait_for_pool(
     Err(format!(
         "timed out waiting for Silc worker pool `{role}` (>= {min})"
     ))
+}
+
+/// The embed worker's socket sits next to the supervisor socket.
+fn embed_socket_path(supervisor_socket: &Path) -> PathBuf {
+    let stem = supervisor_socket
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "silc".into());
+    supervisor_socket.with_file_name(format!("{stem}-embed.sock"))
+}
+
+/// Start the CPython embed worker (tensor feeds and `query nearest`) and wait
+/// until it answers `/health`. `None` when the program has no embeddings.
+fn spawn_embed_worker(
+    output: &EmitResult,
+    graph: &sil_core::ExecutableGraph,
+    socket: &Path,
+    db_path: &Path,
+) -> Result<Option<Child>, String> {
+    let Some(plan) = &graph.embedding else {
+        return Ok(None);
+    };
+    let python = output.root.join("python/.venv-tensor/bin/python");
+    if !python.is_file() {
+        return Err(format!(
+            "embedding Python environment missing at {} (run `silc build`)",
+            python.display()
+        ));
+    }
+    let _ = fs::remove_file(socket);
+    let mut command = Command::new(&python);
+    command
+        .arg(output.root.join("python/embed_worker.py"))
+        .env("SILC_EMBED_SOCKET", socket)
+        .env("SILC_DB_PATH", db_path)
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit());
+    if matches!(plan.model.provider, sil_core::EmbeddingProvider::OnnxCpu) {
+        let bundle = crate::models::embedding_model_paths(plan.model)?;
+        if !bundle.model_path.is_file() || !bundle.tokenizer_path.is_file() {
+            return Err(format!(
+                "embedding model `{}` is not provisioned under {} (run `silc build`)",
+                plan.model.id,
+                bundle.directory.display()
+            ));
+        }
+        command
+            .env("SILC_TENSOR_MODEL_PATH", &bundle.model_path)
+            .env("SILC_TENSOR_TOKENIZER_PATH", &bundle.tokenizer_path);
+    }
+    let mut child = configure_worker(&mut command)
+        .spawn()
+        .map_err(|e| format!("failed to spawn Silc embed worker: {e}"))?;
+    if let Err(error) = wait_for_embed_worker(socket, &mut child, Duration::from_secs(120)) {
+        kill_worker_tree(&mut child);
+        return Err(error);
+    }
+    Ok(Some(child))
+}
+
+fn wait_for_embed_worker(
+    socket: &Path,
+    child: &mut Child,
+    timeout: Duration,
+) -> Result<(), String> {
+    use std::io::{Read, Write};
+    let deadline = Instant::now() + timeout;
+    loop {
+        if let Ok(Some(status)) = child.try_wait() {
+            return Err(format!(
+                "Silc embed worker exited during startup ({status})"
+            ));
+        }
+        if let Ok(mut stream) = UnixStream::connect(socket) {
+            let _ = stream.set_read_timeout(Some(Duration::from_secs(5)));
+            let request = "GET /health HTTP/1.1\r\nHost: silc-embed\r\nConnection: close\r\n\r\n";
+            let mut reply = String::new();
+            if stream.write_all(request.as_bytes()).is_ok()
+                && stream.read_to_string(&mut reply).is_ok()
+                && reply.starts_with("HTTP/1.")
+                && reply.contains(" 200 ")
+            {
+                return Ok(());
+            }
+        }
+        if Instant::now() >= deadline {
+            return Err(format!(
+                "Silc embed worker did not become ready on {} within {}s",
+                socket.display(),
+                timeout.as_secs()
+            ));
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
 }
 
 fn short_socket_path(runtime_root: &Path) -> Result<PathBuf, String> {

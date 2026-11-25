@@ -285,6 +285,9 @@ pub struct CompatRule {
     pub message: &'static str,
 }
 
+/// One row per banned pair. `LocalModel` x `Embedding` and `Loop` x
+/// `Embedding` are legal (ADR-010 amendment): embeddings run in their own
+/// CPython worker and never take the processor slot or count as model calls.
 pub const COMPATIBILITY: &[CompatRule] = &[
     CompatRule {
         left: Capability::Scrape,
@@ -299,27 +302,18 @@ pub const COMPATIBILITY: &[CompatRule] = &[
     CompatRule {
         left: Capability::TextScore,
         right: Capability::LocalModel,
-        message: "cannot mix text::score and the local model (llm::complete or loop::ask) in one program",
+        message:
+            "cannot mix text::score and the local model (llm::complete or loop::ask) in one program",
     },
     CompatRule {
         left: Capability::TextScore,
         right: Capability::Embedding,
-        message: "cannot mix text::score/llm::complete with tensor::infer in one program",
-    },
-    CompatRule {
-        left: Capability::LocalModel,
-        right: Capability::Embedding,
-        message: "cannot mix text::score/llm::complete with tensor::infer in one program",
+        message: "cannot mix text::score with tensor::infer in one program",
     },
     CompatRule {
         left: Capability::Loop,
         right: Capability::Scrape,
-        message: "loops cannot be combined with scrape::* or tensor::* pipelines in Silc 0.7.0; use loop::read for pages",
-    },
-    CompatRule {
-        left: Capability::Loop,
-        right: Capability::Embedding,
-        message: "loops cannot be combined with scrape::* or tensor::* pipelines in Silc 0.7.0; use loop::read for pages",
+        message: "loops cannot be combined with scrape::* pipelines; use loop::read for pages",
     },
 ];
 
@@ -342,5 +336,35 @@ pub fn processor_op_name(kind: &str) -> &'static str {
         "llm" => "llm::complete",
         "tensor" => "tensor::infer",
         _ => "none",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use Capability::*;
+
+    #[test]
+    fn embedding_mixes_with_the_local_model_and_loops() {
+        assert_eq!(compatibility_message(&[LocalModel, Embedding]), None);
+        assert_eq!(compatibility_message(&[Loop, Embedding]), None);
+        assert_eq!(
+            compatibility_message(&[Ui, Loop, LocalModel, Embedding, DocExtract]),
+            None
+        );
+    }
+
+    #[test]
+    fn remaining_bans_stay() {
+        assert_eq!(
+            compatibility_message(&[TextScore, Embedding]),
+            Some("cannot mix text::score with tensor::infer in one program")
+        );
+        let scrape = compatibility_message(&[Loop, Scrape]).unwrap();
+        assert!(
+            scrape.contains("scrape::*") && !scrape.contains("tensor"),
+            "{scrape}"
+        );
+        assert!(compatibility_message(&[TextScore, LocalModel]).is_some());
     }
 }

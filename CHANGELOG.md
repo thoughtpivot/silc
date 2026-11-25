@@ -6,6 +6,36 @@ Entries before 0.5.0 are reconstructed from the commit history.
 
 ## Unreleased — planned for 0.8.0
 
+### Added
+
+- Embeddings in apps and loops (THO-132, [ADR-010](docs/ADR-010-tensor-minilm-pipeline.md)
+  amendment). A processor method `$e.field ==> tensor::tokenize ==> tensor::infer`
+  embeds that contract field on every resource write and `loop::write`. A
+  CPython embed worker runs the model; the Go loop kernel calls it for loop
+  writes. Embeds never call silclm and never count as model calls. Vectors are
+  kept out of `loop_events` and recomputed on replay.
+- `query nearest;` on resources and `query $.hits = R.nearest($.needle, k);`
+  in components: cosine ranking with sqlite-vec, best first, `k` an integer
+  literal up to 10000. A blank needle returns no rows.
+- Embedding models declare their dimension, and `vector_embedding` must match
+  it. `minilm-l6-v2` (384, CPU) stays the default; `nomic-embed-text` (768) and
+  `text-embedding-3-small` (1536) are served through an OpenAI-compatible
+  `/embeddings` endpoint.
+
+### Changed
+
+- `llm::complete` (and `loop::ask`) may share a program with `tensor::infer`,
+  and loops may embed: the LocalModel × Embedding and Loop × Embedding
+  compatibility rules are removed. `text::score` × `tensor::infer` and
+  `loop` × `scrape::*` stay banned.
+- In app and loop programs `tensor::infer` no longer takes the processor slot
+  and no longer needs `scrape::page`, `scrape::extract`, one service, or a
+  `raw_content` field. Scrape-only programs keep the pipeline behaviour.
+- The `:prefer(CUDA)` diagnostic names the compiler's major.minor release
+  instead of a hard-coded version.
+
+### Planned
+
 These are the next source changes, tracked in Linear. `loop::fallback` and the
 `Contract.new` type check, and the THO-560 items below are implemented on
 `main`; the rest is not yet.
@@ -43,8 +73,9 @@ These are the next source changes, tracked in Linear. `loop::fallback` and the
   vector, or a value of unknown type is rejected at validation with a message
   naming the field, the expected type, and the found type. Nothing coerces
   (THO-578).
-- Loop embeddings, nearest-neighbor `loop::find`, and page-read `:into` plus
-  `:select` on `loop::read` (THO-551 to THO-555).
+- Embedding steps in `loop::let` (THO-552), nearest-neighbor `loop::find`
+  (THO-553), and page-read `:into` plus `:select` on `loop::read` (THO-551 to
+  THO-555).
 
 ## 0.7.0 — 2026-11-25
 

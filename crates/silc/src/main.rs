@@ -440,6 +440,12 @@ fn compile_common(
             models::ensure_embedding_model(model_id)?;
             supervisor::build_tensor_python(&lock, &output.root)?;
         }
+        if let Some(plan) = &graph.embedding {
+            if matches!(plan.model.provider, sil_core::EmbeddingProvider::OnnxCpu) {
+                models::ensure_embedding_model(plan.model.id)?;
+            }
+            supervisor::build_tensor_python(&lock, &output.root)?;
+        }
     }
 
     // A loop command's stdout is its result; keep compiler chatter on stderr.

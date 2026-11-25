@@ -1145,3 +1145,156 @@ func TestFallbackTriesReadsInOrderAndBindsTheFirstAccepted(t *testing.T) {
 		t.Fatalf("replay posts no second notice, got %d", n)
 	}
 }
+
+// ---------------------------------------------------------------- embeddings
+
+type fakeEmbedder struct {
+	dim     int
+	embeds  int
+	texts   []string
+	nearest []map[string]any
+}
+
+func (f *fakeEmbedder) Embed(texts []string) ([][]float64, error) {
+	f.embeds++
+	f.texts = append(f.texts, texts...)
+	out := make([][]float64, len(texts))
+	for i, text := range texts {
+		vec := make([]float64, f.dim)
+		vec[len(text)%f.dim] = 1
+		out[i] = vec
+	}
+	return out, nil
+}
+
+func (f *fakeEmbedder) Nearest(table, needle string, limit int) ([]map[string]any, error) {
+	if len(f.nearest) > limit {
+		return f.nearest[:limit], nil
+	}
+	return f.nearest, nil
+}
+
+func newEmbedHarness(t *testing.T) (*harness, *fakeEmbedder) {
+	t.Helper()
+	h := newBareHarness(t, "2026-10-05T12:00:00Z", "embed_plan.json")
+	if h.k.plan.Embedding == nil {
+		t.Fatal("embed_plan.json has no embedding section")
+	}
+	e := &fakeEmbedder{dim: h.k.plan.Embedding.Dimension}
+	h.k.embedder = e
+	return h, e
+}
+
+func (h *harness) eventsMentioning(text string) int {
+	var n int
+	_ = h.db.QueryRow("SELECT COUNT(*) FROM loop_events WHERE value LIKE ?", "%"+text+"%").Scan(&n)
+	return n
+}
+
+func TestLoopWriteEmbedsFeedWithoutModelCallsOrLoggedVectors(t *testing.T) {
+	h, e := newEmbedHarness(t)
+	h.runNow("IndexFiles", "req-1")
+	row := h.one("files")
+	vec, ok := row["vector_embedding"].([]any)
+	if !ok || len(vec) != 384 {
+		t.Fatalf("want a 384-float vector_embedding, got %v", row["vector_embedding"])
+	}
+	if e.embeds != 1 || !strings.HasPrefix(e.texts[0], "Daily notes for ") {
+		t.Fatalf("want one embed of the feed field, got %d: %v", e.embeds, e.texts)
+	}
+	if h.asker.calls != 0 {
+		t.Fatalf("embeds must never call silclm; asker called %d times", h.asker.calls)
+	}
+	if n := h.eventsMentioning("vector_embedding"); n != 0 {
+		t.Fatalf("vectors must stay out of loop_events; %d events mention one", n)
+	}
+}
+
+func TestLoopWriteWithoutEmbedderStoresRowWithoutVector(t *testing.T) {
+	h, _ := newEmbedHarness(t)
+	h.k.embedder = nil
+	h.runNow("IndexFiles", "req-1")
+	row := h.one("files")
+	if _, has := row["vector_embedding"]; has {
+		t.Fatalf("no embed worker: row should wait for the sweep, got %v", row)
+	}
+}
+
+func TestFindStripsVectorsFromRecordedRows(t *testing.T) {
+	h, _ := newEmbedHarness(t)
+	h.seed("files", "f-1", map[string]any{"name": "a.txt", "text_excerpt": "alpha", "vector_embedding": []any{1.0, 0.0}})
+	run := &Run{ID: "run-find", Data: map[string]any{}}
+	c := &runCtx{k: h.k, plan: h.k.plan, lp: &h.k.plan.Loops[0], run: run, recorded: map[string]string{}, items: map[string]int{}}
+	sc := &scope{vars: map[string]any{}}
+	st := Step{Op: "find", As: "all", Resource: "Files", Table: "files", Max: 10}
+	if out := c.step(&st, sc, "0", false); out.s != sigNone {
+		t.Fatalf("find failed: %v", out.reason)
+	}
+	rows := sc.vars["all"].([]any)
+	if len(rows) != 1 {
+		t.Fatalf("want 1 row, got %v", rows)
+	}
+	if _, has := rows[0].(map[string]any)["vector_embedding"]; has {
+		t.Fatal("find must not carry vectors into scope or loop_events")
+	}
+	if n := h.eventsMentioning("vector_embedding"); n != 0 {
+		t.Fatalf("%d events mention vector_embedding", n)
+	}
+}
+
+func TestEmbedStepIsRecomputedOnReplay(t *testing.T) {
+	h, e := newEmbedHarness(t)
+	run := &Run{ID: "run-embed", Data: map[string]any{}}
+	st := Step{Op: "embed", As: "vec", From: &Expr{K: "str", S: "hello"}}
+	for pass := 1; pass <= 2; pass++ {
+		c := &runCtx{k: h.k, plan: h.k.plan, lp: &h.k.plan.Loops[0], run: run, recorded: map[string]string{}, items: map[string]int{}}
+		if err := c.loadEvents(); err != nil {
+			t.Fatal(err)
+		}
+		sc := &scope{vars: map[string]any{}}
+		if out := c.step(&st, sc, "0", false); out.s != sigNone {
+			t.Fatalf("pass %d: embed failed: %v", pass, out.reason)
+		}
+		if vec := sc.vars["vec"].([]any); len(vec) != 384 {
+			t.Fatalf("pass %d: want 384 floats, got %d", pass, len(vec))
+		}
+		if e.embeds != pass {
+			t.Fatalf("pass %d: want %d embeds (replay recomputes), got %d", pass, pass, e.embeds)
+		}
+	}
+	if n := h.eventCount("run-embed", "embed"); n != 0 {
+		t.Fatalf("embed results must not be recorded; got %d events", n)
+	}
+	if h.asker.calls != 0 {
+		t.Fatalf("embed called silclm %d times", h.asker.calls)
+	}
+}
+
+func TestNearestStepRanksThroughEmbedderAndSkipsBlankNeedles(t *testing.T) {
+	h, e := newEmbedHarness(t)
+	e.nearest = []map[string]any{
+		{"id": "f-1", "name": "best", "vector_embedding": []any{1.0}},
+		{"id": "f-2", "name": "next"},
+	}
+	run := &Run{ID: "run-near", Data: map[string]any{}}
+	c := &runCtx{k: h.k, plan: h.k.plan, lp: &h.k.plan.Loops[0], run: run, recorded: map[string]string{}, items: map[string]int{}}
+	sc := &scope{vars: map[string]any{}}
+	st := Step{Op: "nearest", As: "hits", Resource: "Files", Table: "files", From: &Expr{K: "str", S: "notes"}, Max: 1}
+	if out := c.step(&st, sc, "0", false); out.s != sigNone {
+		t.Fatalf("nearest failed: %v", out.reason)
+	}
+	hits := sc.vars["hits"].([]any)
+	if len(hits) != 1 || hits[0].(map[string]any)["name"] != "best" {
+		t.Fatalf("want the single best row, got %v", hits)
+	}
+	if _, has := hits[0].(map[string]any)["vector_embedding"]; has {
+		t.Fatal("nearest rows must not carry vectors")
+	}
+	blank := Step{Op: "nearest", As: "none", Resource: "Files", Table: "files", From: &Expr{K: "str", S: "  "}, Max: 5}
+	if out := c.step(&blank, sc, "1", false); out.s != sigNone {
+		t.Fatalf("blank nearest failed: %v", out.reason)
+	}
+	if got := sc.vars["none"].([]any); len(got) != 0 {
+		t.Fatalf("blank needle should return no rows, got %v", got)
+	}
+}

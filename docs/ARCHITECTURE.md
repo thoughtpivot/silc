@@ -241,6 +241,13 @@ exposes a synthesized `POST /mcp` server (tools from resources and
 schedule/manual loops; auth via `SILC_MCP_TOKEN`) so agents can attach without
 speaking the compiler-owned REST routes.
 
+**Embeddings.** When an app or loop program embeds a contract field
+(`tensor::tokenize ==> tensor::infer`), the supervisor starts a CPython embed
+worker on a Unix socket. Bun and the Go loop kernel call it on writes. Vectors
+live in the app database, and `query nearest` ranks rows by cosine with
+sqlite-vec. The loop event log never stores vectors; replay recomputes them
+([ADR-010](ADR-010-tensor-minilm-pipeline.md) amendment).
+
 Codegen consumes one component graph and emits equal web and terminal adapters.
 Web lowers to compiler-owned React/Tailwind templates. Terminal lowers to a
 compiler-owned **OpenTUI** app that renders the same routes, state, events, and

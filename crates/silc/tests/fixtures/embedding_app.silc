@@ -1,0 +1,99 @@
+#!/usr/bin/env silc
+# Fixture for embeddings in an app and a loop (THO-132): one program with an
+# app, a loop, llm::complete, doc::extract, a tensor feed, and query nearest.
+@version("0.7.1")
+
+subset Emb384 of Vec[num32; 384];
+
+contract FileEntry {
+    has Str $.id;
+    has Str $.name;
+    has Str $.text_excerpt;
+    has Emb384 $.vector_embedding;
+}
+
+contract Document {
+    has Str $.title;
+    has Str $.body;
+    has Str $.filename;
+    has Str $.mime;
+    has Str $.format;
+    has Str $.char_count;
+}
+
+contract Note {
+    has Str $.prompt;
+    has Str $.reply;
+}
+
+resource Files for FileEntry {
+    query list;
+    query nearest;
+    mutation create;
+}
+
+resource Documents for Document {
+    query list;
+    mutation create;
+}
+
+resource Notes for Note {
+    query list;
+    mutation create;
+}
+
+processor Embedder {
+    method embed(FileEntry $e) {
+        $e.text_excerpt ==> tensor::tokenize(:model("minilm-l6-v2"))
+            ==> tensor::infer(:prefer(CPU))
+    }
+}
+
+processor Assistant {
+    method complete(Note $note) {
+        $note.prompt ==> llm::complete()
+    }
+}
+
+service Extractor {
+    method run() {
+        $upload ==> doc::extract(:into(Document))
+    }
+}
+
+loop IndexFiles {
+    loop::flow(
+        loop::manual(),
+        loop::write(
+            :to(Files.create),
+            :key("file:{$today}"),
+            :value(FileEntry.new(
+                :name("daily.txt"),
+                :text_excerpt("Daily notes for {$today}")
+            ))
+        )
+    )
+}
+
+component SearchPage {
+    has state Str $.needle = "";
+    query $.hits = Files.nearest($.needle, 50);
+
+    method render() {
+        ui::page(
+            :app_bar(ui::app_bar(:title("Search"))),
+            ui::stack(
+                ui::text_input(:field(needle), :label("Search")),
+                ui::table(
+                    :rows($.hits),
+                    :columns(["name", "text_excerpt"]),
+                    :empty_text("Type to search.")
+                )
+            )
+        )
+    }
+}
+
+app SearchApp {
+    route "/" => SearchPage;
+}
