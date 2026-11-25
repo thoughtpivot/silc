@@ -628,6 +628,14 @@ Engines are pinned and checksum-verified (Bun 1.2.18, CPython 3.12.12,
 Go 1.23.6) under `~/.silc/runtimes/`. There is no PATH override surface and no
 author-facing engine picker.
 
+Programs that use a local model install `llama-cpp-python` 0.3.38. Silc
+installs a prebuilt wheel where one exists, so most hosts never compile
+llama.cpp. Otherwise it builds from source with an explicit compiler: your
+`CC` / `CXX` if set, else clang, else gcc/g++, else cc/c++. It fails early,
+naming the missing tool, when no C/C++ compiler is installed. Set
+`SILC_LLAMA_CPP_SOURCE=1` to skip the prebuilt wheel and always build from
+source.
+
 ```text
 Silc source (.silc)
         │

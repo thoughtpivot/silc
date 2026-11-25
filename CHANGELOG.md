@@ -7,8 +7,23 @@ Entries before 0.5.0 are reconstructed from the commit history.
 ## Unreleased — planned for 0.8.0
 
 These are the next source changes, tracked in Linear. `loop::fallback` and the
-`Contract.new` type check are implemented on `main`; the rest is not yet.
+`Contract.new` type check, and the THO-560 items below are implemented on
+`main`; the rest is not yet.
 
+- Implemented: `llama-cpp-python` is pinned at 0.3.38, up from 0.3.7, which no
+  longer compiles on current toolchains (`unknown type name 'uint32_t'`).
+  Minimum: `llama-cpp-python` 0.3.38. The generated-app calls (`Llama(...)`,
+  `create_chat_completion`, `__call__`) are unchanged, and the CI
+  `<cstdint>` compiler-flag workaround is removed (THO-560).
+- Implemented: model programs build on hosts that have gcc/g++ but no clang.
+  The python-build-standalone CPython bakes `CC=clang` into its `sysconfig`,
+  so the source build failed with "Silc install of compiler-pinned
+  llama-cpp-python failed". Silc now installs a prebuilt wheel when one
+  exists (Linux x86_64/aarch64, macOS arm64) and otherwise builds from source
+  with an explicit `CC`/`CXX`: yours if set, else clang, else gcc/g++, else
+  cc/c++. With no compiler it stops early, names the missing tool, and says
+  how to install it. `SILC_LLAMA_CPP_SOURCE=1` forces the source build. CI
+  gains a gcc-only job that builds a model example (THO-560).
 - `@version` accepts a major.minor match, so a `0.8.x` program builds on any
   `0.8` compiler instead of requiring the exact patch version (THO-558).
 - **Implemented:** `loop::fallback`: two or more `loop::read` attempts in
