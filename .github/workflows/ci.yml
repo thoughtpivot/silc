@@ -42,6 +42,13 @@ jobs:
           cargo test -p sil-codegen emits_resource_app_with_actions
 
       - name: Build standalone example apps
+        # THO-560: llama-cpp-python 0.3.7 does not compile on the current
+        # ubuntu-latest toolchain (missing <cstdint>). Force-include it until
+        # the pin is bumped in 0.8.0. Linux only; macOS builds without it.
+        # CMAKE_ARGS reaches only the pip/CMake build. CFLAGS/CXXFLAGS would
+        # also leak into cargo's cc-rs and break the Rust build.
+        env:
+          CMAKE_ARGS: ${{ runner.os == 'Linux' && '-DCMAKE_CXX_FLAGS="-include cstdint"' || '' }}
         run: |
           cargo build -p silc
           cargo test -p silc --test docs_conformance -- --test-threads=1
@@ -99,6 +106,11 @@ jobs:
           key: silc-0.7.0-onnx-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('crates/sil-codegen/templates/*requirements.txt', 'crates/sil-core/src/model_catalog.rs') }}
 
       - name: Build all standalone examples
+        # THO-560: force-include <cstdint> so llama-cpp-python 0.3.7 builds on
+        # the current ubuntu-latest toolchain. Remove with the 0.8.0 pin bump.
+        # CMAKE_ARGS reaches only the pip/CMake build, not cargo's cc-rs.
+        env:
+          CMAKE_ARGS: '-DCMAKE_CXX_FLAGS="-include cstdint"'
         run: |
           cargo build -p silc
           find examples -name main.silc -print | sort | while read -r src; do

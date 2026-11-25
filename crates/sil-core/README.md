@@ -5,5 +5,5 @@ Subject-oriented semantic model for ThoughtPivot [Silc](https://github.com/thoug
 This crate is a library dependency of the Silc compiler. Install the CLI with:
 
 ```bash
-cargo install silc
+cargo install --locked silc
 ```

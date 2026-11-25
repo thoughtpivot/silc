@@ -21,7 +21,7 @@ intent, selects the right engines, and synthesizes the runtime.
    interface.
 
 After those four come real-time 3D and operational applications. The compiler
-thesis, pinned runtimes, and the 0.5.0 `loop` subject follow in full.
+thesis, pinned runtimes, and the `loop` subject follow in full.
 Architecture, engineering, and construction (AEC) is a strong domain Silc
 already speaks to: Virtual Design and Construction (VDC), construction
 project environments, and RFIs. Silc stays a generic intent language and
@@ -82,8 +82,8 @@ decisions—not prompt decisions.
 
 ### 3. Loops
 
-`loop Name { loop::flow(...) }` declares work that runs on its own. Release
-0.5.0 adds this subject for scheduled, approval-gated, model-assisted work
+`loop Name { loop::flow(...) }` declares work that runs on its own: scheduled,
+approval-gated, model-assisted work
 ([ADR-014](docs/ADR-014-loop-subject.md)). A cron schedule in an explicit time
 zone, Run now, or a resource mutation starts a run. Steps come from a closed
 `loop::*` catalog: find rows, read outside data (`scrape::page`, or one MCP
@@ -126,7 +126,7 @@ A `scene` program and a dual-surface `app` program are distinct roots today.
 Silc does not yet embed a `ui::` application inside a `scene::` world. They
 share the language, compiler, runtime ownership model, and generic primitives.
 
-The 0.5.0 node list is in What ships today, under Real-time 3D. See
+The node list is in What ships today, under Real-time 3D. See
 [ADR-012](docs/ADR-012-webgpu-game-subject.md).
 
 ---
@@ -268,9 +268,8 @@ silc run main.silc --input-json '{"url":"https://example.com/"}'
 
 ### 3. A scheduled loop
 
-Release 0.5.0 adds `loop Name { loop::flow(...) }` for scheduled,
-approval-gated, model-assisted work
-([ADR-014](docs/ADR-014-loop-subject.md)). A complete program is under
+`loop Name { loop::flow(...) }` declares scheduled, approval-gated,
+model-assisted work ([ADR-014](docs/ADR-014-loop-subject.md)). A complete program is under
 [Scheduled loops](#scheduled-loops).
 
 - [`examples/core/mcpLoopApp`](examples/core/mcpLoopApp/) — MCP loop command: one `mcp::call`, a silclm brief, one keyed note. The same file's README shows the scheduled inbox and the `app` form
@@ -461,9 +460,21 @@ lives in [docs/domains/vdc.md](docs/domains/vdc.md) and
 
 ## Quick start
 
+Install the compiler from crates.io (Rust 1.86 or newer):
+
+```bash
+cargo install --locked silc
+```
+
+To build from a checkout instead:
+
 ```bash
 cargo install --path crates/silc --force
+```
 
+Then create and run an app:
+
+```bash
 silc init myapp
 cd myapp
 silc build main.silc   # validate + codegen
@@ -503,8 +514,8 @@ See [`examples/README.md`](examples/README.md).
 
 Silc is **pre-1.0**. Release 0.4.0 made the product rule explicit: authors
 declare intent; the compiler synthesizes runtime mechanics
-([ADR-009](docs/ADR-009-compiler-synthesized-runtime.md)). Release 0.5.0 adds
-the `loop` subject for scheduled, approval-gated, model-assisted work
+([ADR-009](docs/ADR-009-compiler-synthesized-runtime.md)). The `loop` subject
+covers scheduled, approval-gated, model-assisted work
 ([ADR-014](docs/ADR-014-loop-subject.md)).
 
 ### Applications
@@ -791,7 +802,7 @@ Pre-1.0 SemVer 0.x: breaking language/compiler changes bump the minor.
 | [docs/ADR-017-ui-embed.md](docs/ADR-017-ui-embed.md) | `ui::embed` dual-surface URL viewport |
 | [docs/ADR-018-files-capability.md](docs/ADR-018-files-capability.md) | Sysop-shared files (`files` + `ui::file_browser`) |
 | [docs/ADR-019-vran-language-into-loop.md](docs/ADR-019-vran-language-into-loop.md) | Vran 0.1 language ideas folded into the closed `loop::*` catalog |
-| [docs/vran-0.1-loop-grammar.md](docs/vran-0.1-loop-grammar.md) | Billy's Loop grammar, copied from vran-oss; conformance unconfirmed |
+| [docs/vran-0.1-loop-grammar.md](docs/vran-0.1-loop-grammar.md) | Billy's Loop grammar, copied from vran-oss, with the mapping to `loop::*` confirmed by Dan (24 Nov 2026) |
 | [docs/domains/vdc.md](docs/domains/vdc.md) | VDC / AEC domain (go-to-market, not language identity) |
 | [docs/SILC-IPC-ABI-v1.md](docs/SILC-IPC-ABI-v1.md) | Shared buffer ABI |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |

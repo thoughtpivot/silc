@@ -74,7 +74,7 @@ Accepted rows include `program`, `program_sha256`, `execution_mode`,
 ## Historical declarator benchmark (`subject-first-bench`)
 
 Reproduce the historical class-is vs direct-declaration comparison. The
-harness name keeps the 0.3.0 “subject-first” label for continuity; Silc 0.5.0
+harness name keeps the 0.3.0 “subject-first” label for continuity; Silc 0.7.0
 product guidance uses **direct declarations** / intent surface (see
 [docs/intent-vs-subjects.md](../docs/intent-vs-subjects.md)). Evidence docs:
 [docs/subject-first-declarators.md](../docs/subject-first-declarators.md) and

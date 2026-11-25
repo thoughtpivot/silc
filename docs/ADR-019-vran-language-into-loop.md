@@ -27,7 +27,8 @@ against `spec/vran-0.1.md`, `spec/grammar.ebnf`, and `spec/plugins.md`.
 The grammar and the syntax sections of the spec are copied verbatim in
 [vran-0.1-loop-grammar.md](vran-0.1-loop-grammar.md). This ADR does not claim
 that the `loop::*` catalog conforms to that grammar. The comparison table in
-the grammar note is for Dan to confirm. Every row there is unconfirmed.
+the grammar note is the mapping, confirmed by Dan on 24 November 2026. Each
+row is Kept, Changed, Planned 0.8.0, or Dropped.
 
 On 8 October 2026 Dan Stephenson decided that this draft is folded into Silc
 as an ADR on the `loop` declaration, and that the vran-oss repository will be
@@ -88,9 +89,9 @@ form).
 Shipped means the node or rule is in `LOOP_NODE_CATALOG` and described by
 ADR-014. Proposed means this ADR adopts the idea as future catalog work.
 Nothing in the Proposed column is implemented. Neither label means the
-catalog has been checked against Billy's grammar. That check is the
-unconfirmed table in
-[vran-0.1-loop-grammar.md](vran-0.1-loop-grammar.md).
+catalog conforms to Billy's grammar. The construct-by-construct disposition
+is the table in [vran-0.1-loop-grammar.md](vran-0.1-loop-grammar.md),
+confirmed by Dan on 24 November 2026.
 
 | Draft concept | Silc |
 | --- | --- |
@@ -102,11 +103,11 @@ unconfirmed table in
 | `find` / `find one`, `where`, `order by`, `max` | Shipped as `loop::find` (`:max`, `:one`, `:where`, `:order`, `:desc`). The source is a Silc resource query, not a plugin-backed register. |
 | `read` with `retry` | Shipped as `loop::read`. The closed operations are `scrape::page` and `mcp::call`. Answers are recorded for replay. |
 | `ask` returning a declared type, with `retry` and an `else` that must terminate | Shipped as `loop::ask` (`:into` a contract, `:retry`, `loop::otherwise` ending in `stop`, `fail`, or `skip`). The model is silclm. |
-| `ask` `cite` / `using` a model profile | Citations are **Proposed** as options on `loop::ask`, not shipped. Named model profiles and vendor packages are not adopted. |
+| `ask` `cite` / `using` a model profile | Citations and multi-value `from` are **Proposed** as options on `loop::ask`, planned for 0.8.0 (THO-559), not shipped. Named model profiles and vendor packages are not adopted. |
 | `check` (fail closed, including unknown) | Shipped as `loop::gate`. |
 | `match` | Shipped as `loop::branch` with `loop::when` and a required `loop::otherwise`. |
 | `each` with a required `max` | Shipped as `loop::each`. |
-| `fallback` (two or more reads, `accept when`, terminating `else`) | **Proposed** as `loop::fallback`. Not shipped. |
+| `fallback` (two or more reads, `accept when`, terminating `else`) | **Proposed** as `loop::fallback`, planned for 0.8.0 (THO-559). Not shipped. |
 | `signoff` with `by`, `within`, required declined and timed-out blocks | Shipped as `loop::approve` with `loop::declined` and `loop::timed_out`. The inbox is `/loops`. A plugin `channel` (`via teams.approval`) is not adopted. |
 | `upsert` into a register | Shipped as `loop::write` to a Silc resource mutation, with a `:key`. |
 | `do` an external effect | Shipped only as `loop::notify`, which writes an in-app notice. External delivery is not shipped. |
@@ -135,11 +136,11 @@ These are proposals only. They are not nodes, options, or kernel behavior
 until a later change lands in `crates/sil-core/src/loops.rs` and the loop
 kernel.
 
-1. **`loop::fallback`.** Two or more `loop::read` attempts, in order, kept
+1. **`loop::fallback`** (planned for 0.8.0, THO-559). Two or more `loop::read` attempts, in order, kept
    when a condition holds, with a terminating `otherwise` when none hold.
    `retry` on one read stays "same operation again." Fallback stays "a
    different read."
-2. **Citations on `loop::ask`.** An optional list of source bindings. The
+2. **Citations on `loop::ask`** (planned for 0.8.0, THO-559). An optional list of source bindings. The
    contract that receives the answer has a citations field. The kernel
    accepts an answer only when each quote occurs in a cited source. The
    model remains silclm.
