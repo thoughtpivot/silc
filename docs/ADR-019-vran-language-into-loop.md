@@ -11,7 +11,7 @@
   amendment of the same date.
 - **Canonical:** the shipped catalog is
   [`LOOP_NODE_CATALOG`](../crates/sil-core/src/loops.rs). This ADR does not
-  add nodes to it.
+  add nodes to it; `loop::fallback` (proposal 1) landed there under THO-559.
 
 ## Context
 
@@ -103,11 +103,11 @@ confirmed by Dan on 24 November 2026.
 | `find` / `find one`, `where`, `order by`, `max` | Shipped as `loop::find` (`:max`, `:one`, `:where`, `:order`, `:desc`). The source is a Silc resource query, not a plugin-backed register. |
 | `read` with `retry` | Shipped as `loop::read`. The closed operations are `scrape::page` and `mcp::call`. Answers are recorded for replay. |
 | `ask` returning a declared type, with `retry` and an `else` that must terminate | Shipped as `loop::ask` (`:into` a contract, `:retry`, `loop::otherwise` ending in `stop`, `fail`, or `skip`). The model is silclm. |
-| `ask` `cite` / `using` a model profile | Citations and multi-value `from` are **Proposed** as options on `loop::ask`, planned for 0.8.0 (THO-559), not shipped. Named model profiles and vendor packages are not adopted. |
+| `ask` `cite` / `using` a model profile | Multi-value `from` is **Proposed** as an option on `loop::ask`, planned for 0.8.0 (THO-555). Citations are **Proposed** and deferred out of 0.8.0 (THO-559 Part 2). Neither is shipped. Named model profiles and vendor packages are not adopted. |
 | `check` (fail closed, including unknown) | Shipped as `loop::gate`. |
 | `match` | Shipped as `loop::branch` with `loop::when` and a required `loop::otherwise`. |
 | `each` with a required `max` | Shipped as `loop::each`. |
-| `fallback` (two or more reads, `accept when`, terminating `else`) | **Proposed** as `loop::fallback`, planned for 0.8.0 (THO-559). Not shipped. |
+| `fallback` (two or more reads, `accept when`, terminating `else`) | **Shipped (0.8.0, unreleased)** as `loop::fallback` (THO-559 Part 1): `:as`, `:accept`, two or more `loop::read` attempts without `:as`, and a required `loop::otherwise` ending in `stop`, `fail`, or `skip`. |
 | `signoff` with `by`, `within`, required declined and timed-out blocks | Shipped as `loop::approve` with `loop::declined` and `loop::timed_out`. The inbox is `/loops`. A plugin `channel` (`via teams.approval`) is not adopted. |
 | `upsert` into a register | Shipped as `loop::write` to a Silc resource mutation, with a `:key`. |
 | `do` an external effect | Shipped only as `loop::notify`, which writes an in-app notice. External delivery is not shipped. |
@@ -132,15 +132,18 @@ call, not an imported package.
 
 ## Proposed catalog additions
 
-These are proposals only. They are not nodes, options, or kernel behavior
-until a later change lands in `crates/sil-core/src/loops.rs` and the loop
-kernel.
+Proposal 1 shipped in `crates/sil-core/src/loops.rs` and the loop kernel
+(0.8.0, unreleased). Proposals 2 to 4 are still proposals only: they are not
+nodes, options, or kernel behavior until a later change lands.
 
-1. **`loop::fallback`** (planned for 0.8.0, THO-559). Two or more `loop::read` attempts, in order, kept
-   when a condition holds, with a terminating `otherwise` when none hold.
-   `retry` on one read stays "same operation again." Fallback stays "a
-   different read."
-2. **Citations on `loop::ask`** (planned for 0.8.0, THO-559). An optional list of source bindings. The
+1. **`loop::fallback`** (shipped in 0.8.0, unreleased; THO-559 Part 1). Two or
+   more `loop::read` attempts, in order, kept when `:accept` holds, with a
+   terminating `otherwise` when none hold. `retry` on one read stays "same
+   operation again." Fallback stays "a different read." A failed fetch, or an
+   `:accept` that is false or unknown, tries the next attempt. The attempts
+   share one read operation, each is recorded as its own `loop_events` read, and
+   the worst-case report counts every attempt.
+2. **Citations on `loop::ask`** (deferred out of 0.8.0; THO-559 Part 2). An optional list of source bindings. The
    contract that receives the answer has a citations field. The kernel
    accepts an answer only when each quote occurs in a cited source. The
    model remains silclm.
@@ -196,9 +199,9 @@ which sends mail and chat and does not call a model.
 
 - Authors keep one declaration, `loop`, and one closed catalog. The draft's
   guarantees that Silc already enforces stay in ADR-014.
-- The four proposals above are not implemented. A program cannot write
-  `loop::fallback`, cannot cite sources from `loop::ask`, and cannot mark an
-  effect irreversible.
+- Proposal 1 (`loop::fallback`) is implemented. Proposals 2 to 4 are not: a
+  program cannot cite sources from `loop::ask` (deferred out of 0.8.0), and
+  cannot mark an effect irreversible.
 - vran-oss is the source of this mapping and is to be retired. Silc does not
   vendor its grammar, lockfile, or examples.
 - ADR-015, as amended on this date, records that the Vran app is not paused.

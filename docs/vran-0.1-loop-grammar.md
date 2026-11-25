@@ -26,8 +26,10 @@ Status values:
   spelling may differ.
 - **Changed**: Silc adopted the idea in a different shape, as the middle column
   says.
-- **Planned 0.8.0**: not in the 0.7.0 catalog. It is scheduled for 0.8.0
-  (THO-559; see [CHANGELOG.md](../CHANGELOG.md)).
+- **Planned 0.8.0**: not in the catalog yet. It is scheduled for 0.8.0 (see
+  [CHANGELOG.md](../CHANGELOG.md)). `fallback` was planned for 0.8.0 and is now
+  Changed (THO-559 Part 1).
+- **Planned**: not in the catalog and not scheduled for 0.8.0.
 - **Dropped**: Silc does not take it.
 
 | Grammar construct | Silc `loop` equivalent | Status |
@@ -49,14 +51,14 @@ Status values:
 | `ask` `returns`, `retry`, and `else` | `loop::ask` `:into`, `:retry`, and `loop::otherwise` | Kept |
 | `ask` single-value `from` | `loop::ask` `:from` | Kept |
 | `ask` multi-value `from` | `loop::ask` `:from` with several bindings | Planned 0.8.0 |
-| `ask` `cite` | citations on `loop::ask` | Planned 0.8.0 |
+| `ask` `cite` | citations on `loop::ask` (deferred out of 0.8.0, THO-559 Part 2) | Planned |
 | `ask` `using` (model choice) | none; the model is silclm | Dropped |
 | `let` | `loop::let` | Kept |
 | `find` / `find one` | `loop::find` | Kept |
 | `check` | `loop::gate` | Kept |
 | `match` / `when` / `else` | `loop::branch`, `loop::when`, `loop::otherwise` | Kept |
 | `each` … `max` | `loop::each` | Kept |
-| `fallback` | `loop::fallback` | Planned 0.8.0 |
+| `fallback` `try read from` attempts, `accept when`, `else` | `loop::fallback` with `:as`, `:accept`, two or more `loop::read` attempts, and a terminating `loop::otherwise` | Changed |
 | `signoff` `by`, `within`, `when declined`, `when timed_out` | `loop::approve`, `loop::declined`, `loop::timed_out` | Kept |
 | `signoff` `via` (approval channel) | none; approval is the synthesized `/loops` inbox | Dropped |
 | `upsert` | `loop::write` to a Silc resource mutation | Changed |

@@ -1,0 +1,31 @@
+# Compiler fixture for loop::fallback (THO-559): a command loop that tries a
+# changelog page, then a releases page, and skips a dependency when neither
+# reads. The first read that satisfies :accept binds `page`.
+@version("0.7.1")
+
+contract Dep {
+    has Str $.id;
+    has Str $.name;
+    has Str $.changelog;
+    has Str $.releases;
+}
+
+resource Deps for Dep {
+    query list;
+    mutation create;
+}
+
+loop ReadDeps {
+    loop::flow(
+        loop::manual(),
+        loop::find(:as(deps), :from(Deps.list), :max(10)),
+        loop::each(:in($deps), :as(dep), :max(10),
+            loop::fallback(:as(page), :accept($page.status == 200 && $page.text != ""),
+                loop::read(scrape::page(:url($dep.changelog)), :retry(0)),
+                loop::read(scrape::page(:url($dep.releases)), :retry(0)),
+                loop::otherwise(loop::skip(:reason("no readable changelog for {$dep.name}")))
+            ),
+            loop::notify(:to("Reader"), :text("{$dep.name}: {$page.title}"), :key("{$dep.id}:{$today}"))
+        )
+    )
+}

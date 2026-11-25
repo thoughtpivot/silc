@@ -1058,3 +1058,90 @@ func TestKernelDBLockReleasedWhenHolderExits(t *testing.T) {
 	}
 	got.Close()
 }
+
+// ---------------------------------------------------------------- loop::fallback (THO-559)
+
+func TestFallbackTriesReadsInOrderAndBindsTheFirstAccepted(t *testing.T) {
+	h := newBareHarness(t, "2026-10-05T10:00:00Z", "fallback_plan.json")
+	h.seed("deps", "a", map[string]any{"name": "alpha", "changelog": "https://a.test/changelog", "releases": "https://a.test/releases"})
+	h.seed("deps", "b", map[string]any{"name": "beta", "changelog": "https://b.test/changelog", "releases": "https://b.test/releases"})
+	h.seed("deps", "c", map[string]any{"name": "gamma", "changelog": "https://c.test/changelog", "releases": "https://c.test/releases"})
+	h.seed("deps", "d", map[string]any{"name": "delta", "changelog": "https://d.test/changelog", "releases": "https://d.test/releases"})
+
+	var fetched []string
+	h.k.fetch = func(url string) (Page, error) {
+		fetched = append(fetched, url)
+		switch url {
+		case "https://a.test/changelog":
+			return Page{URL: url, Status: 200, Title: "alpha changelog", Text: "1.2.0 fixes"}, nil
+		case "https://b.test/changelog":
+			return Page{}, fmt.Errorf("GET %s returned 404", url)
+		case "https://b.test/releases":
+			return Page{URL: url, Status: 200, Title: "beta releases", Text: "2.0.0"}, nil
+		case "https://c.test/changelog":
+			return Page{URL: url, Status: 200, Title: "gamma", Text: ""}, nil
+		case "https://c.test/releases":
+			return Page{URL: url, Status: 204, Title: "gamma releases", Text: "x"}, nil
+		}
+		return Page{}, fmt.Errorf("GET %s returned 500", url)
+	}
+	var narration []string
+	h.k.progress = func(format string, args ...any) {
+		narration = append(narration, fmt.Sprintf(format, args...))
+	}
+
+	var out strings.Builder
+	ok, err := h.k.RunOnce("Reader", &out)
+	if err != nil || !ok {
+		t.Fatalf("RunOnce ok=%v err=%v", ok, err)
+	}
+	run := h.runsOf("ReadDeps")[0]
+	if run["outcome"] != "succeeded" {
+		t.Fatalf("run: %v", run)
+	}
+	if got := strings.Join(fetched, ","); got != strings.Join([]string{
+		"https://a.test/changelog",
+		"https://b.test/changelog", "https://b.test/releases",
+		"https://c.test/changelog", "https://c.test/releases",
+		"https://d.test/changelog", "https://d.test/releases",
+	}, ",") {
+		t.Fatalf("attempts run in order and stop at the first accepted: %v", fetched)
+	}
+	if out.String() != "alpha: alpha changelog\nbeta: beta releases\n" {
+		t.Fatalf("only accepted pages reach the notices: %q", out.String())
+	}
+	runID := run["id"].(string)
+	if n := h.eventCount(runID, "trace:fallback_accepted"); n != 2 {
+		t.Fatalf("two dependencies accepted an attempt, got %d", n)
+	}
+	if n := h.eventCount(runID, "trace:fallback_exhausted"); n != 2 {
+		t.Fatalf("gamma (rejected by :accept) and delta (every read failed) exhaust the fallback, got %d", n)
+	}
+	if n := h.eventCount(runID, "trace:skipped"); n != 2 {
+		t.Fatalf("exhausted fallbacks run the otherwise block, which skips the item, got %d", n)
+	}
+	if n := h.eventCount(runID, "read"); n != len(fetched) {
+		t.Fatalf("every attempt is recorded once, got %d for %d fetches", n, len(fetched))
+	}
+	if detail, _ := run["detail"].(string); !strings.Contains(detail, "2 done") || !strings.Contains(detail, "2 skipped") {
+		t.Fatalf("run detail: %v", run["detail"])
+	}
+	joined := strings.Join(narration, "\n")
+	for _, want := range []string{"reading page, attempt 1", "attempt 2 accepted", "no attempt accepted"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("narration missing %q:\n%s", want, joined)
+		}
+	}
+
+	// Replay reuses every recorded attempt and never refetches.
+	before := len(fetched)
+	if err := h.k.ResumeRun(runID); err != nil {
+		t.Fatal(err)
+	}
+	if len(fetched) != before {
+		t.Fatalf("replay must not refetch, got %d new fetches", len(fetched)-before)
+	}
+	if n := len(h.rows("loop_notices")); n != 2 {
+		t.Fatalf("replay posts no second notice, got %d", n)
+	}
+}

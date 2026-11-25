@@ -6,16 +6,20 @@ Entries before 0.5.0 are reconstructed from the commit history.
 
 ## Unreleased — planned for 0.8.0
 
-Nothing here is implemented. These are the next source changes, tracked in
-Linear.
+These are the next source changes, tracked in Linear. `loop::fallback` is
+implemented on `main`; the rest is not yet.
 
 - `@version` accepts a major.minor match, so a `0.8.x` program builds on any
   `0.8` compiler instead of requiring the exact patch version (THO-558).
-- `loop::fallback`: two or more `loop::read` attempts in order, kept when a
-  condition holds, with a terminating `loop::otherwise` (THO-559,
+- **Implemented:** `loop::fallback`: two or more `loop::read` attempts in
+  order, with `:accept` and a required terminating `loop::otherwise`. The first
+  attempt whose result satisfies `:accept` (false or unknown does not) binds
+  `:as`; each attempt is recorded for replay, and the cost report counts every
+  attempt (THO-559 Part 1,
   [ADR-019](docs/ADR-019-vran-language-into-loop.md)).
-- Citations on `loop::ask`: source bindings, and an answer is accepted only
-  when each quote occurs in a cited source (THO-559).
+- Deferred out of 0.8.0: citations on `loop::ask`, where an answer is accepted
+  only when each quote occurs in a cited source (THO-559 Part 2), and per-field
+  gate approval (THO-556).
 - Multi-value `:from` on `loop::ask`, so one question can read several
   bindings.
 - Loop embeddings, nearest-neighbor `loop::find`, and page-read `:into` plus

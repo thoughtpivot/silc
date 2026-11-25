@@ -26,6 +26,10 @@ fn digest_source() -> &'static str {
     include_str!("fixtures/loop_digest.silc")
 }
 
+fn fallback_program() -> sil_core::Program {
+    parse_valid(include_str!("fixtures/loop_fallback.silc"))
+}
+
 fn parse_valid(source: &str) -> sil_core::Program {
     let program = sil_parser::parse(source).expect("parse fixture");
     program.validate().expect("validate fixture");
@@ -208,6 +212,12 @@ fn loop_kernel_replay_traces() {
     )
     .unwrap();
 
+    std::fs::write(
+        dir.join("fallback_plan.json"),
+        serde_json::to_string_pretty(&lower_loop_plan(&fallback_program(), "test")).unwrap(),
+    )
+    .unwrap();
+
     let go_cmd = |args: &[&str]| {
         std::process::Command::new(&go)
             .current_dir(&dir)
@@ -236,6 +246,32 @@ fn loop_kernel_replay_traces() {
         String::from_utf8_lossy(&test.stderr)
     );
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn fallback_lowers_attempts_accept_and_otherwise() {
+    let plan = lower_loop_plan(&fallback_program(), "test");
+    let each = &plan["loops"][0]["steps"][1];
+    assert_eq!(each["op"], "each");
+    let fallback = &each["steps"][0];
+    assert_eq!(fallback["op"], "fallback");
+    assert_eq!(fallback["path"], "1.each.0");
+    assert_eq!(fallback["as"], "page");
+    assert_eq!(fallback["accept"]["k"], "bin");
+    let attempts = fallback["attempts"].as_array().expect("attempts");
+    assert_eq!(attempts.len(), 2);
+    for (i, attempt) in attempts.iter().enumerate() {
+        assert_eq!(attempt["op"], "read");
+        assert_eq!(attempt["read_op"], "scrape::page");
+        assert_eq!(attempt["retry"], 0);
+        assert_eq!(attempt["path"], format!("1.each.0.try{i}"));
+        assert!(
+            attempt.get("as").is_none(),
+            "attempts bind through the fallback"
+        );
+    }
+    assert_eq!(fallback["otherwise"][0]["op"], "skip");
+    assert_eq!(plan["loops"][0]["bounds"]["reads"], 10 * 2);
 }
 
 #[test]

@@ -28,7 +28,7 @@ root [README](../README.md).
 | [016](ADR-016-generic-kernel-domain-layers.md) | Generic kernels, domain layers | Accepted | `scene::` kernel, `game::` gameplay layer; verticals stay outside the compiler |
 | [017](ADR-017-ui-embed.md) | `ui::embed` dual-surface URL viewport | Accepted | Sandboxed iframe on web; card fallback on terminal; does not relax ADR-012 |
 | [018](ADR-018-files-capability.md) | Sysop-shared files (`files` + `ui::file_browser`) | Accepted | `/files/list` + `/files/download`; folders zip via pinned CPython |
-| [019](ADR-019-vran-language-into-loop.md) | Vran 0.1 language folded into `loop::*` | Accepted | Maps the vran-oss draft onto the closed catalog. Proposed additions are not shipped |
+| [019](ADR-019-vran-language-into-loop.md) | Vran 0.1 language folded into `loop::*` | Accepted | Maps the vran-oss draft onto the closed catalog. `loop::fallback` shipped in 0.8.0 (unreleased); the other proposed additions are not shipped |
 
 ### Partial supersession (0.4.0)
 

@@ -162,7 +162,7 @@ fn loop_catalog_lines_present_in_agents_template() {
     let template = read_workspace("crates/silc/templates/AGENTS.md");
     assert_eq!(
         sil_core::LOOP_NODE_CATALOG.len(),
-        21,
+        22,
         "loop catalog size changed; update docs and this assertion"
     );
     for spec in sil_core::LOOP_NODE_CATALOG {

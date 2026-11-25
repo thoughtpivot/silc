@@ -422,6 +422,28 @@ fn lower_block(program: &Program, steps: &[LoopNode], prefix: &str) -> Vec<serde
         .collect()
 }
 
+fn lower_read_options(step: &LoopNode, put: &mut impl FnMut(&str, serde_json::Value)) {
+    use serde_json::json;
+    put(
+        "read_op",
+        json!(step.string_prop("op").unwrap_or("scrape::page")),
+    );
+    for key in ["server", "tool", "auth_env", "select"] {
+        if let Some(s) = step.string_prop(key) {
+            put(key, json!(s));
+        }
+    }
+    if let Some(e) = step.prop("args") {
+        put("args", lower_expr(e));
+    }
+    put(
+        "retry",
+        json!(step
+            .number_prop("retry")
+            .unwrap_or(sil_core::loops::DEFAULT_READ_RETRY)),
+    );
+}
+
 fn lower_step(program: &Program, step: &LoopNode, path: &str) -> serde_json::Value {
     use serde_json::json;
     let mut v = json!({"op": step.name, "path": path});
@@ -445,7 +467,9 @@ fn lower_step(program: &Program, step: &LoopNode, path: &str) -> serde_json::Val
             put(key, json!(s));
         }
     }
-    for key in ["where", "url", "from", "that", "in", "value", "show"] {
+    for key in [
+        "where", "url", "from", "that", "in", "value", "show", "accept",
+    ] {
         if step.name == "find" && key == "from" {
             continue;
         }
@@ -475,25 +499,26 @@ fn lower_step(program: &Program, step: &LoopNode, path: &str) -> serde_json::Val
                 }),
             );
         }
-        "read" => {
-            put(
-                "read_op",
-                json!(step.string_prop("op").unwrap_or("scrape::page")),
-            );
-            for key in ["server", "tool", "auth_env", "select"] {
-                if let Some(s) = step.string_prop(key) {
-                    put(key, json!(s));
-                }
+        "read" => lower_read_options(step, &mut put),
+        "fallback" => {
+            let attempts: Vec<serde_json::Value> = step
+                .children
+                .iter()
+                .filter(|c| c.name == "read")
+                .enumerate()
+                .map(|(i, attempt)| lower_step(program, attempt, &format!("{path}.try{i}")))
+                .collect();
+            put("attempts", json!(attempts));
+            if let Some(o) = step.child("otherwise") {
+                put(
+                    "otherwise",
+                    json!(lower_block(
+                        program,
+                        &o.children,
+                        &format!("{path}.otherwise")
+                    )),
+                );
             }
-            if let Some(e) = step.prop("args") {
-                put("args", lower_expr(e));
-            }
-            put(
-                "retry",
-                json!(step
-                    .number_prop("retry")
-                    .unwrap_or(sil_core::loops::DEFAULT_READ_RETRY)),
-            );
         }
         "ask" => {
             let into = step.ident_prop("into").unwrap_or_default();

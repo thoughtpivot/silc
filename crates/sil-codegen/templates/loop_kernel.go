@@ -120,6 +120,8 @@ type Step struct {
 	Into          string   `json:"into"`
 	Mode          string   `json:"mode"`
 	WithinMinutes int      `json:"within_minutes"`
+	Accept        *Expr    `json:"accept"`
+	Attempts      []Step   `json:"attempts"`
 	Otherwise     []Step   `json:"otherwise"`
 	Steps         []Step   `json:"steps"`
 	Declined      []Step   `json:"declined"`
@@ -827,6 +829,41 @@ func (c *runCtx) step(st *Step, sc *scope, path string, inEach bool) outcome {
 		}
 		c.progress("read %s ok", st.As)
 		sc.vars[st.As] = res["page"]
+	case "fallback":
+		for i := range st.Attempts {
+			attempt := &st.Attempts[i]
+			attemptPath := fmt.Sprintf("%s.try%d", path, i)
+			raw, ok := c.recordedValue(attemptPath, "read")
+			if !ok {
+				if attempt.ReadOp == "mcp::call" {
+					c.progress("reading %s, attempt %d (%s %s)", st.As, i+1, attempt.ReadOp, attempt.Tool)
+				} else {
+					c.progress("reading %s, attempt %d", st.As, i+1)
+				}
+				raw = c.record(attemptPath, "read", c.read(attempt, sc))
+			}
+			var res map[string]any
+			_ = json.Unmarshal([]byte(raw), &res)
+			if errText, _ := res["error"].(string); errText != "" {
+				c.progress("read %s attempt %d failed: %s", st.As, i+1, errText)
+				c.record(attemptPath, "trace:fallback_rejected", "read failed: "+errText)
+				continue
+			}
+			candidate := sc.child()
+			candidate.vars[st.As] = res["page"]
+			v, known := eval(st.Accept, candidate)
+			if b, isBool := v.(bool); known && isBool && b {
+				c.progress("read %s ok (attempt %d accepted)", st.As, i+1)
+				c.record(path, "trace:fallback_accepted", i)
+				sc.vars[st.As] = res["page"]
+				return none
+			}
+			c.progress("read %s attempt %d not accepted", st.As, i+1)
+			c.record(attemptPath, "trace:fallback_rejected", "not accepted")
+		}
+		c.progress("fallback %s: no attempt accepted", st.As)
+		c.record(path, "trace:fallback_exhausted", len(st.Attempts))
+		return c.block(st.Otherwise, sc.child(), path+".otherwise", inEach)
 	case "ask":
 		raw, ok := c.recordedValue(path, "ask")
 		if !ok {
