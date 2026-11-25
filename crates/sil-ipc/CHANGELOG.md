@@ -3,6 +3,12 @@
 All notable changes to Silc are documented here.
 Silc remains pre-1.0; this project follows SemVer 0.x with Conventional Commits.
 
+## [0.7.1](https://github.com/thoughtpivot/silc/compare/sil-ipc-v0.7.0...sil-ipc-v0.7.1) - 2026-11-25
+
+### Other
+
+- prepare the 0.7.0 crates.io release
+
 ## [0.7.0](https://github.com/thoughtpivot/silc/releases/tag/sil-ipc-v0.7.0) - 2026-10-05
 
 ### Changed
