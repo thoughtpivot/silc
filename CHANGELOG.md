@@ -6,8 +6,8 @@ Entries before 0.5.0 are reconstructed from the commit history.
 
 ## Unreleased — planned for 0.8.0
 
-These are the next source changes, tracked in Linear. `loop::fallback` is
-implemented on `main`; the rest is not yet.
+These are the next source changes, tracked in Linear. `loop::fallback` and the
+`Contract.new` type check are implemented on `main`; the rest is not yet.
 
 - `@version` accepts a major.minor match, so a `0.8.x` program builds on any
   `0.8` compiler instead of requiring the exact patch version (THO-558).
@@ -22,6 +22,12 @@ implemented on `main`; the rest is not yet.
   gate approval (THO-556).
 - Multi-value `:from` on `loop::ask`, so one question can read several
   bindings.
+- `loop::write` and every other `Contract.new(...)` in a loop now compare each
+  field value with the field's declared type, through `subset` refinements
+  such as `Emb384`. A `Str` into an `Int` or vector field, a wrong-dimension
+  vector, or a value of unknown type is rejected at validation with a message
+  naming the field, the expected type, and the found type. Nothing coerces
+  (THO-578).
 - Loop embeddings, nearest-neighbor `loop::find`, and page-read `:into` plus
   `:select` on `loop::read` (THO-551 to THO-555).
 

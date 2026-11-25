@@ -77,6 +77,14 @@ A contract is a list of `has Type $.field;` lines. Contracts back resources,
 form bindings, `loop::ask` answers (`:into(Contract)`), `doc::extract`
 targets, and MCP arguments (`Contract.new(...)`).
 
+Inside a loop, each `Contract.new(:field(expr))` is type-checked: the type of
+`expr` must match the field's declared type, resolved through `subset`
+refinements. Nothing coerces. A `Str` never becomes an `Int` or a vector, an
+`Int` widens to a number, and a vector needs the same element type and
+dimension (`Emb384` accepts only `Vec[num32; 384]`). A value whose type is not
+known, such as `$r.data` from an `mcp::call`, is rejected until it comes from
+a typed source.
+
 ## 5. Nodes and options (shared grammar)
 
 Every `ui::`, `game::`, and `loop::` element is a **node**:
