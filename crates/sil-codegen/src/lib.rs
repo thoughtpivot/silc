@@ -1900,7 +1900,7 @@ mod tests {
     }
 
     const STUB_SOURCE: &str = r#"
-@version("0.7.0")
+@version("0.7.1")
 contract Payload { has Str $.text; }
 service Ingress {
     method fetch() { $url ==> http::get() ==> html::extract_body() }
@@ -1911,7 +1911,7 @@ processor Engine {
 "#;
 
     const PIPELINE_SOURCE: &str = r#"
-@version("0.7.0")
+@version("0.7.1")
 subset Uri of Str where { .contains("://") }
 subset Emb384 of Vec[num32; 384];
 contract ArticlePayload {
@@ -1963,7 +1963,7 @@ processor EmbeddingEngine {
     }
 
     const FEEDBACK_SOURCE: &str = r#"
-@version("0.7.0")
+@version("0.7.1")
 contract FeedbackRecord {
     has Str $.author;
     has Str $.text;
@@ -1997,7 +1997,7 @@ processor TextAnalyzer {
 "#;
 
     const CHAT_SOURCE: &str = r#"
-@version("0.7.0")
+@version("0.7.1")
 contract ChatRecord {
     has Str $.prompt;
     has Str $.reply;
@@ -2039,7 +2039,7 @@ processor Assistant {
 "#;
 
     const RESOURCE_SOURCE: &str = r#"
-@version("0.7.0")
+@version("0.7.1")
 contract Product {
     has Str $.name;
     has num64 $.price;
@@ -2068,7 +2068,7 @@ app ShopApp {
 "#;
 
     const API_SOURCE: &str = r#"
-@version("0.7.0")
+@version("0.7.1")
 contract FeedbackRecord {
     has UUID $.id;
     has Str $.author;
@@ -2519,7 +2519,7 @@ service FeedbackApi {
     }
 
     const SCRAPE_SOURCE: &str = r#"
-@version("0.7.0")
+@version("0.7.1")
 contract ScrapedPage {
     has Str $.id;
     has Str $.scrape_id;
@@ -2620,7 +2620,7 @@ processor Summarizer {
     }
 
     const DOC_SOURCE: &str = r#"
-@version("0.7.0")
+@version("0.7.1")
 
 contract Document {
     has Str $.title;
@@ -2677,7 +2677,7 @@ service Extractor {
 "#;
 
     const FILES_SOURCE: &str = r#"
-@version("0.7.0")
+@version("0.7.1")
 
 component FilesPage {
     method render() {
@@ -2772,7 +2772,7 @@ app FilesApp {
     #[test]
     fn rejects_legacy_class_declarators() {
         let source = r#"
-@version("0.7.0")
+@version("0.7.1")
 class BadView is view {
     method render() { ui::page() }
 }

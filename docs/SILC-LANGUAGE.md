@@ -33,7 +33,7 @@ are generated into
 ## 2. Program structure
 
 ```silc
-@version("0.7.0")
+@version("0.7.1")
 
 <declaration>*
 ```
@@ -307,7 +307,7 @@ Resolved by 0.7.0 (the 0.6.0 changes, now stable):
 8. Author `sink`, `App.serve`, and discarded component pipelines are gone.
 
 0.7.0 adds no language surface. The one source change is the required exact
-`@version("0.7.0")`. A program that declares any other version is rejected with
+`@version("0.7.1")`. A program that declares any other version is rejected with
 a migration diagnostic.
 
 Planned for 0.8.0 (not implemented; see the Unreleased list in
