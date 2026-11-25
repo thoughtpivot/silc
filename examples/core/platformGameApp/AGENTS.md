@@ -268,6 +268,7 @@ if any run failed.
 - `loop::let` — options: `as`, `value`; children: none
 - `loop::find` — options: `as`, `from`, `where?`, `order?`, `desc?` (flag), `max?`, `one?` (flag); children: none
 - `loop::read` — options: `as`, `op`, `url?`, `server?`, `tool?`, `args?`, `auth_env?`, `select?`, `retry?`; children: none
+- `loop::fallback` — options: `as`, `accept`; children: `read`, `otherwise`
 - `loop::ask` — options: `as`, `into`, `prompt`, `from?`, `retry?`; children: `otherwise`
 - `loop::gate` — options: `that`, `reason`; children: `otherwise`
 - `loop::branch` — options: none; children: `when`, `otherwise`
@@ -288,8 +289,9 @@ Rules the compiler enforces:
 - Every `find` and `each` has `:max`; every `write` and `notify` has a `:key` with at least one placeholder; every `approve` has `:within` (max `30d`).
 - `loop::ask` output (and anything built from it) must be referenced by a `gate`, shown by an `approve`, or the effect must say `:unchecked("why")`.
 - Gates fail closed: a missing field makes a condition unknown, and unknown never passes.
-- The `otherwise` of `gate`/`ask` and the `declined`/`timed_out` blocks end in `stop`, `fail`, or `skip`; `skip` only inside `each`.
+- The `otherwise` of `gate`/`ask`/`fallback` and the `declined`/`timed_out` blocks end in `stop`, `fail`, or `skip`; `skip` only inside `each`.
 - Reserved bindings: `$today` and `$now` (loop time zone), `$event` (trigger data), `$calendar` (`today`, `weekday`, `last7_start`, `last7_end`, `next7_end`).
+- `loop::fallback` tries two or more `loop::read` attempts in order (same operation, no `:as` on the attempts) and binds the first result for which `:accept` is true, written over the fallback's own `:as` (`:accept($page.status == 200 && $page.text != "")`). A failed fetch, or a false or unknown `:accept`, tries the next attempt; when none is accepted the required `otherwise` runs and ends in `stop`, `fail`, or `skip`. `:retry` on one read repeats that read; `fallback` tries a different one. `silc build` counts every attempt.
 - `loop::read(:op("mcp::call"), :server("https://…/mcp"), :tool("name"), :args(Contract.new(...)), :auth_env("TOKEN_VAR"), :select("records.parsed"))` calls one MCP tool; the result is `$x.text` and `$x.data`. Tokens come from the environment, never from source.
 - Run now in `/loops` starts `manual` and `schedule` loops. A loop never overlaps itself.
 - A loop command cannot use `loop::approve` (nobody is there to answer); use `loop::gate`, or add an `app` to get the `/loops` inbox.

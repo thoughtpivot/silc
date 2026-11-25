@@ -213,8 +213,9 @@ loop RfiChase {
   `:within` on `approve` (at most `30d`).
 - Model output (`loop::ask` and anything derived from it) reaches an effect
   only through a `gate`, an `approve`, or an explicit `:unchecked("reason")`.
-- Gates fail closed; `otherwise`, `declined`, and `timed_out` blocks end in
-  `stop`, `fail`, or `skip` (`skip` only inside `each`).
+- Gates fail closed; `otherwise` (under `gate`, `ask`, and `fallback`),
+  `declined`, and `timed_out` blocks end in `stop`, `fail`, or `skip` (`skip`
+  only inside `each`).
 - Effects (`write`, `notify`) carry a `:key` template with at least one
   placeholder; the kernel performs each key once.
 - Reserved bindings: `$today`, `$now`, `$event`, `$calendar`
@@ -224,6 +225,24 @@ loop RfiChase {
   :args(Contract.new(...)), :auth_env("VAR"), :select("path")))`. The result
   binds `$x.text` and `$x.data`. The string form `:op("scrape::page")` remains
   a one-release alias.
+- `loop::fallback` (new in 0.8.0, unreleased) tries two or more `loop::read`
+  attempts in order and binds the first result that satisfies `:accept`:
+
+  ```silc
+  loop::fallback(:as(page), :accept($page.status == 200 && $page.text != ""),
+      loop::read(scrape::page(:url($dep.changelog))),
+      loop::read(scrape::page(:url($dep.releases))),
+      loop::otherwise(loop::skip(:reason("no readable changelog"))))
+  ```
+
+  The attempts are `loop::read` children without `:as` (the accepted result
+  binds to the fallback's `:as`) and share one read operation, so `$page` has
+  one shape. `:accept` is written over that binding and follows the gate
+  rules: false or unknown rejects the attempt. A fetch that fails after its
+  own `:retry` also moves on. `:retry` repeats one read; `fallback` tries a
+  different read. The `loop::otherwise` is required, runs when no attempt is
+  accepted, and ends in `stop`, `fail`, or `skip`. Every attempt is recorded
+  for replay, and `silc build` counts each attempt's reads in the worst case.
 - A program with no `app`, no `scene` (and no `game` alias), and only `loop::manual` triggers is a
   **loop command**: no surfaces are built; `silc main.silc` runs each loop
   once, prints notices to stdout, and exits. `loop::approve` is a compile
@@ -310,16 +329,18 @@ Resolved by 0.7.0 (the 0.6.0 changes, now stable):
 `@version("0.7.1")`. A program that declares any other version is rejected with
 a migration diagnostic.
 
-Planned for 0.8.0 (not implemented; see the Unreleased list in
+Planned for 0.8.0 (see the Unreleased list in
 [CHANGELOG.md](../CHANGELOG.md) and
-[ADR-019](ADR-019-vran-language-into-loop.md)):
+[ADR-019](ADR-019-vran-language-into-loop.md)). `loop::fallback` is
+implemented on `main`; the rest is not:
 
 1. `@version` matches on major.minor, so a `0.8.x` program builds on any
    `0.8` compiler (THO-558).
 2. `loop::fallback`: ordered `loop::read` attempts, kept when a condition
-   holds, with a terminating `loop::otherwise` (THO-559).
+   holds, with a terminating `loop::otherwise` (THO-559, Part 1; implemented,
+   see section 8).
 3. Citations on `loop::ask`, accepted only when each quote occurs in a cited
-   source (THO-559).
+   source (THO-559, Part 2; deferred, not in 0.8.0).
 4. Multi-value `:from` on `loop::ask`.
 5. Loop embeddings, nearest-neighbor `loop::find`, and page-read `:into` plus
    `:select` on `loop::read` (THO-551 to THO-555).

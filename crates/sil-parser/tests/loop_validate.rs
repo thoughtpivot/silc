@@ -521,3 +521,252 @@ fn mcp_fixture_validates_and_reports_costs() {
         "{report}"
     );
 }
+
+// ---------------------------------------------------------------- loop::fallback (THO-559)
+
+const FALLBACK: &str = r#"loop::fallback(:as(page), :accept($page.status == 200 && $page.text != ""),
+        loop::read(scrape::page(:url("https://example.com/changelog"))),
+        loop::read(scrape::page(:url("https://example.com/releases"), :retry(0))),
+        loop::otherwise(loop::fail(:reason("no readable changelog"))))"#;
+
+fn check_fallback(fallback: &str) -> Result<(), String> {
+    check(&fallback_flow(fallback))
+}
+
+fn fallback_flow(fallback: &str) -> String {
+    format!(
+        r#"loop::flow(
+    loop::manual(),
+    {fallback},
+    loop::write(:to(Notes.create), :key("{{$page.url}}"), :value(Note.new(:rfi("page"), :text($page.title))))
+)"#
+    )
+}
+
+fn expect_fallback_err(fallback: &str, needle: &str) {
+    match check_fallback(fallback) {
+        Ok(()) => panic!("expected error containing `{needle}`, but it validated:\n{fallback}"),
+        Err(e) => assert!(e.contains(needle), "expected `{needle}` in error, got: {e}"),
+    }
+}
+
+#[test]
+fn fallback_validates_and_binds_the_accepted_page() {
+    check_fallback(FALLBACK).unwrap();
+}
+
+#[test]
+fn fallback_composes_with_each_skip_and_ask() {
+    let body = r#"loop::flow(
+    loop::manual(),
+    loop::find(:as(rfis), :from(Rfis.list), :max(5)),
+    loop::each(:in($rfis), :as(rfi), :max(5),
+        loop::fallback(:as(page), :accept($page.status == 200 && $page.text != ""),
+            loop::read(scrape::page(:url("https://example.com/changelog"))),
+            loop::read(scrape::page(:url("https://example.com/releases"))),
+            loop::otherwise(loop::skip(:reason("no answer that fits Impact")))),
+        loop::ask(:as(draft), :into(Draft), :from($page), :retry(2), :prompt("Summarize {$page.title}"),
+            loop::otherwise(loop::skip(:reason("no answer that fits Draft")))),
+        loop::gate(:that($draft.text != ""), :reason("never write an empty note")),
+        loop::write(:to(Notes.create), :key("{$rfi.id}:{$today}"), :value(Note.new(:rfi($rfi.id), :text($draft.text))))
+    )
+)"#;
+    check(body).unwrap();
+}
+
+#[test]
+fn fallback_accepts_mcp_call_attempts() {
+    let fallback = r#"loop::fallback(:as(kb), :accept($kb.text != ""),
+        loop::read(mcp::call(:server("https://a.example.com/mcp"), :tool("search"))),
+        loop::read(mcp::call(:server("https://b.example.com/mcp"), :tool("search"))),
+        loop::otherwise(loop::fail(:reason("no readable result"))))"#;
+    let body = format!(
+        r#"loop::flow(
+    loop::manual(),
+    {fallback},
+    loop::write(:to(Notes.create), :key("{{$kb.text}}"), :value(Note.new(:rfi("kb"), :text($kb.text))))
+)"#
+    );
+    check(&body).unwrap();
+}
+
+#[test]
+fn fallback_needs_a_terminating_otherwise() {
+    let without = FALLBACK.replace(
+        r#",
+        loop::otherwise(loop::fail(:reason("no readable changelog")))"#,
+        "",
+    );
+    expect_fallback_err(&without, "exactly one loop::otherwise");
+    let falls_through = FALLBACK.replace(
+        r#"loop::fail(:reason("no readable changelog"))"#,
+        r#"loop::let(:as(none), :value("x"))"#,
+    );
+    expect_fallback_err(
+        &falls_through,
+        "must end in loop::stop, loop::fail, or loop::skip",
+    );
+    let twice = FALLBACK.replace(
+        r#"loop::otherwise(loop::fail(:reason("no readable changelog")))"#,
+        r#"loop::otherwise(loop::fail(:reason("a"))), loop::otherwise(loop::fail(:reason("b")))"#,
+    );
+    expect_fallback_err(&twice, "exactly one loop::otherwise");
+}
+
+#[test]
+fn fallback_needs_two_or_more_attempts() {
+    let one = FALLBACK.replace(
+        r#"loop::read(scrape::page(:url("https://example.com/releases"), :retry(0))),
+        "#,
+        "",
+    );
+    expect_fallback_err(&one, "two or more loop::read attempts");
+}
+
+#[test]
+fn fallback_otherwise_comes_last_and_only_reads_are_attempts() {
+    let otherwise_first = r#"loop::fallback(:as(page), :accept($page.status == 200),
+        loop::otherwise(loop::fail(:reason("x"))),
+        loop::read(scrape::page(:url("https://example.com/a"))),
+        loop::read(scrape::page(:url("https://example.com/b"))))"#;
+    expect_fallback_err(otherwise_first, "followed by exactly one loop::otherwise");
+    let not_a_read = FALLBACK.replace(
+        r#"loop::read(scrape::page(:url("https://example.com/releases"), :retry(0))),"#,
+        r#"loop::gate(:that(true), :reason("x")),"#,
+    );
+    expect_fallback_err(&not_a_read, "cannot contain loop::gate");
+}
+
+#[test]
+fn fallback_requires_as_and_accept() {
+    expect_fallback_err(
+        &FALLBACK.replace(r#":accept($page.status == 200 && $page.text != ""),"#, ""),
+        "requires option `:accept`",
+    );
+    expect_fallback_err(
+        &FALLBACK.replace(":as(page), ", ""),
+        "requires option `:as`",
+    );
+}
+
+#[test]
+fn fallback_accept_must_test_the_attempt_result() {
+    expect_fallback_err(
+        &FALLBACK.replace(r#"$page.status == 200 && $page.text != """#, "true"),
+        ":accept must test the attempt's result through `$page`",
+    );
+    expect_fallback_err(
+        &FALLBACK.replace(
+            "$page.status == 200 && $page.text != \"\"",
+            "$page.status == 200 && $other.x != \"\"",
+        ),
+        "unknown binding `$other`",
+    );
+    expect_fallback_err(
+        &FALLBACK.replace("$page.text != \"\"", "$page.body != \"\""),
+        "`$page` has no field `body`",
+    );
+}
+
+#[test]
+fn fallback_attempts_share_the_fallbacks_binding() {
+    expect_fallback_err(
+        &FALLBACK.replace(
+            r#"loop::read(scrape::page(:url("https://example.com/changelog"))),"#,
+            r#"loop::read(:as(first), scrape::page(:url("https://example.com/changelog"))),"#,
+        ),
+        "a read has no :as",
+    );
+    expect_fallback_err(
+        &FALLBACK.replace(
+            r#"loop::read(scrape::page(:url("https://example.com/releases"), :retry(0))),"#,
+            r#"loop::read(mcp::call(:server("https://a.example.com/mcp"), :tool("search"))),"#,
+        ),
+        "attempts must use one read operation",
+    );
+}
+
+#[test]
+fn fallback_attempts_keep_the_read_rules() {
+    expect_fallback_err(
+        &FALLBACK.replace(":retry(0)", ":retry(11)"),
+        ":retry must be at most 10",
+    );
+    expect_fallback_err(
+        &FALLBACK.replace("https://example.com/changelog", "example.com/changelog"),
+        ":url must be an absolute http(s) URL",
+    );
+    expect_fallback_err(
+        &FALLBACK.replace(
+            r#"scrape::page(:url("https://example.com/changelog"))"#,
+            r#"scrape::page(:url($missing.url))"#,
+        ),
+        "unknown binding `$missing`",
+    );
+}
+
+#[test]
+fn fallback_binding_is_scoped_like_other_reads() {
+    expect_fallback_err(
+        &FALLBACK.replace(
+            r#"loop::fail(:reason("no readable changelog"))"#,
+            r#"loop::fail(:reason("tried {$page.url}"))"#,
+        ),
+        "unknown binding `$page`",
+    );
+    let duplicate = fallback_flow(&format!(
+        r#"loop::read(:as(page), scrape::page(:url("https://example.com/a"))),
+    {FALLBACK}"#
+    ));
+    match check(&duplicate) {
+        Ok(()) => panic!("a second `page` binding must be rejected"),
+        Err(e) => assert!(e.contains("binding `page` is already declared"), "{e}"),
+    }
+}
+
+#[test]
+fn fallback_skip_is_only_valid_inside_each() {
+    expect_fallback_err(
+        &FALLBACK.replace(
+            r#"loop::fail(:reason("no readable changelog"))"#,
+            r#"loop::skip(:reason("no readable changelog"))"#,
+        ),
+        "is only valid inside loop::each",
+    );
+}
+
+#[test]
+fn fallback_cost_report_counts_every_attempt() {
+    let src = format!(
+        "{PRELUDE}\nloop Chase {{\n{}\n}}\n",
+        fallback_flow(FALLBACK)
+    );
+    let program = parse(&src).unwrap();
+    let b = sil_core::loop_bounds(&program.loops[0]);
+    assert_eq!(
+        b.reads,
+        (1 + sil_core::loops::DEFAULT_READ_RETRY) + 1,
+        "first read keeps its default retries, second says :retry(0)"
+    );
+    let report = sil_core::format_loop_cost_report(&program).unwrap();
+    assert!(report.contains("reads 4"), "{report}");
+}
+
+#[test]
+fn fallback_inside_each_multiplies_attempts() {
+    let body = r#"loop::flow(
+    loop::manual(),
+    loop::find(:as(rfis), :from(Rfis.list), :max(5)),
+    loop::each(:in($rfis), :as(rfi), :max(5),
+        loop::fallback(:as(page), :accept($page.status == 200),
+            loop::read(scrape::page(:url("https://example.com/a")), :retry(1)),
+            loop::read(scrape::page(:url("https://example.com/b")), :retry(1)),
+            loop::otherwise(loop::skip(:reason("none")))),
+        loop::notify(:to("pm"), :text("{$page.title}"), :key("{$rfi.id}"))
+    )
+)"#;
+    let src = format!("{PRELUDE}\nloop Chase {{\n{body}\n}}\n");
+    let program = parse(&src).unwrap();
+    program.validate().unwrap();
+    assert_eq!(sil_core::loop_bounds(&program.loops[0]).reads, 5 * 4);
+}

@@ -64,8 +64,8 @@ const fn lp_closed(
 pub const LOOP_TRIGGERS: &[&str] = &["schedule", "manual", "on_mutation"];
 
 pub const LOOP_STEPS: &[&str] = &[
-    "let", "find", "read", "ask", "gate", "branch", "each", "write", "notify", "approve", "stop",
-    "fail", "skip",
+    "let", "find", "read", "fallback", "ask", "gate", "branch", "each", "write", "notify",
+    "approve", "stop", "fail", "skip",
 ];
 
 const FLOW_CHILDREN: &[&str] = &[
@@ -75,6 +75,7 @@ const FLOW_CHILDREN: &[&str] = &[
     "let",
     "find",
     "read",
+    "fallback",
     "ask",
     "gate",
     "branch",
@@ -189,6 +190,19 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
         slots: NO_SLOTS,
         events: NO_EVENTS,},
     LoopNodeSpec {
+        name: "fallback",
+        role: LoopNodeRole::Step,
+        description: "Tries two or more `loop::read` attempts in order and binds the first result that satisfies `:accept`. Attempts omit `:as` and use the same read operation. A failed fetch or a result that is false or unknown under `:accept` moves to the next attempt (fail closed). When none is accepted the required `loop::otherwise` runs and must stop, fail, or skip. Each attempt is recorded for replay.",
+        props: &[
+            lp("as", LoopPropKind::Ident, true, "Binding name for the accepted result, shaped like the attempts' read operation."),
+            lp("accept", LoopPropKind::Expr, true, "Condition over the attempt's result, written with the `:as` binding (e.g. `$page.status == 200`); false or unknown rejects the attempt."),
+        ],
+        children: LoopChildPolicy::AnyOf(&["read", "otherwise"]),
+
+        surfaces: NO_SURFACES,
+        slots: NO_SLOTS,
+        events: NO_EVENTS,},
+    LoopNodeSpec {
         name: "ask",
         role: LoopNodeRole::Step,
         description: "Asks the local silclm model for one value of a contract. The answer is checked against the contract and recorded; it must pass a gate or approval before any effect uses it.",
@@ -240,7 +254,7 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
     LoopNodeSpec {
         name: "otherwise",
         role: LoopNodeRole::Block,
-        description: "Fallback block for `branch`, `gate`, or `ask`. Under gate and ask it must end in stop, fail, or skip.",
+        description: "Fallback block for `branch`, `gate`, `ask`, or `fallback`. Under gate, ask, and fallback it must end in stop, fail, or skip.",
         props: &[],
         children: LoopChildPolicy::AnyOf(LOOP_STEPS),
 
@@ -743,6 +757,16 @@ pub fn loop_bounds(lp: &Loop) -> LoopBounds {
                 };
             }
             "read" => b.reads = 1 + step.number_prop("retry").unwrap_or(DEFAULT_READ_RETRY),
+            "fallback" => {
+                for attempt in step.children.iter().filter(|c| c.name == "read") {
+                    b.reads = b.reads.saturating_add(
+                        1 + attempt.number_prop("retry").unwrap_or(DEFAULT_READ_RETRY),
+                    );
+                }
+                if let Some(o) = step.child("otherwise") {
+                    b.add(&block(&o.children));
+                }
+            }
             "ask" => {
                 b.model_calls = 1 + step.number_prop("retry").unwrap_or(DEFAULT_ASK_RETRY);
                 if let Some(o) = step.child("otherwise") {
@@ -1050,6 +1074,15 @@ impl<'a> Checker<'a> {
     }
 
     fn check_props(&self, node: &LoopNode) -> Result<&'static LoopNodeSpec, String> {
+        self.check_props_except(node, &[])
+    }
+
+    /// Like `check_props`, but the named options need not be present.
+    fn check_props_except(
+        &self,
+        node: &LoopNode,
+        not_required: &[&str],
+    ) -> Result<&'static LoopNodeSpec, String> {
         let spec = lookup_loop_node(&node.name).ok_or_else(|| {
             format!(
                 "loop `{}`: unknown node `loop::{}`; known: {}",
@@ -1058,7 +1091,11 @@ impl<'a> Checker<'a> {
                 catalog_loop_node_names().join(", ")
             )
         })?;
-        for prop in spec.props.iter().filter(|p| p.required) {
+        for prop in spec
+            .props
+            .iter()
+            .filter(|p| p.required && !not_required.contains(&p.name))
+        {
             if node.prop(prop.name).is_none() {
                 return Err(self.err(node, format!("requires option `:{}`", prop.name)));
             }
@@ -1207,6 +1244,152 @@ impl<'a> Checker<'a> {
         Ok(())
     }
 
+    /// Check one read operation's options; returns the shape of its result.
+    fn check_read(&self, step: &LoopNode, scope: &Scope) -> Result<BindTy, String> {
+        let op = step.string_prop("op").unwrap_or_default();
+        let mcp_props = ["server", "tool", "args", "auth_env", "select"];
+        let ty = if op == "mcp::call" {
+            if step.prop("url").is_some() {
+                return Err(self.err(step, "`mcp::call` takes :server and :tool, not :url"));
+            }
+            let Some(server) = step.string_prop("server") else {
+                return Err(self.err(step, "`mcp::call` requires :server(\"https://.../mcp\")"));
+            };
+            if !(server.starts_with("http://") || server.starts_with("https://")) {
+                return Err(self.err(step, ":server must be an absolute http(s) URL"));
+            }
+            if step.string_prop("tool").is_none_or(|t| t.trim().is_empty()) {
+                return Err(self.err(step, "`mcp::call` requires :tool(\"name\")"));
+            }
+            if let Some(args) = step.prop("args") {
+                if !matches!(args, Expr::New { .. }) {
+                    return Err(self.err(step, ":args must be `Contract.new(...)`"));
+                }
+                self.check_expr(step, scope, None, args)?;
+            }
+            if let Some(env) = step.string_prop("auth_env") {
+                let valid = !env.is_empty()
+                    && env
+                        .chars()
+                        .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+                    && !env.starts_with(|c: char| c.is_ascii_digit());
+                if !valid {
+                    return Err(self.err(
+                        step,
+                        ":auth_env must be an environment variable name like API_TOKEN",
+                    ));
+                }
+            }
+            if let Some(sel) = step.string_prop("select") {
+                let valid = sel.split('.').all(|seg| {
+                    !seg.is_empty() && seg.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                });
+                if !valid {
+                    return Err(self.err(
+                        step,
+                        ":select must be a dotted field path like \"records.parsed\"",
+                    ));
+                }
+            }
+            BindTy::Fields(CALL_FIELDS)
+        } else {
+            if let Some(extra) = mcp_props.iter().find(|p| step.prop(p).is_some()) {
+                return Err(self.err(step, format!(":{extra} only applies to `mcp::call`")));
+            }
+            let Some(url) = step.prop("url") else {
+                return Err(self.err(step, "`scrape::page` requires :url(...)"));
+            };
+            self.check_expr(step, scope, None, url)?;
+            if let Expr::String(u) = url {
+                if !(u.starts_with("http://") || u.starts_with("https://")) {
+                    return Err(self.err(step, ":url must be an absolute http(s) URL"));
+                }
+            }
+            BindTy::Page
+        };
+
+        self.check_retry(step)?;
+        Ok(ty)
+    }
+
+    fn check_fallback(
+        &mut self,
+        step: &LoopNode,
+        scope: &mut Scope,
+        in_each: bool,
+    ) -> Result<(), String> {
+        let attempts: Vec<&LoopNode> = step.children.iter().filter(|c| c.name == "read").collect();
+        let otherwise_count = step
+            .children
+            .iter()
+            .filter(|c| c.name == "otherwise")
+            .count();
+        if attempts.len() < 2 {
+            return Err(self.err(
+                step,
+                "needs two or more loop::read attempts; with one attempt use loop::read",
+            ));
+        }
+        if otherwise_count != 1 || step.children.last().is_none_or(|c| c.name != "otherwise") {
+            return Err(self.err(
+                step,
+                "needs the loop::read attempts followed by exactly one loop::otherwise",
+            ));
+        }
+        let mut result_ty: Option<(BindTy, String)> = None;
+        for attempt in &attempts {
+            self.check_props_except(attempt, &["as"])?;
+            if attempt.prop("as").is_some() {
+                return Err(self.err(
+                    attempt,
+                    "inside loop::fallback a read has no :as; the accepted result binds to the fallback's :as",
+                ));
+            }
+            let ty = self.check_read(attempt, scope)?;
+            let op = attempt.string_prop("op").unwrap_or_default().to_string();
+            match &result_ty {
+                Some((_, first_op)) if *first_op != op => {
+                    return Err(self.err(
+                        step,
+                        format!(
+                            "attempts must use one read operation so the result has one shape; found `{first_op}` and `{op}`"
+                        ),
+                    ));
+                }
+                Some(_) => {}
+                None => result_ty = Some((ty, op)),
+            }
+        }
+        let ty = result_ty.map(|(t, _)| t).unwrap_or(BindTy::Value);
+        let name = step.ident_prop("as").unwrap().to_string();
+        let accept = step.prop("accept").unwrap();
+        let mut accept_scope = scope.clone();
+        self.bind(
+            step,
+            &mut accept_scope,
+            &name,
+            Binding {
+                ty: ty.clone(),
+                tainted: false,
+            },
+        )?;
+        let mut roots = Vec::new();
+        expr_roots(accept, &mut roots);
+        if !roots.contains(&name) {
+            return Err(self.err(
+                step,
+                format!(":accept must test the attempt's result through `${name}`"),
+            ));
+        }
+        self.check_expr(step, &accept_scope, None, accept)?;
+        let otherwise = step.child("otherwise").unwrap();
+        self.check_terminating(step, otherwise)?;
+        let mut inner = scope.clone();
+        self.check_block(&otherwise.children, &mut inner, in_each)?;
+        scope.insert(name, Binding { ty, tainted: false });
+        Ok(())
+    }
+
     fn check_step(
         &mut self,
         step: &LoopNode,
@@ -1276,74 +1459,11 @@ impl<'a> Checker<'a> {
                 self.bind(step, scope, &name, Binding { ty, tainted: false })?;
             }
             "read" => {
-                let op = step.string_prop("op").unwrap_or_default();
-                let mcp_props = ["server", "tool", "args", "auth_env", "select"];
-                let ty = if op == "mcp::call" {
-                    if step.prop("url").is_some() {
-                        return Err(self.err(step, "`mcp::call` takes :server and :tool, not :url"));
-                    }
-                    let Some(server) = step.string_prop("server") else {
-                        return Err(
-                            self.err(step, "`mcp::call` requires :server(\"https://.../mcp\")")
-                        );
-                    };
-                    if !(server.starts_with("http://") || server.starts_with("https://")) {
-                        return Err(self.err(step, ":server must be an absolute http(s) URL"));
-                    }
-                    if step.string_prop("tool").is_none_or(|t| t.trim().is_empty()) {
-                        return Err(self.err(step, "`mcp::call` requires :tool(\"name\")"));
-                    }
-                    if let Some(args) = step.prop("args") {
-                        if !matches!(args, Expr::New { .. }) {
-                            return Err(self.err(step, ":args must be `Contract.new(...)`"));
-                        }
-                        self.check_expr(step, scope, None, args)?;
-                    }
-                    if let Some(env) = step.string_prop("auth_env") {
-                        let valid = !env.is_empty()
-                            && env
-                                .chars()
-                                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
-                            && !env.starts_with(|c: char| c.is_ascii_digit());
-                        if !valid {
-                            return Err(self.err(
-                                step,
-                                ":auth_env must be an environment variable name like API_TOKEN",
-                            ));
-                        }
-                    }
-                    if let Some(sel) = step.string_prop("select") {
-                        let valid = sel.split('.').all(|seg| {
-                            !seg.is_empty()
-                                && seg.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-                        });
-                        if !valid {
-                            return Err(self.err(
-                                step,
-                                ":select must be a dotted field path like \"records.parsed\"",
-                            ));
-                        }
-                    }
-                    BindTy::Fields(CALL_FIELDS)
-                } else {
-                    if let Some(extra) = mcp_props.iter().find(|p| step.prop(p).is_some()) {
-                        return Err(self.err(step, format!(":{extra} only applies to `mcp::call`")));
-                    }
-                    let Some(url) = step.prop("url") else {
-                        return Err(self.err(step, "`scrape::page` requires :url(...)"));
-                    };
-                    self.check_expr(step, scope, None, url)?;
-                    if let Expr::String(u) = url {
-                        if !(u.starts_with("http://") || u.starts_with("https://")) {
-                            return Err(self.err(step, ":url must be an absolute http(s) URL"));
-                        }
-                    }
-                    BindTy::Page
-                };
-                self.check_retry(step)?;
+                let ty = self.check_read(step, scope)?;
                 let name = step.ident_prop("as").unwrap().to_string();
                 self.bind(step, scope, &name, Binding { ty, tainted: false })?;
             }
+            "fallback" => self.check_fallback(step, scope, in_each)?,
             "ask" => {
                 let into = step.ident_prop("into").unwrap().to_string();
                 if self.contract_fields(&into).is_none() {
