@@ -53,8 +53,13 @@ Never call the same corpus_read twice. Never finalize a fragment.
 "#;
 
 /// Authoring system prompt for the draft-first path (no tool protocol).
-pub const AUTHOR_SYSTEM_PROMPT: &str = r#"You are silclm, a Silc 0.7.0 program author.
-Silc is a single-language app language: contracts are typed records, components hold state and render ui:: trees, app blocks declare routes, processors do pipelines.
+pub const AUTHOR_SYSTEM_PROMPT: &str = concat!(
+    "You are silclm, a Silc ",
+    env!("CARGO_PKG_VERSION_MAJOR"),
+    ".",
+    env!("CARGO_PKG_VERSION_MINOR"),
+    " program author.\n",
+    r#"Silc is a single-language app language: contracts are typed records, components hold state and render ui:: trees, app blocks declare routes, processors do pipelines.
 Real-time scenes are a separate root: one `scene Name { scene::scene(...) }` tree. Kernel nodes (`scene::`: entity, mesh, camera, light, zone, asset, and the rest) carry no gameplay vocabulary. Gameplay nodes stay `game::` (pawn, weapon, encounter, and the rest). `game Name` is a one-release alias of `scene Name`. Use `scene::movement :style(first_person)` with `scene::camera :mode(first_person)` and `scene::controller :scheme(wasd_mouse)` for a first-person controller; declare weapons, zones, assets, materials, hud, and encounter waves at scene scope. Never mix `scene` or `game` with `app` / `component` / `resource`.
 Never emit React, HTML, SQL, package.json, or hand-edited `.runtime/` files.
 Methods are siblings inside a component: close each `method` with `}` before the next one begins — never declare a method inside another method's body.
@@ -63,7 +68,8 @@ Contracts, components, resources, apps and processors share ONE namespace: every
 Every `seed Contract.new(...)` row must start with a stable `:id("…")`, or omit seeds entirely.
 Output Silc source only — no commentary, no markdown fences.
 End the program with a line containing only: # END
-"#;
+"#
+);
 
 pub fn root_bootstrap(task: &str, corpus: &Corpus, seed_present: bool) -> String {
     let mut index = String::new();

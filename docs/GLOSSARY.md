@@ -15,7 +15,7 @@ Author-facing text does not abbreviate. In particular:
   `:name(value)` argument on a node, an operation, or a component invocation.
   A bare `:name` is a **flag** option. Collectively: **options**.
 
-Rust identifiers (`EXECUTABLE_OPS`, `PropSpec`, `prop_doc`, …) are renamed when
+Rust identifiers (`executable_ops()`, `PropSpec`, `prop_doc`, …) are renamed when
 the owning code is next touched; they are not author-facing.
 
 ## Language vocabulary
@@ -47,7 +47,7 @@ the owning code is next touched; they are not author-facing.
   `:variant(primary|secondary|destructive|ghost)`.
 - **catalog** — the closed, compiler-owned list of nodes for one namespace
   (`UI_COMPONENT_CATALOG`, `GAME_NODE_CATALOG`, `LOOP_NODE_CATALOG`) or of
-  executable operations (`EXECUTABLE_OPS`). Catalogs are the source of truth;
+  executable operations (`registry::executable_ops()`). Catalogs are the source of truth;
   documentation is generated from or tested against them.
 - **registry** — the executable-operation catalog specifically.
 - **surface** — where a UI renders: **web** (React/Tailwind) or **terminal**

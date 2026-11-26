@@ -1,4 +1,4 @@
-//! Semantic core of ThoughtPivot Silc 0.7.0.
+//! Semantic core of ThoughtPivot Silc.
 //!
 //! Author surface is intent-oriented and declaration-based (`contract`,
 //! `component`, `resource`, `app`, `service`, `processor`, `task`). Internally,
@@ -86,16 +86,19 @@ pub use ui::{
     PropSpec, SlotSpec, Surface, UI_COMPONENT_CATALOG,
 };
 
-/// "Silc 0.7" for a 0.7.x compiler. Diagnostics name the release this way so
-/// a patch bump does not leave a stale version in user-facing text.
+/// `Silc X.Y` for an X.Y.z compiler: [`LANGUAGE_VERSION`] with the product
+/// name. Diagnostics, hover docs and prompts name the release this way so a
+/// release bump does not leave a stale version in user-facing text.
+pub const SILC_RELEASE: &str = concat!(
+    "Silc ",
+    env!("CARGO_PKG_VERSION_MAJOR"),
+    ".",
+    env!("CARGO_PKG_VERSION_MINOR")
+);
+
+/// [`SILC_RELEASE`] as a function, for call sites that format it.
 pub fn silc_release() -> &'static str {
-    static LABEL: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    LABEL.get_or_init(|| {
-        let mut parts = env!("CARGO_PKG_VERSION").split('.');
-        let major = parts.next().unwrap_or("0");
-        let minor = parts.next().unwrap_or("0");
-        format!("Silc {major}.{minor}")
-    })
+    SILC_RELEASE
 }
 
 #[cfg(test)]
@@ -124,6 +127,7 @@ mod tests {
         assert!(label.starts_with("Silc "));
         assert!(version.starts_with(label.trim_start_matches("Silc ")));
         assert_eq!(label.matches('.').count(), 1, "{label}");
+        assert_eq!(label, format!("Silc {LANGUAGE_VERSION}"));
     }
 
     #[test]

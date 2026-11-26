@@ -35,7 +35,7 @@ dual-surface primitive catalog) lives in
 [`crates/silc/templates/AGENTS.md`](../crates/silc/templates/AGENTS.md) and is
 summarized in the root [README](../README.md). Compiler sources
 (`UI_COMPONENT_CATALOG`, `GAME_NODE_CATALOG`, `LOOP_NODE_CATALOG`,
-`EXECUTABLE_OPS`) remain authoritative; documentation conformance tests fail on
+`registry::executable_ops()`) remain authoritative; documentation conformance tests fail on
 drift, including on hard-coded catalog counts in prose.
 
 ## Compiler pipeline vocabulary
@@ -88,7 +88,8 @@ crates/sil-core/src/
 ├── loops.rs           # Loop + LOOP_NODE_CATALOG + loop validation
 ├── module.rs
 ├── pipeline.rs
-├── operation.rs       # EXECUTABLE_OPS, KNOWN_NAMESPACES, graph classification
+├── operation.rs       # KNOWN_NAMESPACES, graph classification
+├── registry.rs        # executable_ops(), is_executable, COMPATIBILITY
 ├── scrape_catalog.rs  # scrape::* option values
 ├── model_catalog.rs   # silclm / MiniLM pinned model ids
 ├── constraint.rs

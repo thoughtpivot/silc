@@ -978,7 +978,7 @@ pub fn run_api(output: &EmitResult, _lock: &RuntimeLock) -> Result<(), String> {
     let graph = output
         .graph
         .as_ref()
-        .ok_or_else(|| "program is not executable in Silc 0.7.0".to_string())?;
+        .ok_or_else(|| format!("program is not executable in {}", sil_core::silc_release()))?;
     if !graph.is_api_only() {
         return Err("run_api requires an API-only service::http program".into());
     }
@@ -1046,7 +1046,7 @@ pub fn run_loop_command(output: &EmitResult, lock: &RuntimeLock) -> Result<(), S
     let graph = output
         .graph
         .as_ref()
-        .ok_or_else(|| "program is not executable in Silc 0.7.0".to_string())?;
+        .ok_or_else(|| format!("program is not executable in {}", sil_core::silc_release()))?;
     if !graph.is_loop_command() {
         return Err("internal: run_loop_command needs a loop command program".into());
     }
@@ -1201,7 +1201,7 @@ fn run_graph(
     let graph = output
         .graph
         .as_ref()
-        .ok_or_else(|| "program is not executable in Silc 0.7.0".to_string())?;
+        .ok_or_else(|| format!("program is not executable in {}", sil_core::silc_release()))?;
     if graph.is_api_only() {
         return run_api(output, lock);
     }

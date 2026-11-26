@@ -1,4 +1,4 @@
-//! Executable operation registry for Silc 0.7.0 runnable programs.
+//! Executable operation registry for Silc runnable programs.
 
 use crate::app::App;
 use crate::component::Component;
@@ -242,7 +242,7 @@ pub struct ExecutableGraph {
     pub model_ref: Option<String>,
     /// Closed embedding output dimension when `processor_op` is `TensorInfer`.
     pub embedding_dim: Option<u32>,
-    /// Tensor runtime device (`CPU` only in Silc 0.7.0).
+    /// Tensor runtime device (`CPU` only).
     pub tensor_device: Option<String>,
     /// Contract field read by the tensor pipeline (default `raw_content`).
     pub tensor_input_field: Option<String>,
@@ -463,7 +463,8 @@ pub fn classify_program(program: &Program) -> Result<ExecutionMode, String> {
                     {
                         if is_v1_exec_namespace(ns) && !is_executable_op(ns, name) {
                             return Err(format!(
-                                "operation `{ns}::{name}` is not executable in Silc 0.7.0"
+                                "operation `{ns}::{name}` is not executable in {}",
+                                crate::silc_release()
                             ));
                         }
                     }
@@ -1442,7 +1443,7 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
             })?;
         sqlite_table = sink_table_for_contract(&contract);
         synthesized_sink = format!("{}Db", contract);
-        let _ = (saw_publish, saw_sqlite, saw_commit); // legacy scan flags unused in 0.5.0
+        let _ = (saw_publish, saw_sqlite, saw_commit); // legacy scan flags, unused
     }
 
     if processor_op.needs_tensor() {

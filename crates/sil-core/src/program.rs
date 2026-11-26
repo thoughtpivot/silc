@@ -1,4 +1,4 @@
-//! A Silc 0.7.0 program: contracts, modules, components, resources, and apps.
+//! A Silc program: contracts, modules, components, resources, and apps.
 
 use crate::app::App;
 use crate::component::{Component, UiTemplate};
@@ -506,7 +506,8 @@ fn reject_author_runtime_mechanics(program: &Program) -> Result<(), String> {
         return Ok(());
     }
     Err(format!(
-        "runtime mechanics are compiler-owned in Silc 0.7.0 and must not appear in source ({}); remove `method serve()`, `sink`, `ipc::*`, `store::*`, and `resource::*` pipelines — declare `app` routes, `resource Name for Contract {{ query/mutation; }}`, and processor workflows only",
+        "runtime mechanics are compiler-owned in {} and must not appear in source ({}); remove `method serve()`, `sink`, `ipc::*`, `store::*`, and `resource::*` pipelines — declare `app` routes, `resource Name for Contract {{ query/mutation; }}`, and processor workflows only",
+        crate::silc_release(),
         forbidden.join(", ")
     ))
 }

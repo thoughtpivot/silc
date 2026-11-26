@@ -1,4 +1,4 @@
-//! Silc 0.7.0 code generation: inspectable stubs and runnable dual-surface apps.
+//! Silc code generation: inspectable stubs and runnable dual-surface apps.
 //!
 //! Pipeline vocabulary: **codegen** renders target source from the validated
 //! semantic model; **emit** writes those artifacts into `.runtime/`. Dual-surface
@@ -1886,7 +1886,8 @@ fn render_stub(module: &Module, decision: &RouteDecision) -> String {
                 .iter()
                 .map(|name| {
                     format!(
-                        "  async {name}(): Promise<void> {{\n    // TODO: operation is not executable in Silc 0.7.0\n  }}"
+                        "  async {name}(): Promise<void> {{\n    // TODO: operation is not executable in {}\n  }}",
+                        sil_core::silc_release()
                     )
                 })
                 .collect::<Vec<_>>()
@@ -1901,7 +1902,8 @@ fn render_stub(module: &Module, decision: &RouteDecision) -> String {
                 .iter()
                 .map(|name| {
                     format!(
-                        "    def {name}(self):\n        # TODO: operation is not executable in Silc 0.7.0\n        pass"
+                        "    def {name}(self):\n        # TODO: operation is not executable in {}\n        pass",
+                        sil_core::silc_release()
                     )
                 })
                 .collect::<Vec<_>>()
@@ -1916,9 +1918,10 @@ fn render_stub(module: &Module, decision: &RouteDecision) -> String {
                 .iter()
                 .map(|name| {
                     format!(
-                        "func (m *{}) {}() {{\n\t// TODO: operation is not executable in Silc 0.7.0\n}}",
+                        "func (m *{}) {}() {{\n\t// TODO: operation is not executable in {}\n}}",
                         module.name,
-                        pascal_case(name)
+                        pascal_case(name),
+                        sil_core::silc_release()
                     )
                 })
                 .collect::<Vec<_>>()

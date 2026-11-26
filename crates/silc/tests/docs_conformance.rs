@@ -1,7 +1,7 @@
 //! Documentation conformance: catalog lines, executable operations, vocabulary,
 //! and AGENTS sync.
 //!
-//! Sources of truth remain the catalogs and `EXECUTABLE_OPS` in sil-core. The
+//! Sources of truth remain the catalogs and `executable_ops()` in sil-core. The
 //! AGENTS template must list every catalog entry, every executable operation,
 //! and the generated game closed-enum paragraph. The root README is a
 //! high-level white paper: it must list executable operations, state
@@ -281,7 +281,7 @@ fn removed_author_ops_not_listed_as_runnable() {
 
     for (label, doc) in [("AGENTS", &template), ("README", &readme)] {
         let start = doc
-            .find("Runnable operations (0.7.0)")
+            .find("## Runnable operations")
             .or_else(|| doc.find("### Executable operations"))
             .unwrap_or_else(|| panic!("{label}: missing runnable operations section"));
         let section = &doc[start..];
@@ -337,6 +337,129 @@ fn tracked_example_agents_embed_template_common_block() {
             "{app}/AGENTS.md must append app-specific guidance after the template block"
         );
     }
+}
+
+/// Messages about the release that removed or introduced something keep
+/// their historical version on purpose. A line containing one of these
+/// phrases may name a literal Silc release.
+const HISTORICAL_RELEASE_MESSAGES: &[&str] = &[
+    "`class X is …`, Silc 0.3.0",
+    "author `sink`, Silc 0.4.0",
+    "source declares Silc 0.5.0",
+    "`task` was removed in Silc 0.7.0",
+];
+
+/// `Silc X.Y` or `Silc X.Y.Z` literals in `text`, as `(line, literal)`, on
+/// lines that are not [`HISTORICAL_RELEASE_MESSAGES`].
+fn release_literals(text: &str) -> Vec<(usize, String)> {
+    let mut out = Vec::new();
+    for (index, line) in text.lines().enumerate() {
+        if HISTORICAL_RELEASE_MESSAGES
+            .iter()
+            .any(|allowed| line.contains(allowed))
+        {
+            continue;
+        }
+        for (start, _) in line.match_indices("Silc ") {
+            let rest = &line[start + "Silc ".len()..];
+            let literal: String = rest
+                .chars()
+                .take_while(|c| c.is_ascii_digit() || *c == '.')
+                .collect();
+            let literal = literal.trim_end_matches('.');
+            let parts: Vec<&str> = literal.split('.').collect();
+            if (2..=3).contains(&parts.len()) && parts.iter().all(|p| !p.is_empty()) {
+                out.push((index + 1, format!("Silc {literal}")));
+            }
+        }
+    }
+    out
+}
+
+/// Rust sources, `silc init` templates and the vendored authoring corpus:
+/// everything that reaches a user as a diagnostic, hover doc, prompt, or
+/// generated project file.
+fn release_literal_scan_files() -> Vec<String> {
+    fn walk(dir: &std::path::Path, root: &std::path::Path, out: &mut Vec<String>) {
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries {
+            let path = entry.expect("dir entry").path();
+            let name = path.file_name().unwrap().to_string_lossy();
+            if name.starts_with('.') || name == "target" || name == "node_modules" {
+                continue;
+            }
+            if path.is_dir() {
+                walk(&path, root, out);
+            } else if path.extension().is_some_and(|ext| ext == "rs") {
+                out.push(path.strip_prefix(root).unwrap().display().to_string());
+            }
+        }
+    }
+    fn walk_all(dir: &std::path::Path, root: &std::path::Path, out: &mut Vec<String>) {
+        for entry in fs::read_dir(dir).unwrap_or_else(|e| panic!("read {}: {e}", dir.display())) {
+            let path = entry.expect("dir entry").path();
+            if path.is_dir() {
+                walk_all(&path, root, out);
+            } else {
+                out.push(path.strip_prefix(root).unwrap().display().to_string());
+            }
+        }
+    }
+    let root = workspace_root();
+    let mut out = Vec::new();
+    walk(&root.join("crates"), &root, &mut out);
+    for dir in ["crates/silc/templates", "crates/sil-rlm/corpus"] {
+        walk_all(&root.join(dir), &root, &mut out);
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+#[test]
+fn no_hard_coded_release_versions() {
+    let files = release_literal_scan_files();
+    assert!(
+        files
+            .iter()
+            .any(|f| f == "crates/sil-core/src/operation.rs")
+            && files.iter().any(|f| f == "crates/silc/templates/AGENTS.md")
+            && files.iter().any(|f| f == "crates/sil-rlm/corpus/agents.md"),
+        "scan must cover crate sources and templates, found {files:?}"
+    );
+    let mut offenders = Vec::new();
+    for rel in &files {
+        for (line, literal) in release_literals(&read_workspace(rel)) {
+            offenders.push(format!("{rel}:{line}: {literal}"));
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "name the release with sil_core::silc_release() / LANGUAGE_VERSION, not a literal \
+         (or add a historical message to HISTORICAL_RELEASE_MESSAGES):\n{}",
+        offenders.join("\n")
+    );
+}
+
+#[test]
+fn release_literal_scan_catches_planted_literals() {
+    let planted = format!(
+        "fn f() {{ err(\"tensor::infer is CPU-only in Silc {}.{}.{}\") }}\n// Silc {}.{} only\n",
+        0, 9, 4, 1, 2
+    );
+    assert_eq!(
+        release_literals(&planted),
+        vec![
+            (1, format!("Silc {}.{}.{}", 0, 9, 4)),
+            (2, format!("Silc {}.{}", 1, 2)),
+        ]
+    );
+    let historical = format!("\"`task` was removed in Silc {}.{}.{}\"", 0, 7, 0);
+    assert!(release_literals(&historical).is_empty());
+    assert!(release_literals("Silc is a language. Silc 1 Silc .5 Silc").is_empty());
+    assert!(release_literals(sil_core::SILC_RELEASE).len() == 1);
 }
 
 /// Every checked-in `.silc` source under examples, templates, the assist

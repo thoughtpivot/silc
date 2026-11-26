@@ -251,7 +251,7 @@ fn compile_and_run_pipeline(entry: &Path, input_json: &str) -> Result<(), String
     let graph = output
         .graph
         .as_ref()
-        .ok_or_else(|| "program is not executable in Silc 0.7.0".to_string())?;
+        .ok_or_else(|| format!("program is not executable in {}", sil_core::silc_release()))?;
     if !graph.is_pipeline_only() {
         return Err("`silc run --input-*` requires a pipeline-only program".into());
     }
@@ -269,7 +269,10 @@ fn build_only(entry: &Path) -> Result<(), String> {
         println!("go:      {}", lock.go_bin.display());
         println!("engines locked under .silc/runtimes.lock.json");
     } else {
-        println!("stub emit only — this program is not executable in Silc 0.7.0");
+        println!(
+            "stub emit only — this program is not executable in {}",
+            sil_core::silc_release()
+        );
     }
     if let Some(report) = &output.loop_report {
         print!("{report}");
@@ -309,7 +312,7 @@ fn compile_and_maybe_run(entry: &Path, attach_terminal: bool) -> Result<(), Stri
     match output.execution_mode {
         ExecutionMode::Stub => {
             println!();
-            println!("stub emit complete — worker execution requires runnable 0.5.0 operations");
+            println!("stub emit complete — worker execution requires runnable operations");
             println!(
                 "(app with ui::web + ui::terminal, resources/actions, optional text::score or llm::complete, or service::http)"
             );

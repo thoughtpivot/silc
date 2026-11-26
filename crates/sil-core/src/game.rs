@@ -146,7 +146,7 @@ pub const GAME_NODE_CATALOG: &[GameNodeSpec] = &[
         description: "Root WebGPU game scene (Godot main scene). Hosts the entity tree, prefabs, data assets, mode, controller, camera, and post-process.",
         props: &[
             gp("title", GamePropKind::String, true, "Window / overlay title shown for the game program. Prefer a short product name."),
-            gp_closed("renderer", GamePropKind::Ident, false, "Graphics backend token. Only `webgpu` is legal in Silc 0.7.0.", &["webgpu"]),
+            gp_closed("renderer", GamePropKind::Ident, false, "Graphics backend token. Only `webgpu` is legal.", &["webgpu"]),
             gp("target_fps", GamePropKind::Number, false, "Preferred frame rate for the render loop (for example `90`). The runtime caps to display capability."),
         ],
         children: GameChildPolicy::AnyOf(SCENE_CHILDREN),
@@ -1042,9 +1042,7 @@ pub fn game_prop_doc(node: &str, prop: &str) -> Option<&'static str> {
 /// Documentation for a closed enum / ident token used by a game prop.
 pub fn game_closed_value_doc(value: &str) -> Option<&'static str> {
     Some(match value {
-        "webgpu" => {
-            "WebGPU renderer backend. The only legal `:renderer` token for `scene::scene` in Silc 0.7.0."
-        }
+        "webgpu" => "WebGPU renderer backend. The only legal `:renderer` token for `scene::scene`.",
         "plane" => "Flat ground or wall primitive / collider.",
         "box" => "Axis-aligned box mesh or collider.",
         "capsule" => "Capsule mesh or character collider.",
@@ -1056,9 +1054,13 @@ pub fn game_closed_value_doc(value: &str) -> Option<&'static str> {
         "first_person" => "First-person locomotion or camera rig bound to the pawn eye socket.",
         "sprint" => "Sprint locomotion style applying a speed multiplier while held.",
         "jump" => "Jump-capable locomotion style with vertical impulse on input.",
-        "platformer" => "Side-scrolling platformer locomotion with horizontal movement and jump (locks Z axis).",
+        "platformer" => {
+            "Side-scrolling platformer locomotion with horizontal movement and jump (locks Z axis)."
+        }
         "wasd_mouse" => "Keyboard WASD move plus mouse look input scheme.",
-        "arrows_jump" => "Arrow keys for horizontal movement plus Space for jump (platformer scheme).",
+        "arrows_jump" => {
+            "Arrow keys for horizontal movement plus Space for jump (platformer scheme)."
+        }
         "third_person" => "Spring-arm third-person camera following the pawn.",
         "side_scroll" => "Orthographic side-scroll camera looking at the XY plane from +Z.",
         "gltf" => "GLTF 3D model asset loaded at runtime for mesh rendering.",
@@ -1144,8 +1146,12 @@ pub fn game_closed_value_doc(value: &str) -> Option<&'static str> {
         "audio" => "Audio clip asset for spatial or UI playback.",
         "ammo" => "Pickup grants ammo rounds referenced by `:ref`.",
         // Procedural asset generation types (ADR-013)
-        "sprite" => "2D sprite atlas with animation frames for characters, enemies, items, and effects.",
-        "material" => "Procedurally generated PBR material with albedo, normal, roughness, and metallic maps.",
+        "sprite" => {
+            "2D sprite atlas with animation frames for characters, enemies, items, and effects."
+        }
+        "material" => {
+            "Procedurally generated PBR material with albedo, normal, roughness, and metallic maps."
+        }
         // Sprite presets (archetypes)
         "character" => "Bipedal or player-controlled entity sprite with customizable animations.",
         "enemy" => "Hostile or NPC entity sprite with customizable animations.",
@@ -1483,8 +1489,12 @@ pub fn validate_game_node(node: &GameNode) -> Result<(), String> {
     let expected = node_namespace(&node.name);
     if node.namespace != expected {
         return Err(format!(
-            "`{}::{}` is written `{}::{}` in Silc 0.7.0",
-            node.namespace, node.name, expected, node.name
+            "`{}::{}` is written `{}::{}` in {}",
+            node.namespace,
+            node.name,
+            expected,
+            node.name,
+            crate::silc_release()
         ));
     }
 
