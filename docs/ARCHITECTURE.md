@@ -6,7 +6,7 @@ Silc's **authoring surface is intent-oriented** (see
 organized around durable language concepts instead of allowing compiler phases
 to become the owners of the model.
 
-Silc 0.7.0 implements subjects, lexing, parsing, deterministic routing,
+Silc 0.8.0 implements subjects, lexing, parsing, deterministic routing,
 runnable Bun/Python/Go codegen, supervisor-owned mmap + UDS IPC, generic
 SQLite resources, dual-surface component applications synthesized from `app`
 routes ([ADR-009](ADR-009-compiler-synthesized-runtime.md)), fused `scrape::*`
@@ -29,7 +29,7 @@ chat: [ADR-005](ADR-005-local-llm-complete.md). Recursive authoring assist
 Decision index: [ADR-INDEX.md](ADR-INDEX.md).
 
 The normative language surface lives in [SILC-LANGUAGE.md](SILC-LANGUAGE.md)
-and the vocabulary in [GLOSSARY.md](GLOSSARY.md). The exhaustive 0.7.0 authoring
+and the vocabulary in [GLOSSARY.md](GLOSSARY.md). The exhaustive 0.8.0 authoring
 and UI API contract (language constructs, executable operations, and the
 dual-surface primitive catalog) lives in
 [`crates/silc/templates/AGENTS.md`](../crates/silc/templates/AGENTS.md) and is
@@ -294,7 +294,7 @@ Silc buffers as Arrow for external analytical tools.
 ## Project layout and execution
 
 `silc` is the compile-and-run entrypoint (CLI or shebang
-`#!/usr/bin/env silc`). Runnable 0.7.0 programs execute under the Rust supervisor;
+`#!/usr/bin/env silc`). Runnable 0.8.0 programs execute under the Rust supervisor;
 other programs emit inspectable stubs.
 
 | Concept | Meaning |
@@ -308,7 +308,7 @@ other programs emit inspectable stubs.
 - `silc init` / `silc init <path>` — scaffold project files, provision Silc-owned
   Bun/CPython/Go into `~/.silc/runtimes/`, and write `.silc/runtimes.lock.json`
 - `silc build <entry>` — compile only
-- `silc <entry>` — compile; run when the program is runnable in 0.7.0
+- `silc <entry>` — compile; run when the program is runnable in 0.8.0
 - `silc run <entry> --input-json '<json>'` / `--input <file.json>` — execute a
   one-shot pipeline-only program (ADR-010)
 - `silc assist "<task>"` — experimental recursive authoring help (ADR-008)
@@ -339,7 +339,7 @@ Bare `init` is the subcommand; `init.silc` still compiles as a path.
 | `{workdir}/.runtime/` | Per-program **generated codegen** produced when `silc` runs |
 
 Compiler-owned embedding bundles live under
-`~/.silc/models/<catalog-id>/`. The 0.7.0 MiniLM pipeline adapter
+`~/.silc/models/<catalog-id>/`. The MiniLM pipeline adapter
 ([ADR-010](ADR-010-tensor-minilm-pipeline.md)) verifies pinned ONNX/tokenizer
 artifacts, runs CPU-only attention-mask mean pooling and L2 normalization in
 CPython, and persists the generic JSON record through a synthesized Go sink
@@ -364,7 +364,7 @@ splitting does not.
 
 ## Future work
 
-- Expand expression and subject type inference beyond the 0.7.0 grammar
+- Expand expression and subject type inference beyond the 0.8.0 grammar
 - Generalize executable target adapters beyond the current operation registry
 - Deepen OpenTUI terminal fidelity (dialogs, dense tables, chat polish) while preserving surface parity
 - Add typed field views atop the implemented mmap/UDS ABI

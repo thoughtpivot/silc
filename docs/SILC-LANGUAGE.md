@@ -1,4 +1,4 @@
-# Silc language surface (0.7.0)
+# Silc language surface (0.8.0)
 
 This is the normative description of what a `.silc` program may contain. ADRs
 record *why*; this page records *what*. The compiler catalogs in `sil-core`
@@ -33,15 +33,15 @@ are generated into
 ## 2. Program structure
 
 ```silc
-@version("0.7")
+@version("0.8")
 
 <declaration>*
 ```
 
 - `@version("…")` is required. It names the language version as major.minor
-  (`@version("0.7")`) and matches every compiler with the same major and
+  (`@version("0.8")`) and matches every compiler with the same major and
   minor; the patch is ignored, because patch releases do not change the
-  language. `@version("0.7.0")` or any other `0.7.x` is also accepted. A
+  language. `@version("0.8.0")` or any other `0.8.x` is also accepted. A
   different major or minor is rejected with a migration diagnostic.
 - Declarations may appear in any order. Names share one namespace: no two
   declarations of any kind may share a name.
@@ -248,7 +248,7 @@ loop RfiChase {
   :args(Contract.new(...)), :auth_env("VAR"), :select("path")))`. The result
   binds `$x.text` and `$x.data`. The string form `:op("scrape::page")` remains
   a one-release alias.
-- `loop::fallback` (new in 0.8.0, unreleased) tries two or more `loop::read`
+- `loop::fallback` (new in 0.8.0) tries two or more `loop::read`
   attempts in order and binds the first result that satisfies `:accept`:
 
   ```silc
@@ -271,7 +271,7 @@ loop RfiChase {
   `loop::read(:as(x), :into(Contract), scrape::page(...))` binds `$x` as a row
   of that contract (rules in [ADR-014](ADR-014-loop-subject.md), decision 6).
   `:select` on `mcp::call` stays a dotted JSON path.
-- Embedding step (new in 0.8.0, unreleased; THO-552):
+- Embedding step (new in 0.8.0; THO-552):
 
   ```silc
   loop::let(:as(vec),
@@ -288,7 +288,7 @@ loop RfiChase {
   never call silclm, and appear on their own `embeds` line in the
   `silc build` cost report, apart from model calls
   ([ADR-014](ADR-014-loop-subject.md) amendment).
-- More reads (0.8.0, unreleased; [ADR-020](ADR-020-loop-scrape-and-score-steps.md)):
+- More reads (new in 0.8.0; [ADR-020](ADR-020-loop-scrape-and-score-steps.md)):
   `scrape::site(:url(...), :max(N))` crawls same-host links (`:depth`, default
   2; `:same_host`; `:link_css`) and binds a list of pages; `:max` (at most 100)
   is required. `scrape::render(:url(...))` loads the page in headless
@@ -300,7 +300,7 @@ loop RfiChase {
   unchecked `loop::ask` output. `silc build` lists scores beside reads, and
   counts a `scrape::site` read as its `:max` pages.
 
-- Nearest match (new in 0.8.0, unreleased):
+- Nearest match (new in 0.8.0; THO-553):
   `loop::find(:as(seen), :max(5), :from(Incidents.nearest(:to($vec))))` binds
   the `:max` rows of a resource with `query nearest;` whose
   `vector_embedding` is closest to `$vec` by cosine similarity, best first.
@@ -348,7 +348,7 @@ processor Embedder {
 - `is trait(value)` after the declaration name is accepted on these three
   keywords only, for compiler-consumed hints; authors do not declare storage
   or sinks.
-- **Executable operations (0.7.0):** `service::http`, `text::score`,
+- **Executable operations (0.8.0):** `service::http`, `text::score`,
   `llm::complete`, `scrape::page`, `scrape::site`, `scrape::select`,
   `scrape::render`, `scrape::extract`, `doc::extract`, `tensor::tokenize`,
   `tensor::infer`.
@@ -383,7 +383,7 @@ checks with one declared matrix that generates this section.
 - UI programs require an `app` with at least one `route`.
 - At most one processor operation family per program.
 
-## 12. Resolved by 0.7.0, and what remains
+## 12. Resolved by 0.8.0, and what remains
 
 Resolved by 0.7.0 (the 0.6.0 changes, now stable):
 
@@ -398,32 +398,30 @@ Resolved by 0.7.0 (the 0.6.0 changes, now stable):
 7. Kernel nodes are `scene::`. Gameplay nodes are `game::`. The root is `scene`; `game` is a one-release alias.
 8. Author `sink`, `App.serve`, and discarded component pipelines are gone.
 
-0.7.0 adds no language surface. Its one source change was a required
+0.7.0 added no language surface. Its one source change was a required
 `@version` that had to equal the compiler version exactly.
 
-`@version` now matches on major.minor (THO-558): sources write
-`@version("0.7")`, and every 0.7.x compiler accepts them. A program that
-declares another major or minor is rejected with a migration diagnostic. From
-0.8.0, programs write `@version("0.8")` and build on every 0.8.x compiler.
+Added in 0.8.0 (see [CHANGELOG.md](../CHANGELOG.md) and
+[ADR-019](ADR-019-vran-language-into-loop.md)):
 
-Planned for 0.8.0 (see the Unreleased list in
-[CHANGELOG.md](../CHANGELOG.md) and
-[ADR-019](ADR-019-vran-language-into-loop.md)). `loop::fallback` and
-multi-value `:from` are implemented on `main`; the rest is not:
-
-1. `loop::fallback`: ordered `loop::read` attempts, kept when a condition
-   holds, with a terminating `loop::otherwise` (THO-559, Part 1; implemented,
-   see section 8).
-2. Citations on `loop::ask`, accepted only when each quote occurs in a cited
-   source (THO-559, Part 2; deferred, not in 0.8.0).
+1. `@version` matches on major.minor (THO-558): sources write
+   `@version("0.8")`, and every 0.8.x compiler accepts them. A program that
+   declares another major or minor is rejected with a migration diagnostic.
+2. `loop::fallback`: ordered `loop::read` attempts, kept when a condition
+   holds, with a terminating `loop::otherwise` (THO-559, Part 1; section 8).
 3. Multi-value `:from` on `loop::ask`: `:from($release, $seen)` equals
    `:from([$release, $seen])`, and the model sees an object labelled by
-   binding path (THO-555, on main).
-4. Loop embeddings and nearest-neighbor `loop::find` (THO-551 to THO-555).
-   Page-read `:into` plus `:select` on `loop::read` (THO-554) and the
-   `loop::let` + `tensor::infer` embedding step (THO-552) are implemented on
-   main, and so is `loop::find :from(R.nearest(:to($vec)))` (THO-553,
-   section 8).
+   binding path (THO-555).
+4. Page-read `:into` plus `:select` on `loop::read` (THO-554), the
+   `loop::let` + `tensor::infer` embedding step (THO-552), nearest-match
+   `loop::find :from(R.nearest(:to($vec)))` (THO-553), embeddings and
+   `query nearest` in apps (THO-132), `scrape::site`, `scrape::render`,
+   `scrape::select` and `text::score` in loops (THO-579), and type-checked
+   `Contract.new` field values (THO-578).
+
+Deferred past 0.8.0: citations on `loop::ask`, accepted only when each quote
+occurs in a cited source (THO-559, Part 2), and per-field gate approval
+(THO-556).
 
 Still irregular:
 

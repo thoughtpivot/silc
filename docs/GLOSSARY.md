@@ -79,7 +79,7 @@ the owning code is next touched; they are not author-facing.
 - **step** — any `loop::` node after the trigger.
 - **gate** — a `loop::gate`; conditions fail closed.
 - **effect** — a `loop::write` or `loop::notify`; keyed and receipted.
-- **version pragma** — `@version("0.7")`; names the language major.minor and matches every compiler with the same major and minor.
+- **version pragma** — `@version("0.8")`; names the language major.minor and matches every compiler with the same major and minor.
 
 ## Compiler and runtime vocabulary
 

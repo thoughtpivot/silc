@@ -500,7 +500,7 @@ fn reemit_keeps_previous_pinned_plans() {
 fn ask_from_comma_list_and_bracket_list_lower_to_the_same_plan() {
     let source = |from: &str| {
         format!(
-            r#"@version("0.7")
+            r#"@version("0.8")
 contract Release {{
     has Str $.id;
 }}

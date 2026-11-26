@@ -1,6 +1,6 @@
 #!/usr/bin/env silc
 # Native Silc AI chat assistant with multiple chats.
-@version("0.7")
+@version("0.8")
 
 contract ChatSession {
     has Str $.id;

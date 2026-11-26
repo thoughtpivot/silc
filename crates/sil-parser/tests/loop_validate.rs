@@ -4,7 +4,7 @@
 use sil_parser::parse;
 
 const PRELUDE: &str = r#"
-@version("0.7")
+@version("0.8")
 contract Rfi {
     has Str $.id;
     has Str $.status;
@@ -791,7 +791,7 @@ fn fallback_inside_each_multiplies_attempts() {
 }
 
 const TYPED_PRELUDE: &str = r#"
-@version("0.7")
+@version("0.8")
 subset Emb384 of Vec[num32; 384];
 subset Emb768 of Vec[num32; 768];
 contract Src {
@@ -1222,7 +1222,7 @@ fn fallback_attempts_take_select_and_one_shared_into() {
 }
 
 const INTO_TYPED_PRELUDE: &str = r#"
-@version("0.7")
+@version("0.8")
 contract Dep { has Str $.id; has Str $.changelog; }
 contract Release { has Str $.version; has Str $.text; }
 contract Hit { has Str $.title; has Int $.status; }
@@ -1285,7 +1285,7 @@ fn into_row_fields_take_the_contract_types_without_coercion() {
 // ---------------------------------------------------------------- embedding steps (THO-552)
 
 const EMBED_PRELUDE: &str = r#"
-@version("0.7")
+@version("0.8")
 subset Emb384 of Vec[num32; 384];
 subset Emb768 of Vec[num32; 768];
 contract Dependency { has Str $.id; has Str $.changelog; }
@@ -1794,7 +1794,7 @@ fn scrape_pipelines_still_cannot_share_a_program_with_loops() {
 // ---------------------------------------------------------------- find nearest (THO-553)
 
 const NEAREST_PRELUDE: &str = r#"
-@version("0.7")
+@version("0.8")
 subset Emb384 of Vec[num32; 384];
 subset Emb128 of Vec[num32; 128];
 contract Dependency { has Str $.id; has Str $.name; has Str $.changelog; has Emb384 $.vector_embedding; has Emb128 $.small; }
