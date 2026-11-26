@@ -105,7 +105,27 @@ GET) and `mcp::call` (one named tool per step).
    read from the named environment variable at run time and never appears in
    source or the plan. `:select` is a dotted path into the result
    (`records.parsed`); lists map over their items. The result binds `text`
-   and `data`. The reserved `$calendar` binding carries the run's date window
+   and `data`.
+   **Page reads (THO-554).** `scrape::page(:url, :select("css"))` narrows the
+   fetched page to the first element matching the selector, in document
+   order, before `text` is taken; a selector that matches nothing fails the
+   read (not retried). The selector is a closed CSS subset checked at compile
+   time (type or `*`, `.class`, `#id`, `[attr]`, `[attr=value]`, combinators
+   descendant, `>`, `+`, `~`, and `,` lists; no pseudo-classes). The Go
+   kernel matches it with cascadia over `golang.org/x/net/html`, the engine
+   colly uses for `scrape::site`. `:into(Contract)` binds the read as a row
+   of that contract, filled without a model call:
+   1. A field named `url`, `status`, `title`, or `text` takes the page's
+      value. `text` is the selected element's text when `:select` is set,
+      else the whole page's. `status` must be `Int`; the others `Str`.
+   2. `:fields(Contract.new(:field("css"), ...))` fills a `Str` field with
+      the text of the first element inside the selection that matches its
+      selector. It overrides rule 1 for that field.
+   3. Any other field, or a `:fields` selector that matches nothing, is
+      absent: reading it is unknown, so a later gate fails closed.
+   The read records the finished row (never the raw HTML) as one input, so
+   replay reuses the selection. `:retry` and the cost report's read count are
+   unchanged by `:select`, `:into`, or `:fields`. The reserved `$calendar` binding carries the run's date window
    (`today`, `weekday`, `last7_start`, `last7_end`, `next7_end`) in the loop's
    time zone and is recorded with the clock.
 7. **Run now.** The inbox starts `manual` and `schedule` loops on request, so

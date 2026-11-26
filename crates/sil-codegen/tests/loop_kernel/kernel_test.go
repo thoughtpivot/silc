@@ -2,7 +2,8 @@ package main
 
 // Replay traces for the loop kernel against the lowered examples/rfiChaseApp
 // (plan.json) and the tests/fixtures/loop_digest.silc fixture, scheduled
-// (digest_plan.json) and as a command (command_plan.json). The Rust test
+// (digest_plan.json) and as a command (command_plan.json), and the
+// tests/fixtures/loop_page_read.silc page reads (page_plan.json). The Rust test
 // `loop_kernel_replay_traces` copies this file, the kernel template, and the
 // plans into a temp module and runs `go test`.
 
@@ -1348,5 +1349,146 @@ func TestAskFromSeveralBindingsKeepsEveryLabelInTheSlot(t *testing.T) {
 	a, _ := decoded["a"].([]any)
 	if len(a) == 0 || a[len(a)-1] != long[399] {
 		t.Fatalf("trimming drops the oldest rows first")
+	}
+}
+
+// ---------------------------------------------------------------- page reads (THO-554)
+
+const changelogHTML = `<html><head><title>silc changelog</title></head><body>
+<nav>Home Docs Blog</nav>
+<article><h2>v1.4.0</h2><p>Faster   builds.</p><script>track()</script></article>
+<article><h2>v1.3.0</h2><p>Older.</p></article>
+</body></html>`
+
+type fakePages struct {
+	html  map[string]string
+	calls []string
+}
+
+func (f *fakePages) fetch(url string) (Page, error) {
+	f.calls = append(f.calls, url)
+	body, ok := f.html[url]
+	if !ok {
+		return Page{}, fmt.Errorf("GET %s returned 404", url)
+	}
+	return Page{URL: url, Status: 200, Title: "silc changelog", Text: "whole page text", HTML: body}, nil
+}
+
+func newPageReads(t *testing.T, html map[string]string) (*harness, *fakePages) {
+	t.Helper()
+	h := newBareHarness(t, "2026-10-02T15:00:00Z", "page_plan.json")
+	p := &fakePages{html: html}
+	h.k.fetch = p.fetch
+	return h, p
+}
+
+func TestPageReadSelectsIntoContractAndReplays(t *testing.T) {
+	url := "https://example.test/silc/CHANGELOG"
+	h, p := newPageReads(t, map[string]string{url: changelogHTML})
+	h.seed("dependencies", "silc", map[string]any{"name": "silc", "changelog": url})
+	h.runNow("ReleaseWatch", "req-1")
+	run := h.runsOf("ReleaseWatch")[0]
+	if run["outcome"] != "succeeded" {
+		t.Fatalf("run: %v", run)
+	}
+	notice := h.one("loop_notices")
+	if notice["text"] != "silc v1.4.0: v1.4.0 Faster builds." {
+		t.Fatalf(":select keeps the first <article> without nav or script, :fields fills version: %v", notice)
+	}
+	if notice["key"] != "silc:v1.4.0" {
+		t.Fatalf("typed field in the key: %v", notice)
+	}
+	if len(p.calls) != 1 {
+		t.Fatalf("one fetch, got %d", len(p.calls))
+	}
+	var recorded string
+	_ = h.db.QueryRow("SELECT value FROM loop_events WHERE run_id = ? AND kind = 'read'", run["id"]).Scan(&recorded)
+	if strings.Contains(recorded, "<article>") || !strings.Contains(recorded, `"version":"v1.4.0"`) {
+		t.Fatalf("the read records the selected row, not raw html: %s", recorded)
+	}
+	if err := h.k.ResumeRun(run["id"].(string)); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.calls) != 1 {
+		t.Fatalf("replay reuses the recorded selection instead of fetching, got %d fetches", len(p.calls))
+	}
+	if n := len(h.rows("loop_notices")); n != 1 {
+		t.Fatalf("replay duplicated a notice: %d", n)
+	}
+}
+
+func TestPageReadFieldWithoutMatchIsUnknownAndGateSkips(t *testing.T) {
+	url := "https://example.test/nover"
+	h, _ := newPageReads(t, map[string]string{url: `<html><body><article><p>No heading.</p></article></body></html>`})
+	h.seed("dependencies", "nover", map[string]any{"name": "nover", "changelog": url})
+	h.runNow("ReleaseWatch", "req-1")
+	if n := len(h.rows("loop_notices")); n != 0 {
+		t.Fatalf("an unknown version must not reach the notice: %v", h.rows("loop_notices"))
+	}
+}
+
+func TestPageSelectMatchingNothingFailsTheItemWithoutRetry(t *testing.T) {
+	url := "https://example.test/plain"
+	h, p := newPageReads(t, map[string]string{url: `<html><body><p>No article here.</p></body></html>`})
+	h.seed("dependencies", "plain", map[string]any{"name": "plain", "changelog": url})
+	h.runNow("ReleaseWatch", "req-1")
+	run := h.runsOf("ReleaseWatch")[0]
+	if run["outcome"] == "succeeded" {
+		t.Fatalf("a selection miss must not succeed: %v", run)
+	}
+	if len(p.calls) != 1 {
+		t.Fatalf("a selection miss is not a fetch failure; want 1 fetch, got %d", len(p.calls))
+	}
+	if n := len(h.rows("loop_notices")); n != 0 {
+		t.Fatalf("no notice, got %d", n)
+	}
+}
+
+func TestPageReadIntoTakesTitleAndSelectedText(t *testing.T) {
+	url := "https://example.test/post"
+	h, _ := newPageReads(t, map[string]string{url: changelogHTML})
+	h.seed("sources", "post", map[string]any{"url": url})
+	h.runNow("ArticleRead", "req-1")
+	notice := h.one("loop_notices")
+	if notice["text"] != "silc changelog: v1.4.0 Faster builds." {
+		t.Fatalf("title from the page, text from the selection: %v", notice)
+	}
+}
+
+func TestShapePageWithoutSelectOrIntoKeepsThePage(t *testing.T) {
+	page := Page{URL: "https://x.test", Status: 200, Title: "t", Text: "all", HTML: "<p>all</p>"}
+	res := shapePage(&Step{}, nil, page)
+	if got, ok := res["page"].(Page); !ok || got.Text != "all" {
+		t.Fatalf("plain page read is unchanged: %v", res)
+	}
+	res = shapePage(&Step{Select: "p"}, nil, Page{HTML: "<div><p>one <b>two</b></p></div>", Text: "x"})
+	if got := res["page"].(Page); got.Text != "one two" {
+		t.Fatalf(":select without :into narrows text: %v", got)
+	}
+}
+
+func TestFallbackMovesPastASelectionMissToTheNextPageRead(t *testing.T) {
+	url := "https://example.test/main-only"
+	h, p := newPageReads(t, map[string]string{url: `<html><body><main><h1>v3.0.0</h1><p>Main only.</p></main></body></html>`})
+	h.seed("dependencies", "mainonly", map[string]any{"name": "mainonly", "changelog": url})
+	h.runNow("ReleaseFallback", "req-1")
+	run := h.runsOf("ReleaseFallback")[0]
+	if run["outcome"] != "succeeded" {
+		t.Fatalf("run: %v", run)
+	}
+	if notice := h.one("loop_notices"); notice["text"] != "mainonly v3.0.0" {
+		t.Fatalf("the second attempt's :select and :fields fill the row: %v", notice)
+	}
+	if n := h.eventCount(run["id"].(string), "trace:fallback_rejected"); n != 1 {
+		t.Fatalf("the <article> miss rejects the first attempt, got %d rejections", n)
+	}
+	if len(p.calls) != 2 {
+		t.Fatalf("one fetch per attempt, got %d", len(p.calls))
+	}
+	if err := h.k.ResumeRun(run["id"].(string)); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.calls) != 2 || len(h.rows("loop_notices")) != 1 {
+		t.Fatalf("replay reuses both recorded attempts: %d fetches, %d notices", len(p.calls), len(h.rows("loop_notices")))
 	}
 }

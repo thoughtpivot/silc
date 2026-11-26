@@ -1,0 +1,93 @@
+# Compiler fixture: page reads with :select and :into (THO-554). ReleaseWatch
+# narrows each changelog to its <article> and fills Release.version from the
+# article's first <h2>. ArticleRead uses the bare :into form, so title and
+# text come from the page. ReleaseFallback tries the changelog's <article>,
+# then its <main>, inside loop::fallback.
+@version("0.7.1")
+
+contract Dependency {
+    has Str $.id;
+    has Str $.name;
+    has Str $.changelog;
+}
+
+contract Source {
+    has Str $.id;
+    has Str $.url;
+}
+
+contract Release {
+    has Str $.version;
+    has Str $.text;
+}
+
+contract Article {
+    has Str $.title;
+    has Str $.text;
+}
+
+resource Dependencies for Dependency {
+    query list;
+    mutation create;
+}
+
+resource Sources for Source {
+    query list;
+    mutation create;
+}
+
+loop ReleaseWatch {
+    loop::flow(
+        loop::schedule(:cron("0 6 * * *"), :tz("UTC")),
+        loop::find(:as(deps), :from(Dependencies.list), :max(20)),
+        loop::each(:in($deps), :as(dep), :max(20),
+            loop::read(:as(release), :into(Release),
+                scrape::page(:url($dep.changelog), :select("article"), :fields(Release.new(:version("h2"))))),
+            loop::gate(
+                :that($release.version != ""),
+                :reason("a release names its version"),
+                loop::otherwise(loop::skip(:reason("no version on the changelog")))
+            ),
+            loop::notify(
+                :to("Maintainers"),
+                :text("{$dep.name} {$release.version}: {$release.text}"),
+                :key("{$dep.id}:{$release.version}")
+            )
+        )
+    )
+}
+
+loop ArticleRead {
+    loop::flow(
+        loop::schedule(:cron("0 7 * * *"), :tz("UTC")),
+        loop::find(:as(sources), :from(Sources.list), :max(20)),
+        loop::each(:in($sources), :as(src), :max(20),
+            loop::read(:as(article), :into(Article),
+                scrape::page(:url($src.url), :select("article"))),
+            loop::notify(
+                :to("Readers"),
+                :text("{$article.title}: {$article.text}"),
+                :key("{$src.id}:article")
+            )
+        )
+    )
+}
+
+loop ReleaseFallback {
+    loop::flow(
+        loop::schedule(:cron("0 8 * * *"), :tz("UTC")),
+        loop::find(:as(deps), :from(Dependencies.list), :max(20)),
+        loop::each(:in($deps), :as(dep), :max(20),
+            loop::fallback(:as(release), :accept($release.version != ""),
+                loop::read(:into(Release), scrape::page(:url($dep.changelog), :select("article"), :fields(Release.new(:version("h2"))))),
+                loop::read(:into(Release), scrape::page(:url($dep.changelog), :select("main"), :fields(Release.new(:version("h1"))))),
+                loop::otherwise(loop::skip(:reason("no release on the changelog")))
+            ),
+            loop::notify(
+                :to("Maintainers"),
+                :text("{$dep.name} {$release.version}"),
+                :key("{$dep.id}:fallback:{$release.version}")
+            )
+        )
+    )
+}

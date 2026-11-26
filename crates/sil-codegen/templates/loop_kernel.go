@@ -32,6 +32,8 @@ import (
 	"time"
 	_ "time/tzdata"
 
+	"github.com/andybalholm/cascadia"
+	xhtml "golang.org/x/net/html"
 	_ "modernc.org/sqlite"
 )
 
@@ -144,6 +146,9 @@ type Step struct {
 	Declined      []Step   `json:"declined"`
 	TimedOut      []Step   `json:"timed_out"`
 	Arms          []Arm    `json:"arms"`
+
+	// Fields maps a contract field to its CSS selector on a page read.
+	Fields map[string]string `json:"fields"`
 }
 
 type NewField struct {
@@ -217,6 +222,8 @@ type Page struct {
 	Status int    `json:"status"`
 	Title  string `json:"title"`
 	Text   string `json:"text"`
+	// HTML is the raw body for :select and :into; it is never recorded.
+	HTML string `json:"-"`
 }
 
 type Kernel struct {
@@ -1183,7 +1190,7 @@ func (c *runCtx) read(st *Step, sc *scope) map[string]any {
 	for attempt := 0; attempt <= st.Retry; attempt++ {
 		page, err := c.k.fetch(url)
 		if err == nil {
-			return map[string]any{"page": page}
+			return shapePage(st, c.plan.Contracts[st.Into], page)
 		}
 		lastErr = err
 		if attempt < st.Retry {
@@ -2429,7 +2436,94 @@ func fetchPage(url string) (Page, error) {
 	if len(text) > 8000 {
 		text = text[:8000]
 	}
-	return Page{URL: url, Status: resp.StatusCode, Title: title, Text: text}, nil
+	return Page{URL: url, Status: resp.StatusCode, Title: title, Text: text, HTML: string(body)}, nil
+}
+
+// shapePage applies :select and :into to a fetched page. :select narrows to
+// the first element matching the CSS selector, and `text` becomes that
+// element's text; a selector that matches nothing fails the read. With :into
+// the read binds a contract row: fields named url, status, title, and text
+// take the page's values, a field in :fields takes the text of the first
+// element inside the selection that matches its selector, and any other field
+// is left out, so it is unknown and later gates fail closed.
+func shapePage(st *Step, contract []FieldSpec, page Page) map[string]any {
+	if st.Select == "" && st.Into == "" {
+		return map[string]any{"page": page}
+	}
+	doc, err := xhtml.Parse(strings.NewReader(page.HTML))
+	if err != nil {
+		return map[string]any{"error": fmt.Sprintf("%s: parse html: %v", page.URL, err)}
+	}
+	root := doc
+	text := page.Text
+	if st.Select != "" {
+		sel, err := cascadia.Compile(st.Select)
+		if err != nil {
+			return map[string]any{"error": fmt.Sprintf(":select %q: %v", st.Select, err)}
+		}
+		root = cascadia.Query(doc, sel)
+		if root == nil {
+			return map[string]any{"error": fmt.Sprintf("%s: :select %q matched no element", page.URL, st.Select)}
+		}
+		text = nodeText(root)
+	}
+	if st.Into == "" {
+		page.Text = text
+		return map[string]any{"page": page}
+	}
+	row := map[string]any{}
+	for _, f := range contract {
+		if css, ok := st.Fields[f.Name]; ok {
+			sel, err := cascadia.Compile(css)
+			if err != nil {
+				return map[string]any{"error": fmt.Sprintf(":fields %s %q: %v", f.Name, css, err)}
+			}
+			if n := cascadia.Query(root, sel); n != nil {
+				if v := nodeText(n); v != "" {
+					row[f.Name] = v
+				}
+			}
+			continue
+		}
+		switch f.Name {
+		case "url":
+			row["url"] = page.URL
+		case "status":
+			row["status"] = page.Status
+		case "title":
+			row["title"] = page.Title
+		case "text":
+			row["text"] = text
+		}
+	}
+	return map[string]any{"page": row}
+}
+
+// nodeText is the whitespace-collapsed text under n, without script and style.
+func nodeText(n *xhtml.Node) string {
+	var b strings.Builder
+	var walk func(*xhtml.Node)
+	walk = func(n *xhtml.Node) {
+		if n.Type == xhtml.ElementNode {
+			switch n.Data {
+			case "script", "style", "noscript", "template":
+				return
+			}
+		}
+		if n.Type == xhtml.TextNode {
+			b.WriteString(n.Data)
+			b.WriteByte(' ')
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			walk(c)
+		}
+	}
+	walk(n)
+	text := strings.TrimSpace(spaceRe.ReplaceAllString(b.String(), " "))
+	if len(text) > 8000 {
+		text = text[:8000]
+	}
+	return text
 }
 
 type udsAsker struct {

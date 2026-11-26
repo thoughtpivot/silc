@@ -45,8 +45,9 @@ pub use loops::{
     catalog_loop_node_names, describe_loop_trigger, format_loop_catalog_line,
     format_loop_catalog_md, format_loop_cost_report, lookup_loop_node, loop_bounds, loop_prop_doc,
     loops_are_command, loops_use_ask, parse_loop_duration, template_placeholders, validate_cron,
-    validate_loop, validate_loops, Loop, LoopBounds, LoopChildPolicy, LoopNode, LoopNodeRole,
-    LoopNodeSpec, LoopPropKind, LoopPropSpec, LOOP_NODE_CATALOG, LOOP_STEPS, LOOP_TRIGGERS,
+    validate_css_selector, validate_loop, validate_loops, Loop, LoopBounds, LoopChildPolicy,
+    LoopNode, LoopNodeRole, LoopNodeSpec, LoopPropKind, LoopPropSpec, LOOP_NODE_CATALOG,
+    LOOP_STEPS, LOOP_TRIGGERS,
 };
 pub use model_catalog::{
     is_known_embedding_model_id, is_known_model_id, lookup_embedding_model, lookup_model,

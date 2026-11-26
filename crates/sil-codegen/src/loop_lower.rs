@@ -436,6 +436,16 @@ fn lower_read_options(step: &LoopNode, put: &mut impl FnMut(&str, serde_json::Va
     if let Some(e) = step.prop("args") {
         put("args", lower_expr(e));
     }
+    if let Some(into) = step.ident_prop("into") {
+        put("into", json!(into));
+    }
+    if let Some(Expr::New { fields, .. }) = step.prop("fields") {
+        let map: serde_json::Map<String, serde_json::Value> = fields
+            .iter()
+            .filter_map(|(f, v)| v.as_string_literal().map(|s| (f.clone(), json!(s))))
+            .collect();
+        put("fields", json!(map));
+    }
     put(
         "retry",
         json!(step

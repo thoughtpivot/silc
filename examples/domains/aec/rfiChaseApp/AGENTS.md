@@ -267,7 +267,7 @@ if any run failed.
 - `loop::on_mutation` — options: `resource`, `mutation`; children: none
 - `loop::let` — options: `as`, `value`; children: none
 - `loop::find` — options: `as`, `from`, `where?`, `order?`, `desc?` (flag), `max?`, `one?` (flag); children: none
-- `loop::read` — options: `as`, `op`, `url?`, `server?`, `tool?`, `args?`, `auth_env?`, `select?`, `retry?`; children: none
+- `loop::read` — options: `as`, `into?`, `op`, `url?`, `server?`, `tool?`, `args?`, `auth_env?`, `select?`, `fields?`, `retry?`; children: none
 - `loop::fallback` — options: `as`, `accept`; children: `read`, `otherwise`
 - `loop::ask` — options: `as`, `into`, `prompt`, `from?`, `retry?`; children: `otherwise`
   - `:from($a, $b)` passes several values and equals `:from([$a, $b])`. The model sees one JSON object labelled by binding path (`a`, `b`, `kb.data`), so a prompt can refer to each by name. A comma list is valid only on `loop::ask :from`; other options take one expression.

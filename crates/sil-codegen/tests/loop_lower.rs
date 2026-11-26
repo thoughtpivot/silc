@@ -47,6 +47,25 @@ fn command_program() -> sil_core::Program {
     parse_valid(&source.replace(DIGEST_SCHEDULE, "loop::manual(),"))
 }
 
+fn page_read_program() -> sil_core::Program {
+    parse_valid(include_str!("fixtures/loop_page_read.silc"))
+}
+
+#[test]
+fn page_read_lowers_select_into_and_fields() {
+    let plan = lower_loop_plan(&page_read_program(), "test");
+    let read = &plan["loops"][0]["steps"][1]["steps"][0];
+    assert_eq!(read["op"], "read", "{read}");
+    assert_eq!(read["read_op"], "scrape::page");
+    assert_eq!(read["select"], "article");
+    assert_eq!(read["into"], "Release");
+    assert_eq!(read["fields"], serde_json::json!({"version": "h2"}));
+    assert_eq!(read["retry"], 2, ":retry keeps its default");
+    let bare = &plan["loops"][1]["steps"][1]["steps"][0];
+    assert_eq!(bare["into"], "Article");
+    assert!(bare.get("fields").is_none(), "{bare}");
+}
+
 fn temp_dir(label: &str) -> PathBuf {
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -209,6 +228,12 @@ fn loop_kernel_replay_traces() {
     std::fs::write(
         dir.join("command_plan.json"),
         serde_json::to_string_pretty(&lower_loop_plan(&command, "test")).unwrap(),
+    )
+    .unwrap();
+    let page = synthesize_loop_surface(&page_read_program()).expect("synthesize page read");
+    std::fs::write(
+        dir.join("page_plan.json"),
+        serde_json::to_string_pretty(&lower_loop_plan(&page, "test")).unwrap(),
     )
     .unwrap();
 
