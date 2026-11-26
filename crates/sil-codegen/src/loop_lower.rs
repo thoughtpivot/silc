@@ -530,6 +530,9 @@ fn lower_step(program: &Program, step: &LoopNode, path: &str) -> serde_json::Val
             }
             put("desc", json!(step.has_flag("desc")));
             put("one", json!(step.has_flag("one")));
+            if let Some(to) = step.nearest_to() {
+                put("nearest", json!({"to": lower_expr(to)}));
+            }
             put(
                 "max",
                 json!(if step.has_flag("one") {

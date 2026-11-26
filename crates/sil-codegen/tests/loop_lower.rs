@@ -251,6 +251,33 @@ fn silc_go() -> Option<PathBuf> {
     None
 }
 
+/// The embed worker generated for the embedding fixture, plus the script that
+/// serves it, so the kernel's find-nearest test ranks through sqlite-vec.
+fn emit_embed_worker_for_kernel_tests(dir: &Path) {
+    let program = parse_valid(include_str!("../../silc/tests/fixtures/embedding_app.silc"));
+    let decisions = sil_router::route_program(&program);
+    let out = temp_dir("loop-kernel-embed");
+    sil_codegen::emit(
+        &program,
+        &decisions,
+        Path::new("embedding_app.silc"),
+        &out,
+        "test",
+    )
+    .expect("emit embedding fixture");
+    let py = dir.join("embed_python");
+    std::fs::create_dir_all(&py).unwrap();
+    for file in ["embed_worker.py", "embedding_models.py"] {
+        std::fs::copy(out.join("python").join(file), py.join(file)).unwrap();
+    }
+    std::fs::copy(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/loop_kernel/serve_embed_worker.py"),
+        dir.join("serve_embed_worker.py"),
+    )
+    .unwrap();
+    let _ = std::fs::remove_dir_all(&out);
+}
+
 #[test]
 fn loop_kernel_replay_traces() {
     let Some(go) = silc_go() else {
@@ -320,6 +347,7 @@ fn loop_kernel_replay_traces() {
         serde_json::to_string_pretty(&lower_loop_plan(&embed, "test")).unwrap(),
     )
     .unwrap();
+    emit_embed_worker_for_kernel_tests(&dir);
 
     let loop_embed = synthesize_loop_surface(&loop_embed_program()).expect("synthesize loop embed");
     std::fs::write(
@@ -382,6 +410,40 @@ fn fallback_lowers_attempts_accept_and_otherwise() {
     }
     assert_eq!(fallback["otherwise"][0]["op"], "skip");
     assert_eq!(plan["loops"][0]["bounds"]["reads"], 10 * 2);
+}
+
+#[test]
+fn find_nearest_lowers_to_and_counts_max_rows_per_item() {
+    let program = synthesize_loop_surface(&parse_valid(include_str!(
+        "../../silc/tests/fixtures/upstream_watch.silc"
+    )))
+    .expect("synthesize");
+    let plan = lower_loop_plan(&program, "test");
+    let lp = &plan["loops"][0];
+    let each = &lp["steps"][1];
+    let find = &each["steps"][2];
+    assert_eq!(find["op"], "find", "{find}");
+    assert_eq!(find["resource"], "Incidents");
+    assert_eq!(find["table"], "incidents");
+    assert_eq!(find["max"], 5);
+    assert_eq!(
+        find["nearest"]["to"],
+        serde_json::json!({"k": "var", "name": "vec"})
+    );
+    assert!(find.get("from").is_none(), "{find}");
+    assert!(
+        lp["steps"][0].get("nearest").is_none(),
+        "a list find has no nearest"
+    );
+    // Dependencies (40) plus 5 nearest incidents for each of up to 40 items.
+    assert_eq!(lp["bounds"]["rows_scanned"], 40 + 40 * 5);
+    assert_eq!(lp["bounds"]["embeds"], 40);
+    assert_eq!(lp["bounds"]["model_calls"], 40 * 3);
+    assert_eq!(
+        plan["embedding"]["nearest"]["incidents"],
+        "vector_embedding"
+    );
+    assert_eq!(plan["embedding"]["dimension"], 384);
 }
 
 #[test]

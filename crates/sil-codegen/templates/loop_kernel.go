@@ -159,6 +159,14 @@ type Step struct {
 	LinkCSS  string `json:"link_css"`
 	Depth    int    `json:"depth"`
 	SameHost bool   `json:"same_host"`
+
+	// Nearest makes a find rank rows by cosine similarity to an embedding.
+	Nearest *FindNearest `json:"nearest"`
+}
+
+// FindNearest is `:from(Resource.nearest(:to($vec)))` on a loop::find.
+type FindNearest struct {
+	To *Expr `json:"to"`
 }
 
 type NewField struct {
@@ -225,6 +233,9 @@ type Asker interface {
 type Embedder interface {
 	Embed(texts []string) ([][]float64, error)
 	Nearest(table, needle string, limit int) ([]map[string]any, error)
+	// NearestVector ranks a table's rows by cosine similarity to vector
+	// (sqlite-vec), best first, at most limit rows.
+	NearestVector(table string, vector []float64, limit int) ([]map[string]any, error)
 }
 
 type Page struct {
@@ -1061,7 +1072,28 @@ func (c *runCtx) step(st *Step, sc *scope, path string, inEach bool) outcome {
 	return none
 }
 
+// rowMatches evaluates a find's :where against one row. Unknown is no match.
+func rowMatches(st *Step, sc *scope, row map[string]any) bool {
+	if st.Where == nil {
+		return true
+	}
+	rowScope := sc.child()
+	for _, f := range st.RowFields {
+		if v, ok := row[f]; ok {
+			rowScope.vars[f] = v
+		} else {
+			rowScope.vars[f] = nil
+		}
+	}
+	v, known := eval(st.Where, rowScope)
+	b, isBool := v.(bool)
+	return known && isBool && b
+}
+
 func (c *runCtx) find(st *Step, sc *scope) ([]any, error) {
+	if st.Nearest != nil {
+		return c.findNearest(st, sc)
+	}
 	rows, err := c.k.db.Query(fmt.Sprintf(`SELECT id, data FROM %s ORDER BY created_at, id`, st.Table))
 	if err != nil {
 		return nil, err
@@ -1079,19 +1111,8 @@ func (c *runCtx) find(st *Step, sc *scope) ([]any, error) {
 		}
 		row["id"] = id
 		c.k.stripVector(st.Table, row)
-		if st.Where != nil {
-			rowScope := sc.child()
-			for _, f := range st.RowFields {
-				if v, ok := row[f]; ok {
-					rowScope.vars[f] = v
-				} else {
-					rowScope.vars[f] = nil
-				}
-			}
-			v, known := eval(st.Where, rowScope)
-			if b, isBool := v.(bool); !known || !isBool || !b {
-				continue
-			}
+		if !rowMatches(st, sc, row) {
+			continue
 		}
 		out = append(out, row)
 	}
@@ -1200,6 +1221,58 @@ func (c *runCtx) nearest(st *Step, sc *scope) ([]any, error) {
 	}
 	for _, row := range rows {
 		c.k.stripVector(st.Table, row)
+		out = append(out, row)
+	}
+	return out, nil
+}
+
+// findNearest asks the embed worker for at most :max rows ranked by cosine
+// similarity to :to, best first, then applies :where. The caller records the
+// rows, so a replay reads them back instead of ranking again.
+func (c *runCtx) findNearest(st *Step, sc *scope) ([]any, error) {
+	if c.k.embedder == nil {
+		return nil, fmt.Errorf("the embed worker is not running")
+	}
+	v, known := eval(st.Nearest.To, sc)
+	if !known {
+		return nil, fmt.Errorf("nearest :to is unknown")
+	}
+	list, isList := v.([]any)
+	if !isList {
+		return nil, fmt.Errorf("nearest :to is not a vector")
+	}
+	vec := make([]float64, len(list))
+	for i, x := range list {
+		f, isNum := x.(float64)
+		if !isNum {
+			return nil, fmt.Errorf("nearest :to has a non-number at %d", i)
+		}
+		vec[i] = f
+	}
+	if d := c.k.plan.Embedding; d != nil && d.Dimension > 0 && len(vec) != d.Dimension {
+		return nil, fmt.Errorf("nearest :to has %d floats, expected %d", len(vec), d.Dimension)
+	}
+	limit := st.Max
+	if st.One {
+		limit = 1
+	}
+	if limit < 1 {
+		return nil, fmt.Errorf("nearest needs :max")
+	}
+	rows, err := c.k.embedder.NearestVector(st.Table, vec, limit)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) > limit {
+		rows = rows[:limit]
+	}
+	out := []any{}
+	for _, row := range rows {
+		c.k.stripVector(st.Table, row)
+		delete(row, "_score")
+		if !rowMatches(st, sc, row) {
+			continue
+		}
 		out = append(out, row)
 	}
 	return out, nil
@@ -2962,6 +3035,16 @@ func (e *udsEmbedder) Nearest(table, needle string, limit int) ([]map[string]any
 		Rows []map[string]any `json:"rows"`
 	}
 	if err := e.post("/nearest", map[string]any{"table": table, "needle": needle, "limit": limit}, &out); err != nil {
+		return nil, err
+	}
+	return out.Rows, nil
+}
+
+func (e *udsEmbedder) NearestVector(table string, vector []float64, limit int) ([]map[string]any, error) {
+	var out struct {
+		Rows []map[string]any `json:"rows"`
+	}
+	if err := e.post("/nearest", map[string]any{"table": table, "vector": vector, "limit": limit}, &out); err != nil {
 		return nil, err
 	}
 	return out.Rows, nil

@@ -174,13 +174,13 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
     LoopNodeSpec {
         name: "find",
         role: LoopNodeRole::Step,
-        description: "Reads rows from a declared resource with a filter, order, and a hard row limit. Recorded so replays see the same rows.",
+        description: "Reads rows from a declared resource with a filter, order, and a hard row limit. Recorded so replays see the same rows. `Resource.nearest(:to($vec))` ranks rows by cosine similarity to an embedding instead, best first.",
         props: &[
             lp("as", LoopPropKind::Ident, true, "Binding name for the rows (a list) or the single row with `:one`."),
-            lp("from", LoopPropKind::Ref, true, "Resource query to read, e.g. `Rfis.list`."),
-            lp("where", LoopPropKind::Expr, false, "Row filter; contract fields are `$.field`. Unknown values do not match (fail closed)."),
-            lp("order", LoopPropKind::Expr, false, "Row field to sort by, e.g. `$.due`."),
-            lp("desc", LoopPropKind::Flag, false, "Sort descending instead of ascending."),
+            lp("from", LoopPropKind::Ref, true, "Resource query to read, e.g. `Rfis.list`, or `Incidents.nearest(:to($vec))` on a resource with `query nearest;` where `$vec` is an embedding of the model's dimension (e.g. `Emb384`)."),
+            lp("where", LoopPropKind::Expr, false, "Row filter; contract fields are `$.field`. Unknown values do not match (fail closed). With `nearest` it filters the `:max` nearest rows, so fewer may come back."),
+            lp("order", LoopPropKind::Expr, false, "Row field to sort by, e.g. `$.due`. Not allowed with `nearest`, which is always best first."),
+            lp("desc", LoopPropKind::Flag, false, "Sort descending instead of ascending. Not allowed with `nearest`."),
             lp("max", LoopPropKind::Number, false, "Maximum rows returned (required unless `:one`; at most 10000)."),
             lp("one", LoopPropKind::Flag, false, "Return the first matching row instead of a list; empty when nothing matches."),
         ],
@@ -511,15 +511,52 @@ impl LoopNode {
         }
     }
 
-    /// `Resource.capability` for `:from` / `:to`.
+    /// `Resource.capability` for `:from` / `:to`, with or without options:
+    /// `Incidents.nearest(:to($vec))` gives `("Incidents", "nearest")`.
     pub fn ref_prop(&self, name: &str) -> Option<(&str, &str)> {
-        match self.prop(name) {
-            Some(Expr::Member { base, field }) => match base.as_ref() {
+        let expr = match self.prop(name) {
+            Some(Expr::Call { callee, .. }) => callee.as_ref(),
+            Some(other) => other,
+            None => return None,
+        };
+        match expr {
+            Expr::Member { base, field } => match base.as_ref() {
                 Expr::Ident(b) => Some((b.as_str(), field.as_str())),
                 _ => None,
             },
             _ => None,
         }
+    }
+
+    /// The `:option(expr)` arguments of `Resource.capability(...)`, in order.
+    /// `None` when the reference has no parentheses. An argument that is not
+    /// an option comes back with an empty name.
+    pub fn ref_options(&self, name: &str) -> Option<Vec<(&str, &Expr)>> {
+        let Some(Expr::Call { args, .. }) = self.prop(name) else {
+            return None;
+        };
+        Some(
+            args.iter()
+                .map(|a| match a {
+                    Expr::Assign { target, value } => match target.as_ref() {
+                        Expr::Ident(n) => (n.as_str(), value.as_ref()),
+                        _ => ("", a),
+                    },
+                    other => ("", other),
+                })
+                .collect(),
+        )
+    }
+
+    /// `:to(expr)` of `loop::find :from(Resource.nearest(:to(expr)))`.
+    pub fn nearest_to(&self) -> Option<&Expr> {
+        if self.ref_prop("from")?.1 != crate::resource::NEAREST_QUERY {
+            return None;
+        }
+        self.ref_options("from")?
+            .into_iter()
+            .find(|(n, _)| *n == "to")
+            .map(|(_, e)| e)
     }
 
     pub fn child(&self, name: &str) -> Option<&LoopNode> {
@@ -1932,6 +1969,91 @@ impl<'a> Checker<'a> {
         }
     }
 
+    /// `:from(Resource.nearest(:to($vec)))`: exactly one `:to`, a vector of the
+    /// dimension the resource stores, and no `:order` or `:desc` (rows come
+    /// back best first by cosine).
+    fn check_nearest(
+        &self,
+        step: &LoopNode,
+        scope: &Scope,
+        res: &str,
+        contract: &str,
+    ) -> Result<(), String> {
+        let usage = format!("write `:from({res}.nearest(:to($vec)))` with an embedding binding");
+        let options = step.ref_options("from").unwrap_or_default();
+        if options.is_empty() {
+            return Err(self.err(step, format!("`{res}.nearest` needs `:to(...)`; {usage}")));
+        }
+        if let Some((name, _)) = options.iter().find(|(n, _)| *n != "to") {
+            let what = if name.is_empty() {
+                "a positional argument".to_string()
+            } else {
+                format!("unknown option `:{name}`")
+            };
+            return Err(self.err(
+                step,
+                format!("`{res}.nearest` takes only `:to(...)`, found {what}; {usage}"),
+            ));
+        }
+        if options.len() > 1 {
+            return Err(self.err(step, format!("`{res}.nearest` takes `:to(...)` once")));
+        }
+        for prop in ["order", "desc"] {
+            if step.prop(prop).is_some() {
+                return Err(self.err(
+                    step,
+                    format!(":{prop} does not apply to `{res}.nearest`; nearest rows always come back best first by cosine similarity"),
+                ));
+            }
+        }
+        let field = crate::resource::NEAREST_VECTOR_FIELD;
+        let stored = self
+            .contract_fields(contract)
+            .and_then(|fs| {
+                fs.iter()
+                    .find(|(f, _)| *f == field)
+                    .map(|(_, t)| self.resolve_val_ty(t, 0))
+            })
+            .and_then(|t| match t {
+                ValTy::Vector { len: Some(n), .. } => Some(n),
+                _ => None,
+            });
+        let Some(dim) = stored else {
+            return Err(self.err(
+                step,
+                format!("`{res}.nearest` ranks on `{contract}.{field}`, which must be a fixed-length vector such as `Emb384`"),
+            ));
+        };
+        let to = options[0].1;
+        self.check_expr(step, scope, None, to)?;
+        match self.infer_val_ty(scope, None, to) {
+            ValTy::Vector { len: Some(n), .. } if n == dim => Ok(()),
+            ValTy::Vector { len, .. } => Err(self.err(
+                step,
+                format!(
+                    "`:to` must be a {dim}-float embedding to match `{contract}.{field}`, but {} has {}",
+                    render_expr(to),
+                    len.map_or("no fixed length".to_string(), |n| format!("{n} floats"))
+                ),
+            )),
+            ValTy::Unknown => Err(self.err(
+                step,
+                format!(
+                    "`:to` must be a {dim}-float embedding (from the loop embedding step), but the type of {} is not known",
+                    render_expr(to)
+                ),
+            )),
+            other => Err(self.err(
+                step,
+                format!(
+                    "`:to` must be a {dim}-float embedding (from the loop embedding step), but {} is {}",
+                    render_expr(to),
+                    other.display()
+                ),
+            )),
+        }
+    }
+
     fn block_terminates(steps: &[LoopNode]) -> bool {
         match steps.last() {
             Some(last) if TERMINATORS.contains(&last.name.as_str()) => true,
@@ -2275,15 +2397,31 @@ impl<'a> Checker<'a> {
                 let Some(resource) = self.program.resources.iter().find(|r| r.name == res) else {
                     return Err(self.err(step, format!("unknown resource `{res}`")));
                 };
-                match resource.find_method(cap) {
-                    Some(m)
-                        if m.kind == crate::ResourceKind::Query
-                            && (cap == "list" || cap == "all") => {}
-                    _ => {
-                        return Err(self.err(step, format!("`{res}.{cap}` is not a list query; declare `query list;` and use `{res}.list`")));
+                let contract = resource.contract.clone().unwrap_or_default();
+                if cap == crate::resource::NEAREST_QUERY {
+                    if resource
+                        .find_method(cap)
+                        .is_none_or(|m| m.kind != crate::ResourceKind::Query)
+                    {
+                        return Err(self.err(step, format!("`{res}` does not declare `query nearest;`; add it (with `vector_embedding` on `{contract}`) to rank rows by cosine similarity")));
+                    }
+                    self.check_nearest(step, scope, res, &contract)?;
+                } else {
+                    match resource.find_method(cap) {
+                        Some(m)
+                            if m.kind == crate::ResourceKind::Query
+                                && (cap == "list" || cap == "all") => {}
+                        _ => {
+                            return Err(self.err(step, format!("`{res}.{cap}` is not a list query; declare `query list;` and use `{res}.list`")));
+                        }
+                    }
+                    if step.ref_options("from").is_some() {
+                        return Err(self.err(
+                            step,
+                            format!("`{res}.{cap}` takes no options; write `:from({res}.{cap})`"),
+                        ));
                     }
                 }
-                let contract = resource.contract.clone().unwrap_or_default();
                 let one = step.has_flag("one");
                 if !one {
                     if step.prop("max").is_none() {
@@ -2428,6 +2566,12 @@ impl<'a> Checker<'a> {
                 let Some(resource) = self.program.resources.iter().find(|r| r.name == res) else {
                     return Err(self.err(step, format!("unknown resource `{res}`")));
                 };
+                if step.ref_options("to").is_some() {
+                    return Err(self.err(
+                        step,
+                        format!("`{res}.{cap}` takes no options; write `:to({res}.{cap})`"),
+                    ));
+                }
                 match resource.find_method(cap) {
                     Some(m)
                         if m.kind == crate::ResourceKind::Mutation

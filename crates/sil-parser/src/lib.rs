@@ -1168,7 +1168,11 @@ impl Parser {
                         self.advance();
                         props.push((key, Expr::Bool(true)));
                     } else {
-                        let mut expr = self.parse_game_prop_expr()?;
+                        let mut expr = if self.at_ref_call_with_options() {
+                            self.parse_ref_call_with_options()?
+                        } else {
+                            self.parse_game_prop_expr()?
+                        };
                         if matches!(self.peek(), Some(Token::Comma)) {
                             if name == "ask" && key == "from" {
                                 let mut items = vec![expr];
@@ -1214,6 +1218,50 @@ impl Parser {
             prop_spans,
             children,
             span: self.finish_span(start),
+        })
+    }
+
+    /// `Resource.capability(:option(...))` inside a loop option, e.g.
+    /// `:from(Incidents.nearest(:to($vec)))`.
+    fn at_ref_call_with_options(&self) -> bool {
+        let at = |n: usize| self.tokens.get(self.pos + n).map(|t| &t.token);
+        matches!(at(0), Some(Token::Ident(_)))
+            && matches!(at(1), Some(Token::Dot))
+            && matches!(at(2), Some(Token::Ident(name)) if name != "new")
+            && matches!(at(3), Some(Token::LParen))
+            && matches!(at(4), Some(Token::Colon))
+    }
+
+    /// Each `:name(expr)` becomes `Expr::Assign { target: Ident(name), value }`
+    /// in the call's arguments; the loop checker rejects that form anywhere else.
+    fn parse_ref_call_with_options(&mut self) -> Result<Expr, ParseError> {
+        let resource = self.expect_ident("resource name")?;
+        self.expect_simple(Token::Dot, "`.` after resource name")?;
+        let capability = self.expect_ident("resource capability")?;
+        self.expect_simple(Token::LParen, "`(` after resource capability")?;
+        let mut args = Vec::new();
+        while !matches!(self.peek(), Some(Token::RParen)) {
+            if matches!(self.peek(), Some(Token::Comma)) {
+                self.advance();
+                continue;
+            }
+            self.expect_simple(Token::Colon, "`:option(...)` in resource capability call")?;
+            let name = self.expect_ident_like_spanned("option name")?.0;
+            self.expect_simple(Token::LParen, "`(` after option name")?;
+            let value = self.parse_expr()?;
+            self.expect_simple(Token::RParen, "`)` after option value")?;
+            args.push(Expr::Assign {
+                target: Box::new(Expr::Ident(name)),
+                value: Box::new(value),
+            });
+        }
+        self.expect_simple(Token::RParen, "`)` after resource capability call")?;
+        Ok(Expr::Call {
+            callee: Box::new(Expr::Member {
+                base: Box::new(Expr::Ident(resource)),
+                field: capability,
+            }),
+            args,
         })
     }
 
