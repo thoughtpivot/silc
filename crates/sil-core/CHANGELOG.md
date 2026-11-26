@@ -3,6 +3,24 @@
 All notable changes to Silc are documented here.
 Silc remains pre-1.0; this project follows SemVer 0.x with Conventional Commits.
 
+## [0.8.0](https://github.com/thoughtpivot/silc/compare/sil-core-v0.7.1...sil-core-v0.8.0) - 2026-11-26
+
+### Added
+
+- *(loop)* THO-553 nearest-match loop::find ([#30](https://github.com/thoughtpivot/silc/pull/30))
+- *(loop)* type-check Contract.new field values (THO-578) ([#23](https://github.com/thoughtpivot/silc/pull/23))
+- *(loop)* add loop::fallback (THO-559 Part 1) ([#25](https://github.com/thoughtpivot/silc/pull/25))
+
+### Other
+
+- scrape::site, render, select, and text::score in loops ([#33](https://github.com/thoughtpivot/silc/pull/33))
+- embedding step in loop::let ([#32](https://github.com/thoughtpivot/silc/pull/32))
+- derive release text from the version seam, drop stale "Silc 0.7.0" strings ([#31](https://github.com/thoughtpivot/silc/pull/31))
+- match @version on major.minor, not the exact compiler version ([#27](https://github.com/thoughtpivot/silc/pull/27))
+- :select and :into on scrape::page loop reads ([#26](https://github.com/thoughtpivot/silc/pull/26))
+- loop::ask multi-value :from ([#22](https://github.com/thoughtpivot/silc/pull/22))
+- embedding store and query nearest ([#28](https://github.com/thoughtpivot/silc/pull/28))
+
 ## [0.7.1](https://github.com/thoughtpivot/silc/compare/sil-core-v0.7.0...sil-core-v0.7.1) - 2026-11-25
 
 ### Other

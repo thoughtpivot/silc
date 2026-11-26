@@ -3,6 +3,13 @@
 All notable changes to Silc are documented here.
 Silc remains pre-1.0; this project follows SemVer 0.x with Conventional Commits.
 
+## [0.8.0](https://github.com/thoughtpivot/silc/compare/sil-router-v0.7.1...sil-router-v0.8.0) - 2026-11-26
+
+### Other
+
+- release Silc 0.8.0 (THO-551) ([#34](https://github.com/thoughtpivot/silc/pull/34))
+- match @version on major.minor, not the exact compiler version ([#27](https://github.com/thoughtpivot/silc/pull/27))
+
 ## [0.7.1](https://github.com/thoughtpivot/silc/compare/sil-router-v0.7.0...sil-router-v0.7.1) - 2026-11-25
 
 ### Other
