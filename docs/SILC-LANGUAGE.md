@@ -299,6 +299,18 @@ loop RfiChase {
   from 0 to 1, computed by the kernel. It is not a model call and cannot score
   unchecked `loop::ask` output. `silc build` lists scores beside reads, and
   counts a `scrape::site` read as its `:max` pages.
+
+- Nearest match (new in 0.8.0, unreleased):
+  `loop::find(:as(seen), :max(5), :from(Incidents.nearest(:to($vec))))` binds
+  the `:max` rows of a resource with `query nearest;` whose
+  `vector_embedding` is closest to `$vec` by cosine similarity, best first.
+  `$vec` must be a vector of the stored dimension (an `Emb384` for MiniLM).
+  The CPython embed worker ranks with sqlite-vec; it is not a model call.
+  `:max` (or `:one`) is required and capped at 10000. `:order` and `:desc` are
+  rejected. `:where` filters those `:max` rows (unknown does not match), so
+  fewer may come back. The rows are recorded like any `loop::find`, so a
+  replay reads the same rows; `$vec` itself is never recorded. The cost report
+  counts `:max` rows scanned per call, multiplied by any enclosing `each`.
 - A program with no `app`, no `scene` (and no `game` alias), and only `loop::manual` triggers is a
   **loop command**: no surfaces are built; `silc main.silc` runs each loop
   once, prints notices to stdout, and exits. `loop::approve` is a compile
@@ -410,7 +422,8 @@ multi-value `:from` are implemented on `main`; the rest is not:
 4. Loop embeddings and nearest-neighbor `loop::find` (THO-551 to THO-555).
    Page-read `:into` plus `:select` on `loop::read` (THO-554) and the
    `loop::let` + `tensor::infer` embedding step (THO-552) are implemented on
-   main; nearest-match `loop::find` (THO-553) is not yet.
+   main, and so is `loop::find :from(R.nearest(:to($vec)))` (THO-553,
+   section 8).
 
 Still irregular:
 

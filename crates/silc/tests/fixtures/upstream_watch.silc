@@ -1,0 +1,88 @@
+#!/usr/bin/env silc
+# UpstreamWatch, the silc.thoughtpivot.com example (THO-551). Each dependency's
+# changelog is read and embedded with minilm-l6-v2; the five nearest incidents
+# to that embedding are found with sqlite-vec; a local model reads the release
+# against them; a gate keeps only real risk; a ticket is written once per
+# upgrade. Embeds and nearest matches are not model calls.
+@version("0.7")
+
+subset Emb384 of Vec[num32; 384];
+
+contract Dependency {
+    has Str $.id;
+    has Str $.name;
+    has Str $.changelog;
+}
+
+contract Release {
+    has Str $.version;
+    has Str $.text;
+}
+
+contract Incident {
+    has Str $.id;
+    has Str $.summary;
+    has Str $.status;
+    has Emb384 $.vector_embedding;
+}
+
+contract Impact {
+    has Str $.version;
+    has Str $.risk;
+    has Str $.summary;
+}
+
+contract Ticket {
+    has Str $.id;
+    has Str $.title;
+    has Str $.risk;
+}
+
+resource Dependencies for Dependency {
+    query list;
+    mutation create;
+}
+
+resource Incidents for Incident {
+    query list;
+    query nearest;
+    mutation create;
+}
+
+resource Tickets for Ticket {
+    query list;
+    mutation create;
+}
+
+loop UpstreamWatch {
+    loop::flow(
+        loop::schedule(:cron("0 7 * * 1-5"), :tz("America/Chicago")),
+        loop::find(:as(deps), :from(Dependencies.list), :max(40)),
+        loop::each(:in($deps), :as(dep), :max(40),
+            loop::read(:as(release), :into(Release),
+                scrape::page(:url($dep.changelog), :select("article"), :fields(Release.new(:version("h2"))))),
+            loop::let(:as(vec),
+                tensor::infer(:model("minilm-l6-v2"), :from($release.text))),
+            loop::find(:as(seen), :max(5), :from(Incidents.nearest(:to($vec)))),
+            loop::ask(:as(impact), :into(Impact), :retry(2),
+                :from($release, $seen),
+                :prompt("Read the {$dep.name} {$release.version} changelog. Say whether it repeats any of these incidents, and rate its risk as none, low, or high."),
+                loop::otherwise(loop::skip(:reason("no answer that fits Impact")))),
+            loop::gate(
+                :that($impact.risk != "none" && $impact.version != ""),
+                :reason("only real risk reaches a person"),
+                loop::otherwise(loop::skip(:reason("no risk")))
+            ),
+            loop::write(
+                :to(Tickets.create),
+                :key("upgrade:{$dep.name}:{$impact.version}"),
+                :value(Ticket.new(:title($impact.summary), :risk($impact.risk)))
+            )
+        ),
+        loop::notify(
+            :to("platform"),
+            :text("Watch ran {$calendar.today}"),
+            :key("watch:{$calendar.today}")
+        )
+    )
+}

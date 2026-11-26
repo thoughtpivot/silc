@@ -1790,3 +1790,219 @@ fn scrape_pipelines_still_cannot_share_a_program_with_loops() {
         "{err}"
     );
 }
+
+// ---------------------------------------------------------------- find nearest (THO-553)
+
+const NEAREST_PRELUDE: &str = r#"
+@version("0.7")
+subset Emb384 of Vec[num32; 384];
+subset Emb128 of Vec[num32; 128];
+contract Dependency { has Str $.id; has Str $.name; has Str $.changelog; has Emb384 $.vector_embedding; has Emb128 $.small; }
+contract Release { has Str $.version; has Str $.text; }
+contract Incident { has Str $.id; has Str $.summary; has Str $.status; has Emb384 $.vector_embedding; }
+contract Impact { has Str $.version; has Str $.risk; has Str $.summary; }
+contract Ticket { has Str $.id; has Str $.title; has Str $.risk; }
+resource Dependencies for Dependency {
+    query list;
+}
+resource Incidents for Incident {
+    query list;
+    query nearest;
+}
+resource Archive for Incident {
+    query list;
+}
+resource Tickets for Ticket {
+    query list;
+    mutation create;
+}
+"#;
+
+/// The site's UpstreamWatch nearest-match line, verbatim.
+const SITE_NEAREST_FIND: &str = r#"loop::find(:as(seen), :max(5),
+  :from(Incidents.nearest(:to($vec)))),"#;
+
+/// The UpstreamWatch loop around a nearest find. `$vec` comes from a stored
+/// Emb384 here; the loop embedding step binds it from `$release.text`.
+fn nearest_loop(find: &str) -> String {
+    format!(
+        r#"loop::flow(
+    loop::schedule(:cron("0 7 * * 1-5"), :tz("America/Chicago")),
+    loop::find(:as(deps), :from(Dependencies.list), :max(40)),
+    loop::each(:in($deps), :as(dep), :max(40),
+      loop::read(:as(release), :into(Release),
+        scrape::page(:url($dep.changelog), :select("article"))),
+      loop::let(:as(vec), :value($dep.vector_embedding)),
+      {find}
+      loop::ask(:as(impact), :into(Impact), :retry(2),
+        :from($release, $seen),
+        :prompt("Does {{$release.version}} repeat any of these {{$seen.count}} incidents?"),
+        loop::otherwise(loop::skip(:reason("no answer that fits Impact")))),
+      loop::gate(:that($impact.risk != "none"),
+        :reason("only real risk reaches a person"),
+        loop::otherwise(loop::skip(:reason("no risk")))),
+      loop::write(:to(Tickets.create),
+        :key("upgrade:{{$dep.name}}:{{$release.version}}"),
+        :value(Ticket.new(:title($impact.summary), :risk($impact.risk))))
+    )
+)"#
+    )
+}
+
+fn nearest_program(find: &str) -> Result<sil_core::Program, String> {
+    let src = format!(
+        "{NEAREST_PRELUDE}\nloop UpstreamWatch {{\n{}\n}}\n",
+        nearest_loop(find)
+    );
+    let program = parse(&src).map_err(|e| format!("parse: {}", e.message))?;
+    program.validate()?;
+    Ok(program)
+}
+
+fn expect_nearest_err(find: &str, needle: &str) {
+    match nearest_program(find) {
+        Ok(_) => panic!("expected error containing `{needle}`, but it validated:\n{find}"),
+        Err(e) => assert!(e.contains(needle), "expected `{needle}` in error, got: {e}"),
+    }
+}
+
+#[test]
+fn site_nearest_find_parses_validates_and_builds() {
+    let program = nearest_program(SITE_NEAREST_FIND).unwrap();
+    let graph = sil_core::infer_graph(&program)
+        .unwrap()
+        .expect("runnable graph");
+    let plan = graph
+        .embedding
+        .expect("query nearest needs the embed worker");
+    assert_eq!(plan.nearest[0].table, "incidents");
+
+    let each = &program.loops[0].steps()[1];
+    let find = &each.children[2];
+    assert_eq!(find.ref_prop("from"), Some(("Incidents", "nearest")));
+    assert_eq!(find.nearest_to(), Some(&sil_core::Expr::Var("vec".into())));
+
+    let b = sil_core::loop_bounds(&program.loops[0]);
+    assert_eq!(
+        b.rows_scanned,
+        40 + 40 * 5,
+        "rows scanned = :max per call, scaled by each"
+    );
+    assert_eq!(b.model_calls, 40 * 3, "a nearest find is not a model call");
+}
+
+#[test]
+fn nearest_find_keeps_where_one_and_list_binding() {
+    nearest_program(
+        r#"loop::find(:as(seen), :max(5), :from(Incidents.nearest(:to($vec))), :where($.status != "closed")),"#,
+    )
+    .unwrap();
+    // `:one` binds a row, so `$seen.count` no longer applies.
+    expect_nearest_err(
+        r#"loop::find(:as(seen), :one, :from(Incidents.nearest(:to($vec)))),"#,
+        "`$seen` has no field `count`",
+    );
+    expect_nearest_err(
+        r#"loop::find(:as(seen), :max(5), :from(Incidents.nearest(:to($vec))), :where($.severity == "high")),"#,
+        "unknown binding `$severity`",
+    );
+}
+
+#[test]
+fn nearest_needs_query_nearest_on_the_resource() {
+    expect_nearest_err(
+        &SITE_NEAREST_FIND.replace("Incidents.nearest", "Archive.nearest"),
+        "`Archive` does not declare `query nearest;`",
+    );
+}
+
+#[test]
+fn nearest_to_must_be_an_embedding_of_the_stored_dimension() {
+    expect_nearest_err(
+        &SITE_NEAREST_FIND.replace("$vec", "$dep.name"),
+        "`:to` must be a 384-float embedding (from the loop embedding step), but `$dep.name` is Str",
+    );
+    expect_nearest_err(
+        &SITE_NEAREST_FIND.replace("$vec", "$release"),
+        "but `$release` is Release",
+    );
+    expect_nearest_err(
+        &SITE_NEAREST_FIND.replace("$vec", "$dep.small"),
+        "must be a 384-float embedding to match `Incident.vector_embedding`, but `$dep.small` has 128 floats",
+    );
+    expect_nearest_err(
+        &SITE_NEAREST_FIND.replace("$vec", "$missing"),
+        "unknown binding `$missing`",
+    );
+    expect_nearest_err(&SITE_NEAREST_FIND.replace("$vec", "\"text\""), "is Str");
+}
+
+#[test]
+fn nearest_requires_max() {
+    expect_nearest_err(
+        &SITE_NEAREST_FIND.replace(":max(5),", ""),
+        "requires `:max(N)` (or `:one`)",
+    );
+    expect_nearest_err(
+        &SITE_NEAREST_FIND.replace(":max(5)", ":max(10001)"),
+        ":max must be between 1 and 10000",
+    );
+}
+
+#[test]
+fn nearest_rejects_order_and_desc() {
+    expect_nearest_err(
+        &SITE_NEAREST_FIND.replace(":max(5),", ":max(5), :order($.summary),"),
+        ":order does not apply to `Incidents.nearest`",
+    );
+    expect_nearest_err(
+        &SITE_NEAREST_FIND.replace(":max(5),", ":max(5), :desc,"),
+        ":desc does not apply to `Incidents.nearest`",
+    );
+}
+
+#[test]
+fn nearest_takes_exactly_one_to() {
+    for (find, needle) in [
+        ("Incidents.nearest", "`Incidents.nearest` needs `:to(...)`"),
+        (
+            "Incidents.nearest()",
+            "`Incidents.nearest` needs `:to(...)`",
+        ),
+        ("Incidents.nearest($vec)", "found a positional argument"),
+        (
+            "Incidents.nearest(:near($vec))",
+            "found unknown option `:near`",
+        ),
+        (
+            "Incidents.nearest(:to($vec), :to($vec))",
+            "takes `:to(...)` once",
+        ),
+    ] {
+        expect_nearest_err(
+            &SITE_NEAREST_FIND.replace("Incidents.nearest(:to($vec))", find),
+            needle,
+        );
+    }
+}
+
+#[test]
+fn only_nearest_takes_options() {
+    expect_nearest_err(
+        &SITE_NEAREST_FIND.replace("Incidents.nearest(:to($vec))", "Incidents.list(:to($vec))"),
+        "`Incidents.list` takes no options",
+    );
+    let write = nearest_loop(SITE_NEAREST_FIND)
+        .replace(":to(Tickets.create)", ":to(Tickets.create(:to($vec)))");
+    let src = format!("{NEAREST_PRELUDE}\nloop UpstreamWatch {{\n{write}\n}}\n");
+    let err = parse(&src).unwrap().validate().unwrap_err();
+    assert!(err.contains("`Tickets.create` takes no options"), "{err}");
+    // The option form is only a resource reference; it is not a value.
+    let as_value = nearest_loop(SITE_NEAREST_FIND).replace(
+        ":value($dep.vector_embedding)",
+        ":value(Incidents.nearest(:to($dep.vector_embedding)))",
+    );
+    let src = format!("{NEAREST_PRELUDE}\nloop UpstreamWatch {{\n{as_value}\n}}\n");
+    let err = parse(&src).unwrap().validate().unwrap_err();
+    assert!(err.contains("calls are not allowed"), "{err}");
+}

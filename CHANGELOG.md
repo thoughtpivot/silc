@@ -87,8 +87,8 @@ Entries before 0.5.0 are reconstructed from the commit history.
 
 These are the next source changes, tracked in Linear. `loop::fallback`, the
 `Contract.new` type check, multi-value `:from` on `loop::ask`, page-read
-`:select` / `:into`, the version match above, and the THO-560 items below
-are implemented on `main`; the rest is not yet.
+`:select` / `:into`, nearest-match `loop::find`, the version match above, and
+the THO-560 items below are implemented on `main`; the rest is not yet.
 
 - Implemented: `llama-cpp-python` is pinned at 0.3.38, up from 0.3.7, which no
   longer compiles on current toolchains (`unknown type name 'uint32_t'`).
@@ -126,8 +126,16 @@ are implemented on `main`; the rest is not yet.
   vector, or a value of unknown type is rejected at validation with a message
   naming the field, the expected type, and the found type. Nothing coerces
   (THO-578).
-- Nearest-neighbor `loop::find` (THO-553). **Implemented:** embedding steps
-  in `loop::let` (THO-552; see Added).
+- **Implemented:** nearest-match `loop::find` (THO-553).
+  `loop::find(:as(seen), :max(5), :from(Incidents.nearest(:to($vec))))` ranks
+  the rows of a resource with `query nearest;` by cosine similarity to `$vec`,
+  best first. The Go loop kernel sends the vector to the CPython embed
+  worker's `/nearest`, which ranks with sqlite-vec in the app database; it is
+  not a model call. `$vec` must be a vector of the stored dimension, `:max`
+  (or `:one`) is required and capped at 10000, and `:order` and `:desc` are
+  rejected. `:where` filters the `:max` nearest rows and fails closed. The
+  rows are recorded for replay like any `loop::find`; vectors are not. The
+  cost report counts `:max` rows scanned per call.
 - **Implemented:** page reads in loops (THO-554).
   `scrape::page(:select("css"))` narrows the page to the first matching
   element, and `loop::read(:into(Contract))` binds a typed row, so

@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -1157,6 +1158,10 @@ type fakeEmbedder struct {
 	embeds  int
 	texts   []string
 	nearest []map[string]any
+	// Calls to NearestVector, with the vector and limit last asked for.
+	vectorCalls int
+	lastVector  []float64
+	lastLimit   int
 }
 
 func (f *fakeEmbedder) Embed(texts []string) ([][]float64, error) {
@@ -1176,6 +1181,22 @@ func (f *fakeEmbedder) Nearest(table, needle string, limit int) ([]map[string]an
 		return f.nearest[:limit], nil
 	}
 	return f.nearest, nil
+}
+
+// NearestVector ignores limit so tests can check the kernel's own cap.
+func (f *fakeEmbedder) NearestVector(table string, vector []float64, limit int) ([]map[string]any, error) {
+	f.vectorCalls++
+	f.lastVector = vector
+	f.lastLimit = limit
+	out := make([]map[string]any, len(f.nearest))
+	for i, row := range f.nearest {
+		cp := map[string]any{}
+		for k, v := range row {
+			cp[k] = v
+		}
+		out[i] = cp
+	}
+	return out, nil
 }
 
 func newEmbedHarness(t *testing.T) (*harness, *fakeEmbedder) {
@@ -1300,6 +1321,227 @@ func TestNearestStepRanksThroughEmbedderAndSkipsBlankNeedles(t *testing.T) {
 	}
 	if got := sc.vars["none"].([]any); len(got) != 0 {
 		t.Fatalf("blank needle should return no rows, got %v", got)
+	}
+}
+
+// ------------------------------------------------- find nearest (THO-553)
+
+func unitVector(dim, i int) []any {
+	v := make([]any, dim)
+	for j := range v {
+		v[j] = 0.0
+	}
+	v[i] = 1.0
+	return v
+}
+
+func ids(rows []any) []string {
+	out := make([]string, len(rows))
+	for i, r := range rows {
+		out[i], _ = r.(map[string]any)["id"].(string)
+	}
+	return out
+}
+
+func nearestFind(max int, where *Expr) Step {
+	return Step{
+		Op: "find", As: "seen", Resource: "Files", Table: "files",
+		RowFields: []string{"id", "name", "text_excerpt", "vector_embedding"},
+		Max:       max, Where: where,
+		Nearest: &FindNearest{To: &Expr{K: "var", Name: "vec"}},
+	}
+}
+
+func (h *harness) runFind(runID string, st Step, vars map[string]any) ([]any, outcome) {
+	h.t.Helper()
+	run := &Run{ID: runID, Data: map[string]any{}}
+	c := &runCtx{k: h.k, plan: h.k.plan, lp: &h.k.plan.Loops[0], run: run, recorded: map[string]string{}, items: map[string]int{}}
+	if err := c.loadEvents(); err != nil {
+		h.t.Fatal(err)
+	}
+	sc := &scope{vars: vars}
+	out := c.step(&st, sc, "0", false)
+	rows, _ := sc.vars[st.As].([]any)
+	return rows, out
+}
+
+func TestFindNearestCapsFiltersAndReplaysRecordedRows(t *testing.T) {
+	h, e := newEmbedHarness(t)
+	dim := h.k.plan.Embedding.Dimension
+	e.nearest = []map[string]any{
+		{"id": "best", "name": "best", "vector_embedding": unitVector(dim, 0), "_score": 1.0},
+		{"id": "draft", "name": "draft", "_score": 0.9},
+		{"id": "next", "name": "next", "_score": 0.8},
+		{"id": "extra", "name": "extra", "_score": 0.1},
+	}
+	notDraft := &Expr{K: "bin", Op: "!=", L: &Expr{K: "var", Name: "name"}, R: &Expr{K: "str", S: "draft"}}
+	st := nearestFind(3, notDraft)
+	vars := map[string]any{"vec": unitVector(dim, 0)}
+
+	rows, out := h.runFind("run-nearest", st, vars)
+	if out.s != sigNone {
+		t.Fatalf("find nearest failed: %v", out.reason)
+	}
+	if got := ids(rows); strings.Join(got, ",") != "best,next" {
+		t.Fatalf("want best first, :where applied inside the :max(3) cap, got %v", got)
+	}
+	if e.vectorCalls != 1 || e.lastLimit != 3 || len(e.lastVector) != dim || e.lastVector[0] != 1 {
+		t.Fatalf("want one NearestVector(limit 3, %d floats), got calls=%d limit=%d len=%d", dim, e.vectorCalls, e.lastLimit, len(e.lastVector))
+	}
+	for _, r := range rows {
+		row := r.(map[string]any)
+		if _, has := row["vector_embedding"]; has {
+			t.Fatal("nearest rows must not carry vectors")
+		}
+		if _, has := row["_score"]; has {
+			t.Fatal("nearest rows bind as the contract; _score is dropped")
+		}
+	}
+	if n := h.eventsMentioning("vector_embedding"); n != 0 {
+		t.Fatalf("vectors must stay out of loop_events; %d events mention one", n)
+	}
+	if h.asker.calls != 0 || e.embeds != 0 {
+		t.Fatalf("find nearest is not a model call or an embed: asker=%d embeds=%d", h.asker.calls, e.embeds)
+	}
+
+	// Replay: the worker now ranks differently, but the recorded rows win.
+	e.nearest = []map[string]any{{"id": "other", "name": "other"}}
+	replayed, out := h.runFind("run-nearest", st, vars)
+	if out.s != sigNone {
+		t.Fatalf("replay failed: %v", out.reason)
+	}
+	if got := ids(replayed); strings.Join(got, ",") != "best,next" {
+		t.Fatalf("replay must return the recorded rows, got %v", got)
+	}
+	if e.vectorCalls != 1 {
+		t.Fatalf("replay must not rank again; NearestVector called %d times", e.vectorCalls)
+	}
+}
+
+func TestFindNearestOneTakesTheBestRow(t *testing.T) {
+	h, e := newEmbedHarness(t)
+	dim := h.k.plan.Embedding.Dimension
+	e.nearest = []map[string]any{{"id": "best", "name": "best"}, {"id": "next", "name": "next"}}
+	st := nearestFind(0, nil)
+	st.One = true
+	run := &Run{ID: "run-one", Data: map[string]any{}}
+	c := &runCtx{k: h.k, plan: h.k.plan, lp: &h.k.plan.Loops[0], run: run, recorded: map[string]string{}, items: map[string]int{}}
+	sc := &scope{vars: map[string]any{"vec": unitVector(dim, 1)}}
+	if out := c.step(&st, sc, "0", false); out.s != sigNone {
+		t.Fatalf("find nearest :one failed: %v", out.reason)
+	}
+	row, _ := sc.vars["seen"].(map[string]any)
+	if row["id"] != "best" || e.lastLimit != 1 {
+		t.Fatalf("want the best row with limit 1, got %v (limit %d)", sc.vars["seen"], e.lastLimit)
+	}
+}
+
+func TestFindNearestFailsClosedWithoutAVector(t *testing.T) {
+	h, e := newEmbedHarness(t)
+	dim := h.k.plan.Embedding.Dimension
+	cases := map[string]map[string]any{
+		"unknown":      {},
+		"not a vector": {"vec": "release notes"},
+		"wrong length": {"vec": unitVector(dim-1, 0)},
+		"non-number":   {"vec": []any{"x"}},
+	}
+	for name, vars := range cases {
+		_, out := h.runFind("run-bad-"+strings.ReplaceAll(name, " ", "-"), nearestFind(5, nil), vars)
+		if out.s != sigFail {
+			t.Fatalf("%s: want the step to fail, got %v", name, out)
+		}
+	}
+	h.k.embedder = nil
+	if _, out := h.runFind("run-no-worker", nearestFind(5, nil), map[string]any{"vec": unitVector(dim, 0)}); out.s != sigFail || !strings.Contains(out.reason, "embed worker is not running") {
+		t.Fatalf("no embed worker: want a failure naming it, got %v", out)
+	}
+	if e.vectorCalls != 0 {
+		t.Fatalf("a bad :to must not reach the worker; %d calls", e.vectorCalls)
+	}
+}
+
+// startEmbedWorker runs the generated embed worker (embed_python/, written by
+// loop_kernel_replay_traces) against the harness database, so sqlite-vec does
+// the ranking. Skips when python3 or sqlite_vec is missing.
+func startEmbedWorker(t *testing.T, h *harness) Embedder {
+	t.Helper()
+	pyDir, _ := filepath.Abs("embed_python")
+	if _, err := os.Stat(filepath.Join(pyDir, "embed_worker.py")); err != nil {
+		t.Skip("embed_python/embed_worker.py not generated")
+	}
+	python := os.Getenv("SILC_TEST_PYTHON")
+	if python == "" {
+		python = "python3"
+	}
+	if err := exec.Command(python, "-c", "import sqlite_vec").Run(); err != nil {
+		t.Skipf("sqlite_vec is not importable with %s: %v", python, err)
+	}
+	sockDir, err := os.MkdirTemp("", "silc-embed")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(sockDir) })
+	sock := filepath.Join(sockDir, "embed.sock")
+	serve, _ := filepath.Abs("serve_embed_worker.py")
+	cmd := exec.Command(python, serve, pyDir, sock, filepath.Join(h.dir, "app.db"))
+	var stderr strings.Builder
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = cmd.Process.Kill()
+		_, _ = cmd.Process.Wait()
+	})
+	for i := 0; i < 100; i++ {
+		if _, err := os.Stat(sock); err == nil {
+			return dialEmbedder(sock)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	t.Fatalf("embed worker did not start: %s", stderr.String())
+	return nil
+}
+
+func TestFindNearestRanksWithSqliteVecAndReplays(t *testing.T) {
+	h, _ := newEmbedHarness(t)
+	h.k.embedder = startEmbedWorker(t, h)
+	dim := h.k.plan.Embedding.Dimension
+	near := unitVector(dim, 0)
+	near[0], near[1] = 0.8, 0.6
+	h.seed("files", "far", map[string]any{"name": "far", "vector_embedding": unitVector(dim, 2)})
+	h.seed("files", "best", map[string]any{"name": "best", "vector_embedding": unitVector(dim, 0)})
+	h.seed("files", "near", map[string]any{"name": "near", "vector_embedding": near})
+	h.seed("files", "bare", map[string]any{"name": "no vector yet"})
+	vars := map[string]any{"vec": unitVector(dim, 0)}
+
+	rows, out := h.runFind("run-vec", nearestFind(2, nil), vars)
+	if out.s != sigNone {
+		t.Fatalf("find nearest failed: %v", out.reason)
+	}
+	if got := ids(rows); strings.Join(got, ",") != "best,near" {
+		t.Fatalf("want best first, capped at :max(2), got %v", got)
+	}
+	if n := h.eventsMentioning("vector_embedding"); n != 0 {
+		t.Fatalf("vectors must stay out of loop_events; %d events mention one", n)
+	}
+
+	all, out := h.runFind("run-vec-all", nearestFind(10, nil), vars)
+	if out.s != sigNone {
+		t.Fatalf("find nearest :max(10) failed: %v", out.reason)
+	}
+	if got := ids(all); strings.Join(got, ",") != "best,near,far" {
+		t.Fatalf("rows without a vector are not ranked; got %v", got)
+	}
+
+	// A new closest row lands after the run; the replay keeps what it saw.
+	h.seed("files", "newest", map[string]any{"name": "newest", "vector_embedding": unitVector(dim, 0)})
+	replayed, out := h.runFind("run-vec", nearestFind(2, nil), vars)
+	if out.s != sigNone {
+		t.Fatalf("replay failed: %v", out.reason)
+	}
+	if got := ids(replayed); strings.Join(got, ",") != "best,near" {
+		t.Fatalf("replay must return the recorded rows, got %v", got)
 	}
 }
 
