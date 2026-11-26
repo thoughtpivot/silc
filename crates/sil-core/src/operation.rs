@@ -292,6 +292,9 @@ pub struct ExecutableGraph {
     pub loops: Vec<String>,
     /// Any loop uses `loop::ask`, so the silclm worker must be provisioned.
     pub loop_ask: bool,
+    /// Any loop reads with `scrape::render`, so the kernel needs the
+    /// Playwright browser worker and its CPython environment.
+    pub loop_render: bool,
     /// Every loop is `loop::manual` and nothing declares a surface: `silc
     /// main.silc` runs the loops once, prints notices to stdout, and exits.
     pub loop_command: bool,
@@ -380,6 +383,11 @@ impl ExecutableGraph {
 
     pub fn needs_scrape_browser(&self) -> bool {
         self.has_scrape() && self.scrape.needs_browser()
+    }
+
+    /// The loop kernel renders pages with the Playwright worker.
+    pub fn needs_loop_browser(&self) -> bool {
+        self.has_loops() && self.loop_render
     }
 
     pub fn needs_scrape_crawl(&self) -> bool {
@@ -943,6 +951,7 @@ fn infer_game_graph(program: &Program) -> Result<Option<ExecutableGraph>, String
         root_component: None,
         loops: Vec::new(),
         loop_ask: false,
+        loop_render: false,
         loop_command: false,
         embedding: None,
     }))
@@ -1261,6 +1270,9 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
     }
     if saw_llm || crate::loops::loops_use_ask(program) {
         caps.push(crate::registry::Capability::LocalModel);
+    }
+    if saw_llm {
+        caps.push(crate::registry::Capability::Completion);
     }
     let loop_embeds = loop_embeds(program)?;
     if saw_infer || !loop_embeds.is_empty() {
@@ -1600,6 +1612,7 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
         root_component,
         loops: program.loops.iter().map(|l| l.name.clone()).collect(),
         loop_ask,
+        loop_render: crate::loops::loops_use_read_op(program, "scrape::render"),
         loop_command: crate::loops::loops_are_command(program),
         embedding,
     }))

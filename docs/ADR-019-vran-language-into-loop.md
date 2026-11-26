@@ -101,7 +101,7 @@ confirmed by Dan on 24 November 2026.
 | Plugin triggers (`form.submitted`, `email.received`), `once per`, and `shape` | Not adopted. The shipped "something changed" trigger is `loop::on_mutation` of a declared Silc resource. A webhook is not a `loop::*` node. |
 | `let` | Shipped as `loop::let`. |
 | `find` / `find one`, `where`, `order by`, `max` | Shipped as `loop::find` (`:max`, `:one`, `:where`, `:order`, `:desc`). The source is a Silc resource query, not a plugin-backed register. |
-| `read` with `retry` | Shipped as `loop::read`. The closed operations are `scrape::page` and `mcp::call`. Answers are recorded for replay. |
+| `read` with `retry` | Shipped as `loop::read`. The closed operations are `scrape::page`, `scrape::site`, `scrape::render`, `scrape::select` (0.8.0, ADR-020), and `mcp::call`. Answers are recorded for replay. |
 | `ask` returning a declared type, with `retry` and an `else` that must terminate | Shipped as `loop::ask` (`:into` a contract, `:retry`, `loop::otherwise` ending in `stop`, `fail`, or `skip`). The model is silclm. |
 | `ask` `cite` / `using` a model profile | Multi-value `from` is **Proposed** as an option on `loop::ask`, planned for 0.8.0 (THO-555). Citations are **Proposed** and deferred out of 0.8.0 (THO-559 Part 2). Neither is shipped. Named model profiles and vendor packages are not adopted. |
 | `check` (fail closed, including unknown) | Shipped as `loop::gate`. |

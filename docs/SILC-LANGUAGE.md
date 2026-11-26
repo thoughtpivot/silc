@@ -288,6 +288,17 @@ loop RfiChase {
   never call silclm, and appear on their own `embeds` line in the
   `silc build` cost report, apart from model calls
   ([ADR-014](ADR-014-loop-subject.md) amendment).
+- More reads (0.8.0, unreleased; [ADR-020](ADR-020-loop-scrape-and-score-steps.md)):
+  `scrape::site(:url(...), :max(N))` crawls same-host links (`:depth`, default
+  2; `:same_host`; `:link_css`) and binds a list of pages; `:max` (at most 100)
+  is required. `scrape::render(:url(...))` loads the page in headless
+  Chromium. `scrape::select(:url(...), :css("..."), :max(N))` binds every
+  match, each `url`, `text`, and `href`. A `scrape::*` read must sit in
+  `loop::read`; each is recorded once and a replay never refetches.
+- Scores: `loop::let(:as(q), text::score(:text($page.text)))` binds a number
+  from 0 to 1, computed by the kernel. It is not a model call and cannot score
+  unchecked `loop::ask` output. `silc build` lists scores beside reads, and
+  counts a `scrape::site` read as its `:max` pages.
 - A program with no `app`, no `scene` (and no `game` alias), and only `loop::manual` triggers is a
   **loop command**: no surfaces are built; `silc main.silc` runs each loop
   once, prints notices to stdout, and exits. `loop::approve` is a compile
@@ -345,12 +356,14 @@ checks with one declared matrix that generates this section.
 
 - A `scene` (or the `game` alias) may not coexist with `app`, `component`, `resource`, `loop`, or
   pipeline modules.
-- `text::score` may not coexist with the local model (`llm::complete` or `loop::ask`),
-  `scrape::*`, or `doc::*`.
+- `text::score` may not coexist with `llm::complete` (both need the one
+  processor). It may share a program with `loop::ask`, `scrape::*`, and
+  `doc::*`.
 - `text::score` may not coexist with `tensor::infer` (in a processor or a
   loop embedding step).
 - `loop` declarations may not coexist with `scrape::*` pipelines (use
-  `loop::read` for pages). Loops may embed (`loop::let` + `tensor::infer`).
+  `loop::read` with `scrape::page`, `scrape::site`, `scrape::render`, or
+  `scrape::select`). Loops may embed (`loop::let` + `tensor::infer`).
 - A program uses one embedding model across its tensor feeds and loop
   embedding steps.
 - `doc::extract` requires `:into(Contract)` and a matching `resource`.

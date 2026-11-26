@@ -1314,7 +1314,7 @@ service Extractor {
     }
 }
 
-Rules: keep contract field names exactly as above so extract can fill them; use `:submit` on the upload button (not `:on(click)`); do not call `Documents.create` from the submit handler — `submit()` posts multipart to `/upload` and the compiler stores the row; do not mix `doc::*` with `text::score`; do not invent Pandoc, OCR, or blob CDN ops."#,
+Rules: keep contract field names exactly as above so extract can fill them; use `:submit` on the upload button (not `:on(click)`); do not call `Documents.create` from the submit handler — `submit()` posts multipart to `/upload` and the compiler stores the row; do not invent Pandoc, OCR, or blob CDN ops."#,
         );
     }
 

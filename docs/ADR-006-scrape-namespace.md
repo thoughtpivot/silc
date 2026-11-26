@@ -79,7 +79,8 @@ $job.url
 
 Each crawl appends a cataloged run to `scraped_pages`; prior runs remain
 available. `scrape::*` may compose with `llm::complete` for grounded summaries,
-but remains mutually exclusive with `text::score`.
+or with a `text::score` processor (0.8.0). Inside a loop, `scrape::*` runs in
+`loop::read` ([ADR-020](ADR-020-loop-scrape-and-score-steps.md)).
 
 Static `scrape::page` + `scrape::extract` also feed the tensor embedding
 pipeline ([ADR-010](ADR-010-tensor-minilm-pipeline.md) / `pipelineApp`).

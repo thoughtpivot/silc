@@ -86,8 +86,9 @@ decisions—not prompt decisions.
 approval-gated, model-assisted work
 ([ADR-014](docs/ADR-014-loop-subject.md)). A cron schedule in an explicit time
 zone, Run now, or a resource mutation starts a run. Steps come from a closed
-`loop::*` catalog: find rows, read outside data (`scrape::page`, or one MCP
-tool with `mcp::call`), ask silclm for a typed contract, gate, branch, iterate
+`loop::*` catalog: find rows, read outside data (`scrape::page`,
+`scrape::site` with a page cap, `scrape::render`, `scrape::select`, or one MCP
+tool with `mcp::call`), score text with `text::score`, ask silclm for a typed contract, gate, branch, iterate
 with a bound, approve, and write or notify exactly once per key.
 
 A loop can sit beside an `app`, and the compiler adds a `/loops` inbox. With

@@ -33,8 +33,27 @@ Entries before 0.5.0 are reconstructed from the commit history.
   vector never enters `loop_events`), never call silclm, and get their own
   `embeds` line in the `silc build` cost report, separate from model calls.
   The site's UpstreamWatch and ArticleIngest embedding lines now validate.
+- `scrape::site`, `scrape::render`, and `scrape::select` reads and
+  `text::score` inside loops (THO-579,
+  [ADR-020](docs/ADR-020-loop-scrape-and-score-steps.md)). `loop::read` takes
+  `scrape::site(:url(...), :max(N))`, a crawl capped at `:max` pages (required,
+  at most 100) with `:depth`, `:same_host`, and `:link_css`;
+  `scrape::render(:url(...))`, which loads the page in headless Chromium; and
+  `scrape::select(:url(...), :css("..."), :max(N))`, which binds every match
+  as `url`, `text`, and `href`. `:select` and `:into` shape each page or match.
+  Each read is recorded once, so a replay never refetches. `loop::let(:as(q),
+  text::score(:text($page.text)))` binds a score from 0 to 1, computed by the
+  Go kernel and recomputed on replay. A `scrape::*` read outside `loop::read`,
+  a `scrape::site` without `:max`, and a score of unchecked `loop::ask` output
+  are compile errors. The cost report counts a site read as its page cap times
+  `1 + :retry`, and lists scores apart from model calls.
 
 ### Changed
+
+- `text::score` may share a program with `loop::ask`, `scrape::*`, and
+  `doc::extract` (THO-579). `text::score` × `llm::complete` stays banned
+  because both take the one processor slot, and loops still may not declare
+  `scrape::*` pipelines; both messages now say why.
 
 - `llm::complete` (and `loop::ask`) may share a program with `tensor::infer`,
   and loops may embed: the LocalModel × Embedding and Loop × Embedding

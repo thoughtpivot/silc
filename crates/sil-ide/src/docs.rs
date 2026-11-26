@@ -304,8 +304,9 @@ pub fn namespace_doc(ns: &str) -> Option<String> {
                 .into()
         }
         "text" => {
-            "Runnable text namespace. Author `text::score` in processor or handler pipelines \
-             for local, deterministic relevance scoring without calling an LLM."
+            "Runnable text namespace. Author `text::score` in processor or handler pipelines, \
+             or in a loop as `loop::let(:as(x), text::score(:text(...)))`, for local, \
+             deterministic relevance scoring without calling an LLM."
                 .into()
         }
         "llm" => {
@@ -315,7 +316,8 @@ pub fn namespace_doc(ns: &str) -> Option<String> {
         }
         "scrape" => {
             "Runnable scrape namespace. Author `scrape::page`, `site`, `select`, `render`, and \
-             `extract` in ingress/processor pipelines to fetch and structure web content."
+             `extract` in ingress/processor pipelines to fetch and structure web content. \
+             Inside a loop, `page`, `site`, `render`, and `select` sit in `loop::read`."
                 .into()
         }
         "doc" => {

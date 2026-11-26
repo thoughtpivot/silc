@@ -68,7 +68,9 @@ loop state, person-owned fields, citations, money types, irreversible-effect
 classes, external email or chat delivery, and the source language's syntax
 and IR, and model-driven tool selection. `loop::notify` writes to a
 synthesized in-app notices table. `loop::read` supports `scrape::page` (HTTP
-GET) and `mcp::call` (one named tool per step).
+GET) and `mcp::call` (one named tool per step); `scrape::site`,
+`scrape::render`, and `scrape::select` were added in 0.8.0
+([ADR-020](ADR-020-loop-scrape-and-score-steps.md)).
 
 ## Decision
 
@@ -81,9 +83,10 @@ GET) and `mcp::call` (one named tool per step).
    (`when` + required `otherwise`), `each`, `write`, `notify`, `approve`
    (`declined` + `timed_out` blocks required), `stop`, `fail`, `skip`.
 3. **Coexistence.** Loops live beside `app`, `component`, `resource`, and
-   processor modules. They may not be mixed with `game`, and a program that
-   uses `loop::ask` may not also use `text::score` (the same rule as
-   `llm::complete`).
+   processor modules. They may not be mixed with `game`. A program that uses
+   `loop::ask` may also use `text::score` since 0.8.0
+   ([ADR-020](ADR-020-loop-scrape-and-score-steps.md)); `llm::complete` and
+   `text::score` still exclude each other.
 4. **Runtime split (ADR-004).**
    - **Go kernel** (`go/loop/`): scheduler, run table, event log, receipts,
      replay, suspension for approvals, manual-run and mutation polling. It

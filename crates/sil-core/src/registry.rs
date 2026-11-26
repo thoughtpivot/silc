@@ -22,6 +22,9 @@ pub enum Engine {
 pub enum Capability {
     /// `llm::complete` and `loop::ask`: one local model, one provisioning path.
     LocalModel,
+    /// `llm::complete` in a processor: it takes the one processor slot.
+    /// `loop::ask` reaches the model through its own ASK frame and does not.
+    Completion,
     TextScore,
     Embedding,
     Scrape,
@@ -44,7 +47,7 @@ pub struct OperationSpec {
     pub description: &'static str,
 }
 
-const LOCAL_MODEL: &[Capability] = &[Capability::LocalModel];
+const LOCAL_MODEL: &[Capability] = &[Capability::LocalModel, Capability::Completion];
 const EMBEDDING: &[Capability] = &[Capability::Embedding];
 const SCRAPE: &[Capability] = &[Capability::Scrape];
 const DOC: &[Capability] = &[Capability::DocExtract];
@@ -288,22 +291,14 @@ pub struct CompatRule {
 /// One row per banned pair. `LocalModel` x `Embedding` and `Loop` x
 /// `Embedding` are legal (ADR-010 amendment): embeddings run in their own
 /// CPython worker and never take the processor slot or count as model calls.
+/// `text::score` mixes with `loop::ask`, `scrape::*`, and `doc::*` (ADR-020):
+/// asks use their own frame, and scrape and upload ingress never pass through
+/// the score processor. Only `llm::complete` shares the processor slot with it.
 pub const COMPATIBILITY: &[CompatRule] = &[
     CompatRule {
-        left: Capability::Scrape,
-        right: Capability::TextScore,
-        message: "cannot mix scrape::* with text::score in one program",
-    },
-    CompatRule {
-        left: Capability::DocExtract,
-        right: Capability::TextScore,
-        message: "cannot mix doc::* with text::score in one program",
-    },
-    CompatRule {
         left: Capability::TextScore,
-        right: Capability::LocalModel,
-        message:
-            "cannot mix text::score and the local model (llm::complete or loop::ask) in one program",
+        right: Capability::Completion,
+        message: "cannot mix text::score and llm::complete in one program; both take the one processor slot (loop::ask may share a program with text::score)",
     },
     CompatRule {
         left: Capability::TextScore,
@@ -313,7 +308,7 @@ pub const COMPATIBILITY: &[CompatRule] = &[
     CompatRule {
         left: Capability::Loop,
         right: Capability::Scrape,
-        message: "loops cannot be combined with scrape::* pipelines; use loop::read for pages",
+        message: "loops cannot be combined with scrape::* pipelines; inside a loop, put scrape::page, scrape::site, scrape::render, or scrape::select in loop::read",
     },
 ];
 
@@ -355,6 +350,17 @@ mod tests {
     }
 
     #[test]
+    fn text_score_mixes_with_ask_scrape_and_doc() {
+        assert_eq!(compatibility_message(&[TextScore, LocalModel, Loop]), None);
+        assert_eq!(compatibility_message(&[Scrape, TextScore]), None);
+        assert_eq!(compatibility_message(&[DocExtract, TextScore]), None);
+        assert_eq!(
+            compatibility_message(&[Ui, TextScore, Scrape, DocExtract]),
+            None
+        );
+    }
+
+    #[test]
     fn remaining_bans_stay() {
         assert_eq!(
             compatibility_message(&[TextScore, Embedding]),
@@ -362,9 +368,18 @@ mod tests {
         );
         let scrape = compatibility_message(&[Loop, Scrape]).unwrap();
         assert!(
-            scrape.contains("scrape::*") && !scrape.contains("tensor"),
+            scrape.contains("scrape::*")
+                && scrape.contains("loop::read")
+                && !scrape.contains("tensor"),
             "{scrape}"
         );
-        assert!(compatibility_message(&[TextScore, LocalModel]).is_some());
+        let complete = compatibility_message(&[TextScore, LocalModel, Completion]).unwrap();
+        assert!(complete.contains("llm::complete"), "{complete}");
+    }
+
+    #[test]
+    fn llm_complete_carries_the_processor_slot_capability() {
+        let op = lookup_operation("llm", "complete").unwrap();
+        assert!(op.capabilities.contains(&LocalModel) && op.capabilities.contains(&Completion));
     }
 }

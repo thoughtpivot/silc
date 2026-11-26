@@ -186,7 +186,8 @@ means adding a catalog entry (and, for a new provider kind, an adapter in
 ### Compatibility
 
 `LocalModel × Embedding` and `Loop × Embedding` are lifted. Still banned:
-`text::score × tensor::infer` and `loop × scrape::*`. `:prefer(CUDA)` still
+`text::score × tensor::infer` and `loop × scrape::*` pipelines (loops read
+pages with `loop::read`, [ADR-020](ADR-020-loop-scrape-and-score-steps.md)). `:prefer(CUDA)` still
 fails; the message names the compiler's major.minor release.
 
 ### Pipeline mode
