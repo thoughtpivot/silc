@@ -1,0 +1,59 @@
+# Compiler fixture: an embedding step inside a loop (THO-552). ReleaseIndex
+# reads each changelog's <article>, embeds its text with the default
+# minilm-l6-v2 model, and writes the vector into an Emb384 field of a
+# `query nearest` resource. Replay recomputes the vector from the recorded
+# read; it is never written to the event log.
+@version("0.7")
+
+subset Emb384 of Vec[num32; 384];
+
+contract Dependency {
+    has Str $.id;
+    has Str $.name;
+    has Str $.changelog;
+}
+
+contract Release {
+    has Str $.version;
+    has Str $.text;
+}
+
+contract Incident {
+    has Str $.id;
+    has Str $.title;
+    has Emb384 $.vector_embedding;
+}
+
+resource Dependencies for Dependency {
+    query list;
+    mutation create;
+}
+
+resource Incidents for Incident {
+    query list;
+    query nearest;
+    mutation create;
+}
+
+loop ReleaseIndex {
+    loop::flow(
+        loop::schedule(:cron("0 6 * * *"), :tz("UTC")),
+        loop::find(:as(deps), :from(Dependencies.list), :max(20)),
+        loop::each(:in($deps), :as(dep), :max(20),
+            loop::read(:as(release), :into(Release),
+                scrape::page(:url($dep.changelog), :select("article"), :fields(Release.new(:version("h2"))))),
+            loop::let(:as(vec),
+                tensor::infer(:model("minilm-l6-v2"), :from($release.text))),
+            loop::write(
+                :to(Incidents.create),
+                :key("{$dep.id}:{$release.version}"),
+                :value(Incident.new(:title($release.version), :vector_embedding($vec)))
+            ),
+            loop::notify(
+                :to("Maintainers"),
+                :text("{$dep.name} {$release.version} indexed"),
+                :key("{$dep.id}:{$release.version}")
+            )
+        )
+    )
+}

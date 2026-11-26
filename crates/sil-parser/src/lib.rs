@@ -1083,10 +1083,12 @@ impl Parser {
             )
     }
 
-    /// `scrape::page(...)` or `mcp::call(...)` nested inside `loop::read`.
-    fn at_nested_read_op(&self) -> bool {
+    /// `scrape::page(...)` or `mcp::call(...)` nested inside `loop::read`, or
+    /// `tensor::infer(...)` nested inside `loop::let`. The checker decides
+    /// which node takes which operation.
+    fn at_nested_op(&self) -> bool {
         let ns = match self.peek() {
-            Some(Token::Ident(n)) if n == "scrape" || n == "mcp" => true,
+            Some(Token::Ident(n)) if n == "scrape" || n == "mcp" || n == "tensor" => true,
             _ => false,
         };
         ns && matches!(
@@ -1095,11 +1097,11 @@ impl Parser {
         )
     }
 
-    fn parse_nested_read_op(&mut self) -> Result<(String, Vec<(String, Expr)>), ParseError> {
-        let ns = self.expect_ident("read operation namespace")?;
-        self.expect_simple(Token::DoubleColon, "`::` in read operation")?;
-        let name = self.expect_ident("read operation name")?;
-        self.expect_simple(Token::LParen, "`(` after read operation")?;
+    fn parse_nested_op(&mut self) -> Result<(String, Vec<(String, Expr)>), ParseError> {
+        let ns = self.expect_ident("nested operation namespace")?;
+        self.expect_simple(Token::DoubleColon, "`::` in nested operation")?;
+        let name = self.expect_ident("nested operation name")?;
+        self.expect_simple(Token::LParen, "`(` after nested operation")?;
         let mut props = Vec::new();
         while !matches!(self.peek(), Some(Token::RParen)) {
             if matches!(self.peek(), Some(Token::Comma)) {
@@ -1107,12 +1109,10 @@ impl Parser {
                 continue;
             }
             if !matches!(self.peek(), Some(Token::Colon)) {
-                return Err(
-                    self.error_here("expected `:option(...)` inside the nested read operation")
-                );
+                return Err(self.error_here("expected `:option(...)` inside the nested operation"));
             }
             self.advance();
-            let key = self.expect_ident_like_spanned("read option name")?.0;
+            let key = self.expect_ident_like_spanned("nested option name")?.0;
             let expr = if matches!(self.peek(), Some(Token::LParen)) {
                 self.advance();
                 if matches!(self.peek(), Some(Token::RParen)) {
@@ -1120,7 +1120,7 @@ impl Parser {
                     Expr::Bool(true)
                 } else {
                     let expr = self.parse_game_prop_expr()?;
-                    self.expect_simple(Token::RParen, "`)` after read option")?;
+                    self.expect_simple(Token::RParen, "`)` after nested option")?;
                     expr
                 }
             } else {
@@ -1128,7 +1128,7 @@ impl Parser {
             };
             props.push((key, expr));
         }
-        self.expect_simple(Token::RParen, "`)` after nested read operation")?;
+        self.expect_simple(Token::RParen, "`)` after nested operation")?;
         Ok((format!("{ns}::{name}"), props))
     }
 
@@ -1182,8 +1182,8 @@ impl Parser {
                 prop_spans.push(key_span);
             } else if self.at_loop_node() {
                 children.push(self.parse_loop_node()?);
-            } else if self.at_nested_read_op() {
-                let (op, nested) = self.parse_nested_read_op()?;
+            } else if self.at_nested_op() {
+                let (op, nested) = self.parse_nested_op()?;
                 props.push(("op".into(), Expr::String(op)));
                 prop_spans.push(start);
                 for (key, expr) in nested {
@@ -1192,7 +1192,7 @@ impl Parser {
                 }
             } else {
                 return Err(self.error_here(
-                    "expected `:option(...)`, `loop::node(...)`, or a nested read operation (`scrape::page(...)`, `mcp::call(...)`)",
+                    "expected `:option(...)`, `loop::node(...)`, or a nested operation (`scrape::page(...)` or `mcp::call(...)` in loop::read, `tensor::infer(...)` in loop::let)",
                 ));
             }
         }

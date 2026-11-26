@@ -18,6 +18,8 @@ pub const MAX_LOOP_DURATION_MINUTES: u64 = 30 * 24 * 60;
 pub const DEFAULT_ASK_RETRY: u64 = 1;
 pub const DEFAULT_READ_RETRY: u64 = 2;
 pub const LOOP_READ_OPS: &[&str] = &["scrape::page", "mcp::call"];
+/// The one operation `loop::let` nests: an embedding step (THO-552, ADR-014).
+pub const LOOP_EMBED_OP: &str = "tensor::infer";
 
 use crate::catalog::{
     ChildPolicy, NodeRole, NodeSpec, OptionKind, OptionSpec, NO_EVENTS, NO_SLOTS, NO_SURFACES,
@@ -141,10 +143,14 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
     LoopNodeSpec {
         name: "let",
         role: LoopNodeRole::Step,
-        description: "Binds a name to a computed value for the rest of the enclosing block. Deterministic; no I/O.",
+        description: "Binds a name for the rest of the enclosing block. With `:value(expr)` it is deterministic and does no I/O. With a nested `tensor::infer(:model(...), :from(expr))` it embeds a Str through the CPython embed worker and binds a `Vec[num32; N]` of the model's dimension (`Emb384` for the default `minilm-l6-v2`). An embed is recomputed on replay, never recorded, and never a model call.",
         props: &[
             lp("as", LoopPropKind::Ident, true, "Binding name, used later as `$name`."),
-            lp("value", LoopPropKind::Expr, true, "Expression over earlier bindings, literals, or `Contract.new(...)`."),
+            lp("value", LoopPropKind::Expr, false, "Expression over earlier bindings, literals, or `Contract.new(...)`. Required unless the let nests `tensor::infer(...)`."),
+            lp("op", LoopPropKind::String, false, "Nested operation; only \"tensor::infer\", written `tensor::infer(...)` inside the let."),
+            lp("model", LoopPropKind::String, false, "`tensor::infer`: embedding model from the catalog, e.g. \"minilm-l6-v2\" (the default: 384 dims, CPU). Unknown models are rejected."),
+            lp("from", LoopPropKind::Expr, false, "`tensor::infer`: the Str to embed, e.g. `$release.text`."),
+            lp("prefer", LoopPropKind::Ident, false, "`tensor::infer`: device. Only `CPU` is accepted; `CUDA` is rejected."),
         ],
         children: LoopChildPolicy::None,
 
@@ -542,6 +548,47 @@ impl Loop {
     }
 }
 
+/// Whether `step` is an embedding step, `loop::let(:as(x), tensor::infer(...))`.
+pub fn is_loop_embed(step: &LoopNode) -> bool {
+    step.name == "let" && step.string_prop("op") == Some(LOOP_EMBED_OP)
+}
+
+/// The catalog model an embedding step names with `:model`, or the default
+/// `minilm-l6-v2`. Unknown ids are an error.
+pub fn loop_embed_model(
+    step: &LoopNode,
+) -> Result<&'static crate::model_catalog::EmbeddingModelCatalogEntry, String> {
+    let id = step
+        .string_prop("model")
+        .unwrap_or(crate::model_catalog::DEFAULT_EMBEDDING_MODEL_ID);
+    crate::model_catalog::validate_embedding_model_id(id)
+}
+
+/// Static type of an embedding step's binding: `Vec[num32; N]`, N being the
+/// model's declared dimension. A contract field takes it only when its type
+/// resolves to the same vector, e.g. `Emb384` for `minilm-l6-v2`.
+pub fn loop_embed_type(model: &crate::model_catalog::EmbeddingModelCatalogEntry) -> TypeExpr {
+    TypeExpr::Vec {
+        elem: "num32".into(),
+        len: Some(model.dimension.into()),
+    }
+}
+
+/// Every embedding step in `lp`, in source order.
+pub fn loop_embed_steps(lp: &Loop) -> Vec<&LoopNode> {
+    fn walk<'a>(node: &'a LoopNode, out: &mut Vec<&'a LoopNode>) {
+        if is_loop_embed(node) {
+            out.push(node);
+        }
+        for child in &node.children {
+            walk(child, out);
+        }
+    }
+    let mut out = Vec::new();
+    walk(&lp.root, &mut out);
+    out
+}
+
 /// Parse `30m`, `4h`, `2d`, `1w` into minutes.
 pub fn parse_loop_duration(text: &str) -> Result<u64, String> {
     let text = text.trim();
@@ -827,6 +874,8 @@ pub struct LoopBounds {
     pub reads: u64,
     pub rows_scanned: u64,
     pub unchecked_effects: u64,
+    /// Embedding steps (CPython embed worker). Never model calls.
+    pub embeds: u64,
 }
 
 impl LoopBounds {
@@ -844,6 +893,7 @@ impl LoopBounds {
         self.unchecked_effects = self
             .unchecked_effects
             .saturating_add(other.unchecked_effects);
+        self.embeds = self.embeds.saturating_add(other.embeds);
     }
 
     fn max(&mut self, other: &LoopBounds) {
@@ -854,6 +904,7 @@ impl LoopBounds {
         self.reads = self.reads.max(other.reads);
         self.rows_scanned = self.rows_scanned.max(other.rows_scanned);
         self.unchecked_effects = self.unchecked_effects.max(other.unchecked_effects);
+        self.embeds = self.embeds.max(other.embeds);
     }
 
     fn scale(&self, n: u64) -> LoopBounds {
@@ -865,6 +916,7 @@ impl LoopBounds {
             reads: self.reads.saturating_mul(n),
             rows_scanned: self.rows_scanned.saturating_mul(n),
             unchecked_effects: self.unchecked_effects.saturating_mul(n),
+            embeds: self.embeds.saturating_mul(n),
         }
     }
 }
@@ -881,6 +933,7 @@ pub fn loop_bounds(lp: &Loop) -> LoopBounds {
     fn node(step: &LoopNode) -> LoopBounds {
         let mut b = LoopBounds::default();
         match step.name.as_str() {
+            "let" if is_loop_embed(step) => b.embeds = 1,
             "find" => {
                 b.rows_scanned = if step.has_flag("one") {
                     1
@@ -1228,8 +1281,105 @@ impl<'a> Checker<'a> {
         let mut tainted = false;
         for path in &placeholders {
             tainted |= self.check_path(node, scope, None, path)?;
+            let expr = path[1..]
+                .iter()
+                .fold(Expr::Var(path[0].clone()), |base, field| Expr::Member {
+                    base: Box::new(base),
+                    field: field.clone(),
+                });
+            if let ty @ ValTy::Vector { .. } = self.infer_val_ty(scope, None, &expr) {
+                return Err(self.err(
+                    node,
+                    format!(
+                        ":{prop}: `{{${}}}` is a vector ({}) and cannot be interpolated into text",
+                        path.join("."),
+                        ty.display()
+                    ),
+                ));
+            }
         }
         Ok((tainted, placeholders.len()))
+    }
+
+    /// An embedding `loop::let`: checks the nested `tensor::infer(...)` and
+    /// returns the bound vector type and whether `:from` carries model output.
+    /// `None` for a plain `:value` let.
+    fn check_let_embed(
+        &self,
+        step: &LoopNode,
+        scope: &Scope,
+    ) -> Result<Option<(ValTy, bool)>, String> {
+        let Some(op) = step.string_prop("op") else {
+            if let Some(extra) = ["model", "from", "prefer"]
+                .iter()
+                .find(|p| step.prop(p).is_some())
+            {
+                return Err(self.err(
+                    step,
+                    format!(":{extra} belongs to a nested `tensor::infer(...)`, e.g. `loop::let(:as(vec), tensor::infer(:from($doc.text)))`"),
+                ));
+            }
+            if step.prop("value").is_none() {
+                return Err(self.err(
+                    step,
+                    "requires `:value(...)` or a nested `tensor::infer(...)`",
+                ));
+            }
+            return Ok(None);
+        };
+        debug_assert_eq!(op, LOOP_EMBED_OP, "checked in check_step");
+        if step.prop("value").is_some() {
+            return Err(self.err(
+                step,
+                "takes either `:value(...)` or a nested `tensor::infer(...)`, not both",
+            ));
+        }
+        let model = loop_embed_model(step).map_err(|e| self.err(step, e))?;
+        if let Some(prefer) = step.ident_prop("prefer") {
+            if prefer.eq_ignore_ascii_case("CUDA") {
+                return Err(self.err(
+                    step,
+                    format!(
+                        "tensor::infer is CPU-only in {}; remove :prefer(CUDA) (default/CPU accepted)",
+                        crate::silc_release()
+                    ),
+                ));
+            }
+            if !prefer.eq_ignore_ascii_case("CPU") {
+                return Err(self.err(
+                    step,
+                    format!("unsupported tensor::infer :prefer({prefer}); only CPU is accepted"),
+                ));
+            }
+        }
+        let Some(from) = step.prop("from") else {
+            return Err(self.err(
+                step,
+                "`tensor::infer` requires `:from(...)`, the text to embed, e.g. `:from($release.text)`",
+            ));
+        };
+        let tainted = self.check_expr(step, scope, None, from)?;
+        let what = render_expr(from);
+        match self.infer_val_ty(scope, None, from) {
+            ValTy::Str => {}
+            ValTy::Unknown => {
+                return Err(self.err(
+                    step,
+                    format!("`tensor::infer` embeds a Str, but the type of {what} is not known; embed a typed field such as `$release.text`"),
+                ));
+            }
+            other => {
+                return Err(self.err(
+                    step,
+                    format!(
+                        "`tensor::infer` embeds a Str, but {what} is {}",
+                        other.display()
+                    ),
+                ));
+            }
+        }
+        let ty = self.resolve_val_ty(&loop_embed_type(model), 0);
+        Ok(Some((ty, tainted)))
     }
 
     fn expr_ty(&self, scope: &Scope, expr: &Expr) -> BindTy {
@@ -1863,9 +2013,29 @@ impl<'a> Checker<'a> {
         scope: &mut Scope,
         in_each: bool,
     ) -> Result<(), String> {
+        if step.name == "let" {
+            if let Some(op) = step.string_prop("op").filter(|op| *op != LOOP_EMBED_OP) {
+                return Err(self.err(
+                    step,
+                    format!("nests only `{LOOP_EMBED_OP}(...)`, not `{op}`; outside data goes through loop::read"),
+                ));
+            }
+        }
         self.check_props(step)?;
         match step.name.as_str() {
             "let" => {
+                if let Some((ty, tainted)) = self.check_let_embed(step, scope)? {
+                    let name = step.ident_prop("as").unwrap().to_string();
+                    return self.bind(
+                        step,
+                        scope,
+                        &name,
+                        Binding {
+                            ty: BindTy::Typed(ty),
+                            tainted,
+                        },
+                    );
+                }
                 let value = step.prop("value").unwrap();
                 let tainted = self.check_expr(step, scope, None, value)?;
                 let mut ty = self.expr_ty(scope, value);
@@ -2372,6 +2542,20 @@ pub fn format_loop_cost_report(program: &Program) -> Option<String> {
             b.reads,
             b.rows_scanned,
         ));
+        if b.embeds > 0 {
+            let mut models: Vec<&str> = loop_embed_steps(lp)
+                .into_iter()
+                .filter_map(|s| loop_embed_model(s).ok().map(|m| m.id))
+                .collect();
+            models.sort_unstable();
+            models.dedup();
+            out.push_str(&format!(
+                "  {:<width$}  embeds {} ({}, CPython embed worker; not model calls)\n",
+                "",
+                b.embeds,
+                models.join(", "),
+            ));
+        }
         let mut unchecked = Vec::new();
         collect_unchecked(&lp.root, &mut unchecked);
         for reason in unchecked {

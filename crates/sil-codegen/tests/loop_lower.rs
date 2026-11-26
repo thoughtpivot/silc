@@ -51,6 +51,35 @@ fn page_read_program() -> sil_core::Program {
     parse_valid(include_str!("fixtures/loop_page_read.silc"))
 }
 
+fn loop_embed_program() -> sil_core::Program {
+    parse_valid(include_str!("fixtures/loop_embed.silc"))
+}
+
+#[test]
+fn loop_embed_lowers_to_an_embed_step_and_plans_the_worker() {
+    let program = synthesize_loop_surface(&loop_embed_program()).expect("synthesize");
+    let plan = lower_loop_plan(&program, "test");
+    let lp = &plan["loops"][0];
+    let embed = &lp["steps"][1]["steps"][1];
+    assert_eq!(embed["op"], "embed", "{embed}");
+    assert_eq!(embed["as"], "vec");
+    assert_eq!(embed["model"], "minilm-l6-v2");
+    assert_eq!(embed["from"]["k"], "member");
+    assert_eq!(embed["from"]["field"], "text");
+    assert!(embed.get("value").is_none());
+    assert_eq!(lp["bounds"]["embeds"], 20, "one embed per item × :max(20)");
+    assert_eq!(lp["bounds"]["model_calls"], 0, "embeds are not model calls");
+    let embedding = &plan["embedding"];
+    assert_eq!(embedding["model"], "minilm-l6-v2");
+    assert_eq!(embedding["dimension"], 384);
+    assert_eq!(embedding["feeds"], serde_json::json!({}));
+    assert_eq!(embedding["nearest"]["incidents"], "vector_embedding");
+    let digest = synthesize_loop_surface(&digest_program()).expect("synthesize digest");
+    assert!(lower_loop_plan(&digest, "test")["loops"][0]["bounds"]
+        .get("embeds")
+        .is_none());
+}
+
 #[test]
 fn page_read_lowers_select_into_and_fields() {
     let plan = lower_loop_plan(&page_read_program(), "test");
@@ -250,6 +279,13 @@ fn loop_kernel_replay_traces() {
     std::fs::write(
         dir.join("embed_plan.json"),
         serde_json::to_string_pretty(&lower_loop_plan(&embed, "test")).unwrap(),
+    )
+    .unwrap();
+
+    let loop_embed = synthesize_loop_surface(&loop_embed_program()).expect("synthesize loop embed");
+    std::fs::write(
+        dir.join("loop_embed_plan.json"),
+        serde_json::to_string_pretty(&lower_loop_plan(&loop_embed, "test")).unwrap(),
     )
     .unwrap();
 

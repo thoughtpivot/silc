@@ -242,8 +242,10 @@ schedule/manual loops; auth via `SILC_MCP_TOKEN`) so agents can attach without
 speaking the compiler-owned REST routes.
 
 **Embeddings.** When an app or loop program embeds a contract field
-(`tensor::tokenize ==> tensor::infer`), the supervisor starts a CPython embed
-worker on a Unix socket. Bun and the Go loop kernel call it on writes. Vectors
+(`tensor::tokenize ==> tensor::infer`) or a loop has an embedding step
+(`loop::let(:as(vec), tensor::infer(...))`), the supervisor starts a CPython
+embed worker on a Unix socket. Bun and the Go loop kernel call it on writes,
+and the kernel calls it for each embedding step. Vectors
 live in the app database, and `query nearest` ranks rows by cosine with
 sqlite-vec. The loop event log never stores vectors; replay recomputes them
 ([ADR-010](ADR-010-tensor-minilm-pipeline.md) amendment).

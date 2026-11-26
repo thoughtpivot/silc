@@ -550,10 +550,14 @@ pub fn emit(
                     "table": n.table,
                     "field": n.field,
                 })).collect::<Vec<_>>(),
+                "loop_embeds": plan.loop_embeds.iter().map(|e| serde_json::json!({
+                    "loop": e.loop_name,
+                    "binding": e.binding,
+                })).collect::<Vec<_>>(),
                 "max_limit": sil_core::loops::MAX_LOOP_LIST,
                 "store": "sqlite-vec",
                 "worker": "python/embed_worker.py",
-                "provenance": "compiler-owned tensor::infer feed + query nearest → CPython embed worker + sqlite-vec (ADR-010)",
+                "provenance": "compiler-owned tensor::infer feed + loop embed step + query nearest → CPython embed worker + sqlite-vec (ADR-010, ADR-014)",
             });
         }
         if let Some(mcp) = mcp_serve::mcp_manifest_section(program) {

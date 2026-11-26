@@ -137,6 +137,7 @@ type Step struct {
 	AuthEnv       string   `json:"auth_env"`
 	Select        string   `json:"select"`
 	Into          string   `json:"into"`
+	Model         string   `json:"model"`
 	Mode          string   `json:"mode"`
 	WithinMinutes int      `json:"within_minutes"`
 	Accept        *Expr    `json:"accept"`
@@ -973,12 +974,14 @@ func (c *runCtx) step(st *Step, sc *scope, path string, inEach bool) outcome {
 			return outcome{s: sigSuspend}
 		}
 	case "embed":
-		// Not recorded: a replay recomputes the vector from the same text.
+		// loop::let + tensor::infer. Not recorded: a replay recomputes the
+		// vector from the same (recorded) text. Never a model call.
 		v, _ := eval(st.From, sc)
 		text, isStr := v.(string)
 		if !isStr {
 			return outcome{sigFail, "embed :from is not a string"}
 		}
+		c.progress("embedding %s (%s)", st.As, st.Model)
 		vec, err := c.k.embed(text)
 		if err != nil {
 			return outcome{sigFail, "embed: " + err.Error()}

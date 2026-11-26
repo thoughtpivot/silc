@@ -271,6 +271,23 @@ loop RfiChase {
   `loop::read(:as(x), :into(Contract), scrape::page(...))` binds `$x` as a row
   of that contract (rules in [ADR-014](ADR-014-loop-subject.md), decision 6).
   `:select` on `mcp::call` stays a dotted JSON path.
+- Embedding step (new in 0.8.0, unreleased; THO-552):
+
+  ```silc
+  loop::let(:as(vec),
+    tensor::infer(:model("minilm-l6-v2"), :from($release.text))),
+  ```
+
+  embeds a `Str` with the CPython embed worker and binds `$vec` as
+  `Vec[num32; N]`, N the model's dimension (`Emb384` for the default
+  `minilm-l6-v2`). `:model` names an embedding catalog entry (unknown ids
+  are rejected); `:prefer(CUDA)` is rejected. A let takes `:value(...)` or
+  one nested `tensor::infer(...)`, not both. `$vec` can be written into a
+  field of the same vector type but never interpolated into a template.
+  Embeds are recomputed on replay (the vector is never in the event log),
+  never call silclm, and appear on their own `embeds` line in the
+  `silc build` cost report, apart from model calls
+  ([ADR-014](ADR-014-loop-subject.md) amendment).
 - A program with no `app`, no `scene` (and no `game` alias), and only `loop::manual` triggers is a
   **loop command**: no surfaces are built; `silc main.silc` runs each loop
   once, prints notices to stdout, and exits. `loop::approve` is a compile
@@ -330,9 +347,12 @@ checks with one declared matrix that generates this section.
   pipeline modules.
 - `text::score` may not coexist with the local model (`llm::complete` or `loop::ask`),
   `scrape::*`, or `doc::*`.
-- `text::score` and the local model may not coexist with `tensor::infer`.
-- `loop` declarations may not coexist with `scrape::*` or `tensor::*`
-  pipelines (use `loop::read` for pages).
+- `text::score` may not coexist with `tensor::infer` (in a processor or a
+  loop embedding step).
+- `loop` declarations may not coexist with `scrape::*` pipelines (use
+  `loop::read` for pages). Loops may embed (`loop::let` + `tensor::infer`).
+- A program uses one embedding model across its tensor feeds and loop
+  embedding steps.
 - `doc::extract` requires `:into(Contract)` and a matching `resource`.
 - An API-only program (`service::http`) may not declare processors.
 - UI programs require an `app` with at least one `route`.
@@ -375,8 +395,9 @@ multi-value `:from` are implemented on `main`; the rest is not:
    `:from([$release, $seen])`, and the model sees an object labelled by
    binding path (THO-555, on main).
 4. Loop embeddings and nearest-neighbor `loop::find` (THO-551 to THO-555).
-   Page-read `:into` plus `:select` on `loop::read` is implemented on main
-   (THO-554).
+   Page-read `:into` plus `:select` on `loop::read` (THO-554) and the
+   `loop::let` + `tensor::infer` embedding step (THO-552) are implemented on
+   main; nearest-match `loop::find` (THO-553) is not yet.
 
 Still irregular:
 

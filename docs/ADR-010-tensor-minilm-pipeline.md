@@ -199,9 +199,15 @@ pipeline: `tensor::infer` takes the processor slot, the contract needs
 ### Kernel primitives (for THO-552 and THO-553)
 
 The Go kernel has an `Embedder` interface (`Embed`, `Nearest`) and two plan
-step ops with no author syntax yet: `embed` (`as`, `from`; not recorded) and
-`nearest` (`as`, `table`, `from`, `max`; recorded like `loop::find`, without
-vectors). The plan's `embedding` section names feed and nearest tables.
+step ops: `embed` (`as`, `from`, `model`; not recorded) and `nearest` (`as`,
+`table`, `from`, `max`; recorded like `loop::find`, without vectors; no
+author syntax yet). The plan's `embedding` section names the model, its
+dimension, and the feed and nearest tables.
+
+`embed` is the lowering of `loop::let(:as(x), tensor::infer(:model(...),
+:from(expr)))` (THO-552, [ADR-014](ADR-014-loop-subject.md) amendment). A
+loop embed alone is enough to give the program an embedding plan and start
+the embed worker; it must use the same model as any tensor feed.
 
 ## Consequences
 
@@ -219,5 +225,4 @@ vectors). The plan's `embedding` section names feed and nearest tables.
 - Author-declared sinks or IPC for embeddings
 - Making general `tensor::*` / `numpy::*` / `pandas::*` executable
 - Approximate nearest-neighbour indexes
-- Embedding steps inside `loop::let` (THO-552) and `loop::find` nearest
-  (THO-553)
+- Nearest-match `loop::find` (THO-553)
