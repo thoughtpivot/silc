@@ -266,7 +266,7 @@ if any run failed.
 - `loop::schedule` — options: `cron`, `tz`, `catch_up?`; children: none
 - `loop::manual` — options: none; children: none
 - `loop::on_mutation` — options: `resource`, `mutation`; children: none
-- `loop::let` — options: `as`, `value`; children: none
+- `loop::let` — options: `as`, `value?`, `op?`, `model?`, `from?`, `prefer?`; children: none
 - `loop::find` — options: `as`, `from`, `where?`, `order?`, `desc?` (flag), `max?`, `one?` (flag); children: none
 - `loop::read` — options: `as`, `into?`, `op`, `url?`, `server?`, `tool?`, `args?`, `auth_env?`, `select?`, `fields?`, `retry?`; children: none
 - `loop::fallback` — options: `as`, `accept`; children: `read`, `otherwise`

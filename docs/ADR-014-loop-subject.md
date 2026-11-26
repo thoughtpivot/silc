@@ -1,11 +1,13 @@
 # ADR-014: Loop subject (`loop::*`)
 
-- **Status:** Accepted
+- **Status:** Accepted; amended 2026-11-26 (embedding step in `loop::let` —
+  THO-552)
 - **Date:** 2026-10-02
 - **Related:** [ADR-001](ADR-001-runtime-and-ipc.md),
   [ADR-004](ADR-004-runtime-strengths.md),
   [ADR-005](ADR-005-local-llm-complete.md),
   [ADR-009](ADR-009-compiler-synthesized-runtime.md),
+  [ADR-010](ADR-010-tensor-minilm-pipeline.md),
   [ADR-012](ADR-012-webgpu-game-subject.md),
   [ARCHITECTURE.md](ARCHITECTURE.md)
 - **Canonical:** [`crates/sil-core/src/loops.rs`](../crates/sil-core/src/loops.rs),
@@ -144,6 +146,57 @@ GET) and `mcp::call` (one named tool per step).
    content-addressed copy at `loop/plans/<sha256>.json`. The hash covers the
    lowered plan and the compiler version. Older plan files are kept so
    in-flight runs finish on the plan they started with.
+
+## Amendment (2026-11-26): embedding step in `loop::let` (THO-552)
+
+A loop can embed text and bind the vector for later steps:
+
+```silc
+loop::let(:as(vec),
+  tensor::infer(:model("minilm-l6-v2"), :from($release.text))),
+```
+
+1. **Node shape.** The website's `loop::let(:as, tensor::infer(...))`
+   spelling is kept. `loop::let` nests one operation, `tensor::infer`, the
+   way `loop::read` nests `scrape::page` and `mcp::call`; the parser stores it
+   as `:op("tensor::infer")` plus its `:model`, `:from`, and `:prefer`
+   options on the let. A let takes `:value(expr)` or the nested
+   `tensor::infer(...)`, never both. `tensor::tokenize` is implicit: the embed
+   worker tokenizes for the model. There is no separate `loop::embed` node.
+2. **An effectful step, not a pure let.** A plain `:value` let stays
+   deterministic with no I/O. An embedding let calls the CPython embed worker
+   ([ADR-010](ADR-010-tensor-minilm-pipeline.md) amendment) from the Go
+   kernel. It lowers to the kernel's `embed` plan op (`as`, `from`, `model`).
+3. **Model.** `:model` defaults to `minilm-l6-v2` (384 dims, CPU) and
+   otherwise names an `EMBEDDING_MODEL_CATALOG` entry; unknown ids are
+   rejected at build time. `:prefer(CPU)` is accepted and `:prefer(CUDA)` is
+   rejected. The embed worker serves one model, so every loop embed and every
+   tensor feed in a program must name the same model.
+4. **Types.** `:from` must have a known `Str` type (for example a page's
+   `text` or a `:into` row's `Str` field); unknown types fail closed. The
+   binding is `Vec[num32; N]`, N the model's declared dimension, so it can be
+   written only into a field of that vector type (`Emb384` for MiniLM) and is
+   the nearest-match target for `loop::find` (THO-553). A vector, whether a
+   binding or a row field, cannot be interpolated into a `{$...}` template.
+   Model output stays tainted through an embed: a vector of `loop::ask` text
+   needs a gate or approval before an effect.
+5. **Replay recomputes.** The embed is never recorded and the vector never
+   enters `loop_events`. Its input is a recorded read (or another recorded
+   value), so replay sends the same text to the same model and gets the same
+   vector.
+6. **Not a model call.** Embeds never reach silclm. The cost report counts
+   them on their own line (`embeds N (minilm-l6-v2, CPython embed worker; not
+   model calls)`), scaled by `each :max` like other steps, and the plan's
+   bounds carry `embeds` only for loops that embed.
+7. **Runtime.** A program with a loop embed gets the program's embedding plan
+   (`EmbeddingPlan.loop_embeds`), so `silc` builds the tensor environment and
+   starts the embed worker, and the kernel receives `SILC_EMBED_SOCKET`. A
+   run without the worker fails at the embed step (the item inside `each`). Bun is not
+   involved.
+
+For THO-553 and other callers, `sil_core` exposes `is_loop_embed`,
+`loop_embed_model`, `loop_embed_type`, `loop_embed_steps`, and
+`LOOP_EMBED_OP`.
 
 ## Consequences
 

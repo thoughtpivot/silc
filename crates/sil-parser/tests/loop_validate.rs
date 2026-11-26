@@ -1262,3 +1262,324 @@ fn into_row_fields_take_the_contract_types_without_coercion() {
         &["field `label`", "expects Str", "is Int"],
     );
 }
+
+// ---------------------------------------------------------------- embedding steps (THO-552)
+
+const EMBED_PRELUDE: &str = r#"
+@version("0.7")
+subset Emb384 of Vec[num32; 384];
+subset Emb768 of Vec[num32; 768];
+contract Dependency { has Str $.id; has Str $.changelog; }
+contract Source { has Str $.id; has Str $.url; }
+contract Release { has Str $.version; has Str $.text; }
+contract Article { has Str $.title; has Str $.text; }
+contract Draft { has Str $.text; }
+contract Incident { has Str $.id; has Str $.title; has Emb384 $.vector_embedding; }
+contract WideIncident { has Str $.title; has Emb768 $.vector_embedding; }
+resource Dependencies for Dependency {
+    query list;
+}
+resource Sources for Source {
+    query list;
+}
+resource Incidents for Incident {
+    query list;
+    query nearest;
+    mutation create;
+}
+resource WideIncidents for WideIncident {
+    mutation create;
+}
+"#;
+
+/// The site's UpstreamWatch embedding line, verbatim.
+const SITE_RELEASE_EMBED: &str = r#"loop::let(:as(vec),
+  tensor::infer(:model("minilm-l6-v2"), :from($release.text)))"#;
+
+/// The site's ArticleIngest embedding line, verbatim.
+const SITE_ARTICLE_EMBED: &str = r#"loop::let(:as(vec),
+  tensor::infer(:model("minilm-l6-v2"), :from($article.text)))"#;
+
+const WRITE_INCIDENT: &str = r#"loop::write(:to(Incidents.create), :key("{$dep.id}:{$release.version}"),
+  :value(Incident.new(:title($release.version), :vector_embedding($vec))))"#;
+
+fn embed_src(steps: &str) -> String {
+    format!(
+        r#"{EMBED_PRELUDE}
+loop UpstreamWatch {{
+loop::flow(
+    loop::schedule(:cron("0 6 * * *"), :tz("UTC")),
+    loop::find(:as(deps), :from(Dependencies.list), :max(20)),
+    loop::each(:in($deps), :as(dep), :max(20),
+        {RELEASE_READ},
+        {steps}
+    )
+)
+}}
+"#
+    )
+}
+
+fn check_embed(steps: &str) -> Result<sil_core::Program, String> {
+    check_embed_src(&embed_src(steps))
+}
+
+fn check_embed_src(src: &str) -> Result<sil_core::Program, String> {
+    let program = parse(src).map_err(|e| format!("parse: {}", e.message))?;
+    program.validate()?;
+    Ok(program)
+}
+
+fn expect_embed_err(steps: &str, needles: &[&str]) {
+    match check_embed(steps) {
+        Ok(_) => panic!("expected an error, but it validated:\n{steps}"),
+        Err(e) => {
+            for needle in needles {
+                assert!(e.contains(needle), "expected `{needle}` in error, got: {e}");
+            }
+        }
+    }
+}
+
+#[test]
+fn site_upstreamwatch_embed_parses_validates_and_plans_the_worker() {
+    let program = check_embed(&format!("{SITE_RELEASE_EMBED},\n{WRITE_INCIDENT}")).unwrap();
+    let graph = sil_core::infer_graph(&program).unwrap().unwrap();
+    assert!(graph.needs_embed_worker());
+    let plan = graph.embedding.unwrap();
+    assert_eq!(plan.model.id, "minilm-l6-v2");
+    assert_eq!(plan.model.dimension, 384);
+    assert!(plan.feeds.is_empty());
+    assert_eq!(plan.nearest.len(), 1, "Incidents keeps `query nearest`");
+    assert_eq!(plan.loop_embeds.len(), 1);
+    assert_eq!(plan.loop_embeds[0].loop_name, "UpstreamWatch");
+    assert_eq!(plan.loop_embeds[0].binding, "vec");
+    let steps = sil_core::loop_embed_steps(&program.loops[0]);
+    assert_eq!(steps.len(), 1);
+    assert_eq!(
+        sil_core::loop_embed_type(sil_core::loop_embed_model(steps[0]).unwrap()),
+        sil_core::TypeExpr::Vec {
+            elem: "num32".into(),
+            len: Some(384)
+        }
+    );
+}
+
+#[test]
+fn site_articleingest_embed_validates_and_writes_an_emb384_field() {
+    let src = format!(
+        r#"{EMBED_PRELUDE}
+loop ArticleIngest {{
+loop::flow(
+    loop::schedule(:cron("0 * * * *"), :tz("UTC")),
+    loop::find(:as(sources), :from(Sources.list), :max(50)),
+    loop::each(:in($sources), :as(src), :max(50),
+        {ARTICLE_READ},
+        {SITE_ARTICLE_EMBED},
+        loop::write(:to(Incidents.create), :key("{{$src.id}}:{{$article.title}}"),
+          :value(Incident.new(:title($article.title), :vector_embedding($vec))))
+    )
+)
+}}
+"#
+    );
+    check_embed_src(&src).unwrap();
+}
+
+#[test]
+fn embed_model_defaults_to_minilm_and_prefer_cpu_is_accepted() {
+    check_embed(&format!(
+        "loop::let(:as(vec), tensor::infer(:from($release.text), :prefer(CPU))),\n{WRITE_INCIDENT}"
+    ))
+    .unwrap();
+}
+
+#[test]
+fn embed_unknown_model_is_rejected() {
+    expect_embed_err(
+        &SITE_RELEASE_EMBED.replace("minilm-l6-v2", "not-a-model"),
+        &["loop::let", "unknown embedding model `not-a-model`"],
+    );
+}
+
+#[test]
+fn embed_prefer_cuda_is_rejected() {
+    expect_embed_err(
+        r#"loop::let(:as(vec), tensor::infer(:from($release.text), :prefer(CUDA)))"#,
+        &["CPU-only", "CUDA"],
+    );
+    expect_embed_err(
+        r#"loop::let(:as(vec), tensor::infer(:from($release.text), :prefer(TPU)))"#,
+        &["only CPU is accepted"],
+    );
+}
+
+#[test]
+fn embed_vector_cannot_be_interpolated_into_a_template() {
+    expect_embed_err(
+        &format!(
+            r#"{SITE_RELEASE_EMBED},
+        loop::notify(:to("Maintainers"), :text("vector {{$vec}}"), :key("{{$dep.id}}:{{$release.version}}"))"#
+        ),
+        &[
+            ":text",
+            "`{$vec}` is a vector (Vec[num32; 384])",
+            "cannot be interpolated",
+        ],
+    );
+    expect_embed_err(
+        &format!(
+            r#"{SITE_RELEASE_EMBED},
+        loop::notify(:to("Maintainers"), :text("new release"), :key("{{$dep.id}}:{{$vec}}"))"#
+        ),
+        &[":key", "is a vector"],
+    );
+    expect_embed_err(
+        r#"loop::find(:as(hit), :from(Incidents.list), :one),
+        loop::notify(:to("Maintainers"), :text("{$hit.vector_embedding}"), :key("{$dep.id}"))"#,
+        &["`{$hit.vector_embedding}` is a vector"],
+    );
+}
+
+#[test]
+fn embed_cost_report_counts_embeds_apart_from_model_calls() {
+    let program = check_embed(&format!("{SITE_RELEASE_EMBED},\n{WRITE_INCIDENT}")).unwrap();
+    let b = sil_core::loop_bounds(&program.loops[0]);
+    assert_eq!(b.embeds, 20, "one embed per item, scaled by :max(20)");
+    assert_eq!(b.model_calls, 0, "embeds are not model calls");
+    assert_eq!(b.reads, 60);
+    let report = sil_core::format_loop_cost_report(&program).unwrap();
+    assert!(report.contains("model calls 0"), "{report}");
+    assert!(
+        report.contains("embeds 20 (minilm-l6-v2, CPython embed worker; not model calls)"),
+        "{report}"
+    );
+
+    let with_ask = check_embed(&format!(
+        r#"{SITE_RELEASE_EMBED},
+        loop::ask(:as(draft), :into(Draft), :from($release.text), :prompt("Summarize {{$release.version}}")),
+        loop::gate(:that($draft.text != ""), :reason("never write an empty note")),
+        {WRITE_INCIDENT}"#
+    ))
+    .unwrap();
+    let b = sil_core::loop_bounds(&with_ask.loops[0]);
+    assert_eq!((b.embeds, b.model_calls), (20, 40));
+
+    let plain = check_embed("loop::skip(:reason(\"nothing\"))").unwrap();
+    let report = sil_core::format_loop_cost_report(&plain).unwrap();
+    assert!(!report.contains("embeds"), "{report}");
+}
+
+#[test]
+fn embed_binding_is_a_vector_of_the_model_dimension() {
+    expect_embed_err(
+        &format!(
+            r#"{SITE_RELEASE_EMBED},
+        loop::write(:to(WideIncidents.create), :key("{{$dep.id}}"), :value(WideIncident.new(:title($release.version), :vector_embedding($vec))))"#
+        ),
+        &[
+            "field `vector_embedding`",
+            "Vec[num32; 768]",
+            "`$vec` is Vec[num32; 384]",
+        ],
+    );
+    expect_embed_err(
+        &format!(
+            r#"{SITE_RELEASE_EMBED},
+        loop::write(:to(Incidents.create), :key("{{$dep.id}}"), :value(Incident.new(:title($vec))))"#
+        ),
+        &["field `title`", "expects Str", "`$vec` is Vec[num32; 384]"],
+    );
+    let src = embed_src(&format!(
+        r#"loop::let(:as(vec), tensor::infer(:model("nomic-embed-text"), :from($release.text))),
+        loop::write(:to(WideIncidents.create), :key("{{$dep.id}}"), :value(WideIncident.new(:title($release.version), :vector_embedding($vec))))"#
+    ));
+    check_embed_src(&src.replace("query nearest;", "")).unwrap();
+    let err = check_embed_src(&src).unwrap_err();
+    assert!(
+        err.contains("has dimension 384 but model `nomic-embed-text` declares 768"),
+        "{err}"
+    );
+}
+
+#[test]
+fn embed_from_must_be_a_typed_str() {
+    expect_embed_err(
+        r#"loop::let(:as(vec), tensor::infer(:from($release)))"#,
+        &["embeds a Str", "`$release` is Release"],
+    );
+    expect_embed_err(
+        r#"loop::let(:as(vec), tensor::infer(:model("minilm-l6-v2")))"#,
+        &["requires `:from(...)`"],
+    );
+    expect_embed_err(
+        r#"loop::let(:as(vec), tensor::infer(:from($nope.text)))"#,
+        &["unknown binding `$nope`"],
+    );
+    check_embed(r#"loop::let(:as(vec), tensor::infer(:from($dep.id))), loop::skip(:reason("ok"))"#)
+        .unwrap();
+}
+
+#[test]
+fn let_takes_a_value_or_one_embed() {
+    expect_embed_err(
+        r#"loop::let(:as(vec), :value("x"), tensor::infer(:from($release.text)))"#,
+        &["either `:value(...)` or a nested `tensor::infer(...)`"],
+    );
+    expect_embed_err(
+        r#"loop::let(:as(vec), scrape::page(:url($dep.changelog)))"#,
+        &["nests only `tensor::infer(...)`", "loop::read"],
+    );
+    expect_embed_err(
+        r#"loop::let(:as(vec), :from($release.text))"#,
+        &[":from belongs to a nested `tensor::infer(...)`"],
+    );
+    expect_embed_err(
+        r#"loop::let(:as(vec))"#,
+        &["requires `:value(...)` or a nested"],
+    );
+    expect_embed_err(
+        r#"loop::read(:as(vec), tensor::infer(:from($release.text)))"#,
+        &[":op must be one of scrape::page|mcp::call"],
+    );
+}
+
+#[test]
+fn embed_of_unchecked_model_output_cannot_reach_an_effect() {
+    expect_embed_err(
+        &format!(
+            r#"loop::ask(:as(draft), :into(Draft), :from($release.text), :prompt("Summarize {{$release.version}}")),
+        loop::let(:as(vec), tensor::infer(:from($draft.text))),
+        {WRITE_INCIDENT}"#
+        ),
+        &["model output from loop::ask"],
+    );
+}
+
+#[test]
+fn one_embedding_model_per_program() {
+    let src = format!(
+        "{}\nloop Other {{\nloop::flow(\n    loop::manual(),\n    loop::let(:as(v2), tensor::infer(:model(\"nomic-embed-text\"), :from(\"hello\"))),\n    loop::stop()\n)\n}}\n",
+        embed_src(&format!("{SITE_RELEASE_EMBED},\n{WRITE_INCIDENT}"))
+    );
+    let err = check_embed_src(&src).unwrap_err();
+    assert!(
+        err.contains("one embedding model per program")
+            && err.contains("minilm-l6-v2")
+            && err.contains("nomic-embed-text"),
+        "{err}"
+    );
+}
+
+#[test]
+fn text_score_still_cannot_share_a_program_with_a_loop_embed() {
+    let src = format!(
+        "{}\nprocessor Scorer {{\n    method score(Release $r) {{\n        $r.text ==> text::score()\n    }}\n}}\n",
+        embed_src(&format!("{SITE_RELEASE_EMBED},\n{WRITE_INCIDENT}"))
+    );
+    let err = check_embed_src(&src).unwrap_err();
+    assert!(
+        err.contains("cannot mix text::score with tensor::infer"),
+        "{err}"
+    );
+}

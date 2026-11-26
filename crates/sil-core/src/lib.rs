@@ -43,11 +43,12 @@ pub use game::{
 };
 pub use loops::{
     catalog_loop_node_names, describe_loop_trigger, format_loop_catalog_line,
-    format_loop_catalog_md, format_loop_cost_report, lookup_loop_node, loop_bounds, loop_prop_doc,
-    loops_are_command, loops_use_ask, parse_loop_duration, template_placeholders, validate_cron,
+    format_loop_catalog_md, format_loop_cost_report, is_loop_embed, lookup_loop_node, loop_bounds,
+    loop_embed_model, loop_embed_steps, loop_embed_type, loop_prop_doc, loops_are_command,
+    loops_use_ask, parse_loop_duration, template_placeholders, validate_cron,
     validate_css_selector, validate_loop, validate_loops, Loop, LoopBounds, LoopChildPolicy,
-    LoopNode, LoopNodeRole, LoopNodeSpec, LoopPropKind, LoopPropSpec, LOOP_NODE_CATALOG,
-    LOOP_STEPS, LOOP_TRIGGERS,
+    LoopNode, LoopNodeRole, LoopNodeSpec, LoopPropKind, LoopPropSpec, LOOP_EMBED_OP,
+    LOOP_NODE_CATALOG, LOOP_STEPS, LOOP_TRIGGERS,
 };
 pub use model_catalog::{
     is_known_embedding_model_id, is_known_model_id, lookup_embedding_model, lookup_model,
@@ -60,9 +61,9 @@ pub use model_catalog::{
 pub use module::{Method, Module, ModuleKind, Param};
 pub use operation::{
     classify_program, infer_graph, is_executable_op, scan_author_calls, ApiRoute, DocCapabilities,
-    EmbeddingFeed, EmbeddingPlan, ExecutableGraph, ExecutionMode, NearestIndex, ProcessorOp,
-    ScrapeCapabilities, ScrapeSelect, UiCapabilities, DEFAULT_API_PORT, DEFAULT_TERMINAL_PORT,
-    DEFAULT_WEB_PORT, KNOWN_NAMESPACES,
+    EmbeddingFeed, EmbeddingPlan, ExecutableGraph, ExecutionMode, LoopEmbed, NearestIndex,
+    ProcessorOp, ScrapeCapabilities, ScrapeSelect, UiCapabilities, DEFAULT_API_PORT,
+    DEFAULT_TERMINAL_PORT, DEFAULT_WEB_PORT, KNOWN_NAMESPACES,
 };
 pub use pipeline::{Pipeline, PipelineStep};
 pub use program::{Program, LANGUAGE_VERSION};

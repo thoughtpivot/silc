@@ -21,6 +21,18 @@ Entries before 0.5.0 are reconstructed from the commit history.
   it. `minilm-l6-v2` (384, CPU) stays the default; `nomic-embed-text` (768) and
   `text-embedding-3-small` (1536) are served through an OpenAI-compatible
   `/embeddings` endpoint.
+- Embedding step inside loops (THO-552,
+  [ADR-014](docs/ADR-014-loop-subject.md) amendment):
+  `loop::let(:as(vec), tensor::infer(:model("minilm-l6-v2"), :from($release.text)))`
+  embeds a `Str` and binds `$vec` as `Vec[num32; N]`, N the model's declared
+  dimension (`Emb384` for the default `minilm-l6-v2`). The Go loop kernel
+  calls the CPython embed worker; Bun is not involved. Unknown `:model` ids
+  and `:prefer(CUDA)` are rejected, `:from` must be a typed `Str`, a vector
+  cannot be interpolated into a template, and a program uses one embedding
+  model across loops and tensor feeds. Embeds are recomputed on replay (the
+  vector never enters `loop_events`), never call silclm, and get their own
+  `embeds` line in the `silc build` cost report, separate from model calls.
+  The site's UpstreamWatch and ArticleIngest embedding lines now validate.
 
 ### Changed
 
@@ -95,8 +107,8 @@ are implemented on `main`; the rest is not yet.
   vector, or a value of unknown type is rejected at validation with a message
   naming the field, the expected type, and the found type. Nothing coerces
   (THO-578).
-- Embedding steps in `loop::let` (THO-552) and nearest-neighbor `loop::find`
-  (THO-553).
+- Nearest-neighbor `loop::find` (THO-553). **Implemented:** embedding steps
+  in `loop::let` (THO-552; see Added).
 - **Implemented:** page reads in loops (THO-554).
   `scrape::page(:select("css"))` narrows the page to the first matching
   element, and `loop::read(:into(Contract))` binds a typed row, so

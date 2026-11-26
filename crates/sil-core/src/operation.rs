@@ -201,6 +201,43 @@ pub struct EmbeddingPlan {
     pub model: &'static crate::model_catalog::EmbeddingModelCatalogEntry,
     pub feeds: Vec<EmbeddingFeed>,
     pub nearest: Vec<NearestIndex>,
+    /// Embedding steps inside loops, `loop::let(:as(x), tensor::infer(...))`.
+    pub loop_embeds: Vec<LoopEmbed>,
+}
+
+/// One embedding step in a loop (THO-552). The Go kernel sends `:from` to the
+/// embed worker and binds the vector; it is recomputed on replay.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoopEmbed {
+    pub loop_name: String,
+    pub binding: String,
+    pub model: &'static crate::model_catalog::EmbeddingModelCatalogEntry,
+}
+
+/// Every loop embedding step. The embed worker serves one model, so all steps
+/// must name the same one.
+fn loop_embeds(program: &Program) -> Result<Vec<LoopEmbed>, String> {
+    let mut out: Vec<LoopEmbed> = Vec::new();
+    for lp in &program.loops {
+        for step in crate::loops::loop_embed_steps(lp) {
+            let model = crate::loops::loop_embed_model(step)
+                .map_err(|e| format!("loop `{}`: loop::let: {e}", lp.name))?;
+            if let Some(first) = out.first() {
+                if first.model.id != model.id {
+                    return Err(format!(
+                        "one embedding model per program: loop `{}` embeds with `{}` and loop `{}` with `{}`",
+                        first.loop_name, first.model.id, lp.name, model.id
+                    ));
+                }
+            }
+            out.push(LoopEmbed {
+                loop_name: lp.name.clone(),
+                binding: step.ident_prop("as").unwrap_or_default().to_string(),
+                model,
+            });
+        }
+    }
+    Ok(out)
 }
 
 impl EmbeddingPlan {
@@ -1225,7 +1262,8 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
     if saw_llm || crate::loops::loops_use_ask(program) {
         caps.push(crate::registry::Capability::LocalModel);
     }
-    if saw_infer {
+    let loop_embeds = loop_embeds(program)?;
+    if saw_infer || !loop_embeds.is_empty() {
         caps.push(crate::registry::Capability::Embedding);
     }
     if !program.loops.is_empty() {
@@ -1366,8 +1404,22 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
             matches!(m.kind, ResourceKind::Query) && m.name == crate::resource::NEAREST_QUERY
         })
     });
-    let embedding = if !tensor_pipeline && (saw_infer || has_nearest) {
-        let model = resolve_embedding_model_ref(embedding_model_from_op.clone())?;
+    let embedding = if !tensor_pipeline && (saw_infer || has_nearest || !loop_embeds.is_empty()) {
+        let model = match loop_embeds.first() {
+            Some(first) => {
+                if saw_infer {
+                    let feed = resolve_embedding_model_ref(embedding_model_from_op.clone())?;
+                    if feed.id != first.model.id {
+                        return Err(format!(
+                            "one embedding model per program: loop `{}` embeds with `{}`, but the tensor feed uses `{}`",
+                            first.loop_name, first.model.id, feed.id
+                        ));
+                    }
+                }
+                first.model
+            }
+            None => resolve_embedding_model_ref(embedding_model_from_op.clone())?,
+        };
         let feeds = if saw_infer {
             embedding_feeds(program, model)?
         } else {
@@ -1377,6 +1429,7 @@ pub fn infer_graph(program: &Program) -> Result<Option<ExecutableGraph>, String>
             model,
             feeds,
             nearest: nearest_indexes(program, model)?,
+            loop_embeds,
         })
     } else {
         None

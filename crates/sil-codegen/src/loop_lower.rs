@@ -488,6 +488,12 @@ fn lower_step(program: &Program, step: &LoopNode, path: &str) -> serde_json::Val
         }
     }
     match step.name.as_str() {
+        "let" if sil_core::is_loop_embed(step) => {
+            put("op", json!("embed"));
+            if let Ok(model) = sil_core::loop_embed_model(step) {
+                put("model", json!(model.id));
+            }
+        }
         "find" => {
             let (res, _) = step.ref_prop("from").unwrap_or_default();
             let (table, contract) = resource_table_and_contract(program, res);
@@ -698,18 +704,23 @@ pub fn lower_loop_plan(program: &Program, compiler_version: &str) -> serde_json:
         .iter()
         .map(|lp| {
             let b = loop_bounds(lp);
+            let mut bounds = json!({
+                "model_calls": b.model_calls,
+                "writes": b.writes,
+                "notices": b.notices,
+                "approvals": b.approvals,
+                "reads": b.reads,
+                "rows_scanned": b.rows_scanned,
+            });
+            // Only loops that embed carry the count, so other plans keep their hash.
+            if b.embeds > 0 {
+                bounds["embeds"] = json!(b.embeds);
+            }
             json!({
                 "name": lp.name,
                 "tz": lp.time_zone(),
                 "trigger": lower_trigger(program, lp),
-                "bounds": {
-                    "model_calls": b.model_calls,
-                    "writes": b.writes,
-                    "notices": b.notices,
-                    "approvals": b.approvals,
-                    "reads": b.reads,
-                    "rows_scanned": b.rows_scanned,
-                },
+                "bounds": bounds,
                 "steps": lower_block(program, lp.steps(), ""),
             })
         })
@@ -743,6 +754,8 @@ pub fn lower_loop_plan(program: &Program, compiler_version: &str) -> serde_json:
 
 /// Tables whose `loop::write` embeds a field, and tables that answer
 /// `query nearest` (ADR-010). Absent when the program has no embeddings.
+/// Embedding steps (`loop::let` + `tensor::infer`) lower to `embed` steps and
+/// need only `model` and `dimension` here.
 fn plan_embedding(program: &Program) -> Option<serde_json::Value> {
     let plan = sil_core::infer_graph(program).ok().flatten()?.embedding?;
     Some(serde_json::json!({

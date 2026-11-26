@@ -3,7 +3,8 @@ package main
 // Replay traces for the loop kernel against the lowered examples/rfiChaseApp
 // (plan.json) and the tests/fixtures/loop_digest.silc fixture, scheduled
 // (digest_plan.json) and as a command (command_plan.json), and the
-// tests/fixtures/loop_page_read.silc page reads (page_plan.json). The Rust test
+// tests/fixtures/loop_page_read.silc page reads (page_plan.json), and the
+// tests/fixtures/loop_embed.silc embedding step (loop_embed_plan.json). The Rust test
 // `loop_kernel_replay_traces` copies this file, the kernel template, and the
 // plans into a temp module and runs `go test`.
 
@@ -1490,5 +1491,99 @@ func TestFallbackMovesPastASelectionMissToTheNextPageRead(t *testing.T) {
 	}
 	if len(p.calls) != 2 || len(h.rows("loop_notices")) != 1 {
 		t.Fatalf("replay reuses both recorded attempts: %d fetches, %d notices", len(p.calls), len(h.rows("loop_notices")))
+	}
+}
+
+// --------------------------------------------- embedding steps (THO-552)
+
+// The tests/fixtures/loop_embed.silc ReleaseIndex loop (loop_embed_plan.json):
+// read a changelog, embed its text with loop::let + tensor::infer, and write
+// the vector into an Emb384 field.
+func TestLoopEmbedStepWritesVectorAndReplayRecomputesIt(t *testing.T) {
+	url := "https://example.test/silc/CHANGELOG"
+	h := newBareHarness(t, "2026-10-02T15:00:00Z", "loop_embed_plan.json")
+	if h.k.plan.Embedding == nil || h.k.plan.Embedding.Dimension != 384 {
+		t.Fatalf("loop_embed_plan.json needs a 384-d embedding section, got %+v", h.k.plan.Embedding)
+	}
+	p := &fakePages{html: map[string]string{url: changelogHTML}}
+	h.k.fetch = p.fetch
+	e := &fakeEmbedder{dim: h.k.plan.Embedding.Dimension}
+	h.k.embedder = e
+	h.seed("dependencies", "silc", map[string]any{"name": "silc", "changelog": url})
+	h.runNow("ReleaseIndex", "req-1")
+	run := h.runsOf("ReleaseIndex")[0]
+	if run["outcome"] != "succeeded" {
+		t.Fatalf("run: %v", run)
+	}
+	const text = "v1.4.0 Faster builds."
+	if e.embeds != 1 || e.texts[0] != text {
+		t.Fatalf("want one embed of the selected release text, got %d: %q", e.embeds, e.texts)
+	}
+	row := h.one("incidents")
+	vec, ok := row["vector_embedding"].([]any)
+	if !ok || len(vec) != 384 || vec[len(text)%384] != 1.0 {
+		t.Fatalf("want the embedder's 384-float vector in the row, got %v", row["vector_embedding"])
+	}
+	if row["title"] != "v1.4.0" {
+		t.Fatalf("row: %v", row)
+	}
+	if h.asker.calls != 0 {
+		t.Fatalf("embeds must never call silclm; asker called %d times", h.asker.calls)
+	}
+	runID := run["id"].(string)
+	if n := h.eventCount(runID, "embed"); n != 0 {
+		t.Fatalf("embed results must not be recorded; got %d events", n)
+	}
+	if n := h.eventsMentioning("vector_embedding"); n != 0 {
+		t.Fatalf("vectors must stay out of loop_events; %d events mention one", n)
+	}
+	if n := h.eventsMentioning("[0,0,0,0"); n != 0 {
+		t.Fatalf("no event may carry a vector; %d do", n)
+	}
+
+	// Replay: the read comes from the event log, the embed is recomputed from
+	// that recorded text, and the committed effects are not repeated.
+	if err := h.k.ResumeRun(runID); err != nil {
+		t.Fatal(err)
+	}
+	if len(p.calls) != 1 {
+		t.Fatalf("replay reuses the recorded read, got %d fetches", len(p.calls))
+	}
+	if e.embeds != 2 || e.texts[1] != e.texts[0] {
+		t.Fatalf("replay recomputes the embed from the recorded text: %d embeds, %q", e.embeds, e.texts)
+	}
+	again, _ := e.Embed([]string{e.texts[1]})
+	for i, f := range again[0] {
+		if vec[i] != f {
+			t.Fatalf("recomputed vector differs at %d: %v vs %v", i, vec[i], f)
+		}
+	}
+	if n := len(h.rows("incidents")); n != 1 {
+		t.Fatalf("replay duplicated the write: %d rows", n)
+	}
+	if n := len(h.rows("loop_notices")); n != 1 {
+		t.Fatalf("replay duplicated the notice: %d", n)
+	}
+	if h.asker.calls != 0 {
+		t.Fatalf("replay called silclm %d times", h.asker.calls)
+	}
+	if n := h.eventCount(runID, "embed"); n != 0 {
+		t.Fatalf("replay recorded %d embed events", n)
+	}
+}
+
+func TestLoopEmbedStepFailsTheItemWithoutTheEmbedWorker(t *testing.T) {
+	url := "https://example.test/silc/CHANGELOG"
+	h := newBareHarness(t, "2026-10-02T15:00:00Z", "loop_embed_plan.json")
+	h.k.fetch = (&fakePages{html: map[string]string{url: changelogHTML}}).fetch
+	h.k.embedder = nil
+	h.seed("dependencies", "silc", map[string]any{"name": "silc", "changelog": url})
+	h.runNow("ReleaseIndex", "req-1")
+	run := h.runsOf("ReleaseIndex")[0]
+	if run["outcome"] == "succeeded" {
+		t.Fatalf("an embed without the worker must not succeed: %v", run)
+	}
+	if n := len(h.rows("incidents")); n != 0 {
+		t.Fatalf("no row may be written without its vector, got %d", n)
 	}
 }
