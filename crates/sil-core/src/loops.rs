@@ -17,9 +17,22 @@ pub const MAX_LOOP_RETRY: u64 = 10;
 pub const MAX_LOOP_DURATION_MINUTES: u64 = 30 * 24 * 60;
 pub const DEFAULT_ASK_RETRY: u64 = 1;
 pub const DEFAULT_READ_RETRY: u64 = 2;
-pub const LOOP_READ_OPS: &[&str] = &["scrape::page", "mcp::call"];
-/// The one operation `loop::let` nests: an embedding step (THO-552, ADR-014).
+pub const LOOP_READ_OPS: &[&str] = &[
+    "scrape::page",
+    "scrape::site",
+    "scrape::render",
+    "scrape::select",
+    "mcp::call",
+];
+/// The embedding step `loop::let` nests (THO-552, ADR-014).
 pub const LOOP_EMBED_OP: &str = "tensor::infer";
+/// The score step `loop::let` nests (THO-579, ADR-020).
+pub const LOOP_SCORE_OP: &str = "text::score";
+/// Operations nested in `loop::let`. Neither is recorded; both are
+/// recomputed on replay.
+pub const LOOP_LET_OPS: &[&str] = &[LOOP_EMBED_OP, LOOP_SCORE_OP];
+/// Hard cap on pages one `scrape::site` read may fetch.
+pub const MAX_LOOP_SITE_PAGES: u64 = 100;
 
 use crate::catalog::{
     ChildPolicy, NodeRole, NodeSpec, OptionKind, OptionSpec, NO_EVENTS, NO_SLOTS, NO_SURFACES,
@@ -143,14 +156,15 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
     LoopNodeSpec {
         name: "let",
         role: LoopNodeRole::Step,
-        description: "Binds a name for the rest of the enclosing block. With `:value(expr)` it is deterministic and does no I/O. With a nested `tensor::infer(:model(...), :from(expr))` it embeds a Str through the CPython embed worker and binds a `Vec[num32; N]` of the model's dimension (`Emb384` for the default `minilm-l6-v2`). An embed is recomputed on replay, never recorded, and never a model call.",
+        description: "Binds a name for the rest of the enclosing block. With `:value(expr)` it is deterministic and does no I/O. With a nested `tensor::infer(:model(...), :from(expr))` it embeds a Str through the CPython embed worker and binds a `Vec[num32; N]` of the model's dimension (`Emb384` for the default `minilm-l6-v2`). With a nested `text::score(:text(expr))` it binds a score from 0 to 1 computed on the CPU in the loop kernel. Embeds and scores are recomputed on replay, never recorded, and never model calls.",
         props: &[
             lp("as", LoopPropKind::Ident, true, "Binding name, used later as `$name`."),
-            lp("value", LoopPropKind::Expr, false, "Expression over earlier bindings, literals, or `Contract.new(...)`. Required unless the let nests `tensor::infer(...)`."),
-            lp("op", LoopPropKind::String, false, "Nested operation; only \"tensor::infer\", written `tensor::infer(...)` inside the let."),
+            lp("value", LoopPropKind::Expr, false, "Expression over earlier bindings, literals, or `Contract.new(...)`. Required unless the let nests `tensor::infer(...)` or `text::score(...)`."),
+            lp_closed("op", LoopPropKind::String, false, "Nested operation, written inside the let: `tensor::infer(...)` or `text::score(...)`.", LOOP_LET_OPS),
             lp("model", LoopPropKind::String, false, "`tensor::infer`: embedding model from the catalog, e.g. \"minilm-l6-v2\" (the default: 384 dims, CPU). Unknown models are rejected."),
             lp("from", LoopPropKind::Expr, false, "`tensor::infer`: the Str to embed, e.g. `$release.text`."),
             lp("prefer", LoopPropKind::Ident, false, "`tensor::infer`: device. Only `CPU` is accepted; `CUDA` is rejected."),
+            lp("text", LoopPropKind::Expr, false, "`text::score`: the Str to score, from a read or row; model output from `loop::ask` must pass a gate or approval first."),
         ],
         children: LoopChildPolicy::None,
 
@@ -178,19 +192,24 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
     LoopNodeSpec {
         name: "read",
         role: LoopNodeRole::Step,
-        description: "Fetches outside data with a bounded retry and records it for replay. `scrape::page` is an HTTP GET (title and text), optionally narrowed by a CSS `:select` and bound `:into` a contract; `mcp::call` calls one tool on an MCP server over streamable HTTP.",
+        description: "Fetches outside data with a bounded retry and records it for replay, so a resumed run never refetches. `scrape::page` is an HTTP GET (title and text), optionally narrowed by a CSS `:select` and bound `:into` a contract; `scrape::render` is the same page rendered in a browser; `scrape::site` crawls from a start page up to a hard `:max` page cap and binds a list of pages; `scrape::select` binds every element matching `:css` as a list; `mcp::call` calls one tool on an MCP server over streamable HTTP.",
         props: &[
-            lp("as", LoopPropKind::Ident, true, "Binding name: a page (`url`, `status`, `title`, `text`), a row of the `:into` contract, or a tool result (`text`, `data`)."),
-            lp("into", LoopPropKind::Ident, false, "`scrape::page`: contract the page binds as. Fields named `url`, `status`, `title`, `text` take the page's values (`text` is the selected text); other fields come from `:fields` or are unknown."),
-            lp_closed("op", LoopPropKind::String, true, "Read operation: \"scrape::page\" or \"mcp::call\".", LOOP_READ_OPS),
-            lp("url", LoopPropKind::Expr, false, "`scrape::page`: absolute http(s) URL, literal or from a binding."),
+            lp("as", LoopPropKind::Ident, true, "Binding name: a page (`url`, `status`, `title`, `text`), a list of pages (`scrape::site`) or matches (`scrape::select`: `url`, `text`, `href`), rows of the `:into` contract, or a tool result (`text`, `data`)."),
+            lp("into", LoopPropKind::Ident, false, "`scrape::*`: contract each page or match binds as. Fields named `url`, `status`, `title`, `text` (and `href` for a match) take its values (`text` is the selected text); other fields come from `:fields` or are unknown."),
+            lp_closed("op", LoopPropKind::String, true, "Read operation: \"scrape::page\", \"scrape::site\", \"scrape::render\", \"scrape::select\", or \"mcp::call\".", LOOP_READ_OPS),
+            lp("url", LoopPropKind::Expr, false, "`scrape::*`: absolute http(s) URL (the start page for `scrape::site`), literal or from a binding."),
             lp("server", LoopPropKind::String, false, "`mcp::call`: MCP server URL, e.g. \"https://example.run.app/mcp\"."),
             lp("tool", LoopPropKind::String, false, "`mcp::call`: tool name on that server."),
             lp("args", LoopPropKind::Expr, false, "`mcp::call`: tool arguments as `Contract.new(...)`; field names are sent as written."),
             lp("auth_env", LoopPropKind::String, false, "`mcp::call`: environment variable holding the bearer token. Tokens never go in source."),
-            lp("select", LoopPropKind::String, false, "`mcp::call`: dotted path into the result kept as `data`, e.g. \"records.parsed\" (lists map over items). `scrape::page`: CSS selector; the page narrows to the first match before `text` is taken, e.g. \"article\"."),
-            lp("fields", LoopPropKind::Expr, false, "`scrape::page` with `:into`: per-field CSS selectors inside the selection, e.g. `Release.new(:version(\"h2\"))`; the first match's text fills the field."),
-            lp("retry", LoopPropKind::Number, false, "Retries after a failed fetch (default 2, max 10)."),
+            lp("select", LoopPropKind::String, false, "`mcp::call`: dotted path into the result kept as `data`, e.g. \"records.parsed\" (lists map over items). `scrape::page`, `scrape::render`, `scrape::site`: CSS selector; each page narrows to the first match before `text` is taken, e.g. \"article\"."),
+            lp("fields", LoopPropKind::Expr, false, "`scrape::*` with `:into`: per-field CSS selectors inside the selection or match, e.g. `Release.new(:version(\"h2\"))`; the first match's text fills the field."),
+            lp("css", LoopPropKind::String, false, "`scrape::select`: CSS selector; every match, in page order up to `:max`, becomes one item."),
+            lp("depth", LoopPropKind::Number, false, "`scrape::site`: link depth from the start page, 1 (start page only) to 10 (default 2)."),
+            lp("max", LoopPropKind::Number, false, "`scrape::site`: hard cap on pages fetched (1 to 100, required). `scrape::select`: most matches kept (1 to 10000, required)."),
+            lp("same_host", LoopPropKind::Bool, false, "`scrape::site`: follow only links on the start page's host (default true)."),
+            lp("link_css", LoopPropKind::String, false, "`scrape::site`: CSS selector for the links to follow (default \"a[href]\")."),
+            lp("retry", LoopPropKind::Number, false, "Retries after a failed fetch (default 2, max 10). `scrape::site` retries each page."),
         ],
         children: LoopChildPolicy::None,
 
@@ -872,6 +891,8 @@ pub struct LoopBounds {
     pub notices: u64,
     pub approvals: u64,
     pub reads: u64,
+    /// `text::score` steps: listed in the report, never model calls.
+    pub scores: u64,
     pub rows_scanned: u64,
     pub unchecked_effects: u64,
     /// Embedding steps (CPython embed worker). Never model calls.
@@ -889,6 +910,7 @@ impl LoopBounds {
         self.notices = self.notices.saturating_add(other.notices);
         self.approvals = self.approvals.saturating_add(other.approvals);
         self.reads = self.reads.saturating_add(other.reads);
+        self.scores = self.scores.saturating_add(other.scores);
         self.rows_scanned = self.rows_scanned.saturating_add(other.rows_scanned);
         self.unchecked_effects = self
             .unchecked_effects
@@ -902,6 +924,7 @@ impl LoopBounds {
         self.notices = self.notices.max(other.notices);
         self.approvals = self.approvals.max(other.approvals);
         self.reads = self.reads.max(other.reads);
+        self.scores = self.scores.max(other.scores);
         self.rows_scanned = self.rows_scanned.max(other.rows_scanned);
         self.unchecked_effects = self.unchecked_effects.max(other.unchecked_effects);
         self.embeds = self.embeds.max(other.embeds);
@@ -914,10 +937,22 @@ impl LoopBounds {
             notices: self.notices.saturating_mul(n),
             approvals: self.approvals.saturating_mul(n),
             reads: self.reads.saturating_mul(n),
+            scores: self.scores.saturating_mul(n),
             rows_scanned: self.rows_scanned.saturating_mul(n),
             unchecked_effects: self.unchecked_effects.saturating_mul(n),
             embeds: self.embeds.saturating_mul(n),
         }
+    }
+}
+
+/// Worst-case fetches for one `loop::read`: each try of a read, and for
+/// `scrape::site` each try of every page up to its `:max` cap.
+pub fn read_fetch_bound(read: &LoopNode) -> u64 {
+    let tries = 1 + read.number_prop("retry").unwrap_or(DEFAULT_READ_RETRY);
+    if read.string_prop("op") == Some("scrape::site") {
+        tries.saturating_mul(read.number_prop("max").unwrap_or(0))
+    } else {
+        tries
     }
 }
 
@@ -941,12 +976,11 @@ pub fn loop_bounds(lp: &Loop) -> LoopBounds {
                     step.number_prop("max").unwrap_or(0)
                 };
             }
-            "read" => b.reads = 1 + step.number_prop("retry").unwrap_or(DEFAULT_READ_RETRY),
+            "let" if step.string_prop("op") == Some(LOOP_SCORE_OP) => b.scores = 1,
+            "read" => b.reads = read_fetch_bound(step),
             "fallback" => {
                 for attempt in step.children.iter().filter(|c| c.name == "read") {
-                    b.reads = b.reads.saturating_add(
-                        1 + attempt.number_prop("retry").unwrap_or(DEFAULT_READ_RETRY),
-                    );
+                    b.reads = b.reads.saturating_add(read_fetch_bound(attempt));
                 }
                 if let Some(o) = step.child("otherwise") {
                     b.add(&block(&o.children));
@@ -1033,6 +1067,9 @@ enum BindTy {
     Page,
     Fields(&'static [&'static str]),
     Typed(ValTy),
+    /// A bounded list from `scrape::site` or `scrape::select`; `loop::each`
+    /// binds one item of the inner shape.
+    Items(Box<BindTy>),
 }
 
 /// Static type of a loop value, used to compare `Contract.new(:field(expr))`
@@ -1093,6 +1130,47 @@ struct Checker<'a> {
 const APPROVAL_FIELDS: &[&str] = &["outcome", "by", "decided_at", "note"];
 const PAGE_FIELDS: &[&str] = &["url", "status", "title", "text"];
 const CALL_FIELDS: &[&str] = &["text", "data"];
+const MATCH_FIELDS: &[&str] = &["url", "text", "href"];
+/// Values a `scrape::page`, `scrape::render`, or `scrape::site` page gives
+/// same-named `:into` fields, with the type each field must have.
+const PAGE_INTO: &[(&str, &str)] = &[
+    ("url", "Str"),
+    ("status", "Int"),
+    ("title", "Str"),
+    ("text", "Str"),
+];
+/// Values a `scrape::select` match gives same-named `:into` fields.
+const MATCH_INTO: &[(&str, &str)] = &[("url", "Str"), ("text", "Str"), ("href", "Str")];
+/// Options that apply only to some `scrape::*` reads, and the reads they apply to.
+const SCRAPE_READ_OPTIONS: &[(&str, &[&str])] = &[
+    (
+        "select",
+        &["scrape::page", "scrape::render", "scrape::site"],
+    ),
+    (
+        "into",
+        &[
+            "scrape::page",
+            "scrape::render",
+            "scrape::site",
+            "scrape::select",
+        ],
+    ),
+    (
+        "fields",
+        &[
+            "scrape::page",
+            "scrape::render",
+            "scrape::site",
+            "scrape::select",
+        ],
+    ),
+    ("css", &["scrape::select"]),
+    ("depth", &["scrape::site"]),
+    ("max", &["scrape::site", "scrape::select"]),
+    ("same_host", &["scrape::site"]),
+    ("link_css", &["scrape::site"]),
+];
 /// Date window fields on the reserved `$calendar` binding, in the loop's time zone.
 pub const CALENDAR_FIELDS: &[&str] = &["today", "weekday", "last7_start", "last7_end", "next7_end"];
 const RESERVED_BINDINGS: &[&str] = &["today", "now", "event", "calendar"];
@@ -1185,6 +1263,7 @@ impl<'a> Checker<'a> {
                 BindTy::Approval => APPROVAL_FIELDS.contains(&field.as_str()),
                 BindTy::Page => PAGE_FIELDS.contains(&field.as_str()),
                 BindTy::Fields(fields) => fields.contains(&field.as_str()),
+                BindTy::Items(_) => field == "count",
                 BindTy::Typed(_) => false,
                 BindTy::Value => true,
             };
@@ -1467,7 +1546,7 @@ impl<'a> Checker<'a> {
                 match scope.get(name).map(|b| &b.ty) {
                     Some(BindTy::Row(c)) => ValTy::Row(c.clone()),
                     Some(BindTy::Typed(t)) => t.clone(),
-                    Some(BindTy::List(_)) => ValTy::List,
+                    Some(BindTy::List(_)) | Some(BindTy::Items(_)) => ValTy::List,
                     _ => ValTy::Unknown,
                 }
             }
@@ -1488,7 +1567,9 @@ impl<'a> Checker<'a> {
                                 .map(|(_, t)| self.resolve_val_ty(t, 0))
                         })
                         .unwrap_or(ValTy::Unknown),
-                    Some(BindTy::List(_)) if field == "count" => ValTy::Int,
+                    Some(BindTy::List(_)) | Some(BindTy::Items(_)) if field == "count" => {
+                        ValTy::Int
+                    }
                     Some(BindTy::Page) => match field.as_str() {
                         "status" => ValTy::Int,
                         _ => ValTy::Str,
@@ -1615,6 +1696,11 @@ impl<'a> Checker<'a> {
                 catalog_loop_node_names().join(", ")
             )
         })?;
+        if let Some(op) = node.string_prop("op") {
+            if let Some(message) = misplaced_op(&node.name, op) {
+                return Err(self.err(node, message));
+            }
+        }
         for prop in spec
             .props
             .iter()
@@ -1714,8 +1800,15 @@ impl<'a> Checker<'a> {
         Ok(())
     }
 
-    /// `:into(Contract)` and `:fields(Contract.new(...))` on a `scrape::page` read.
-    fn check_page_into(&self, step: &LoopNode) -> Result<BindTy, String> {
+    /// `:into(Contract)` and `:fields(Contract.new(...))` on a `scrape::*`
+    /// read. `auto` lists the fields the page or match fills by name; `what`
+    /// names it in messages. Returns the contract, or `None` without `:into`.
+    fn check_page_into(
+        &self,
+        step: &LoopNode,
+        auto: &[(&str, &str)],
+        what: &str,
+    ) -> Result<Option<String>, String> {
         let Some(into) = step.ident_prop("into") else {
             if step.prop("fields").is_some() {
                 return Err(self.err(
@@ -1723,7 +1816,7 @@ impl<'a> Checker<'a> {
                     ":fields needs :into(Contract) to name the row it fills",
                 ));
             }
-            return Ok(BindTy::Page);
+            return Ok(None);
         };
         let Some(cfields) = self.contract_fields(into) else {
             return Err(self.err(step, format!("unknown contract `{into}` in :into")));
@@ -1749,7 +1842,7 @@ impl<'a> Checker<'a> {
                     return Err(self.err(step, format!("contract `{into}` has no field `{fname}`")));
                 };
                 if !is_named(fty, "Str") {
-                    return Err(self.err(step, format!(":fields fills `{fname}` with page text, so `{into}.{fname}` must be Str")));
+                    return Err(self.err(step, format!(":fields fills `{fname}` with {what} text, so `{into}.{fname}` must be Str")));
                 }
                 let Some(css) = value.as_string_literal() else {
                     return Err(self.err(
@@ -1772,19 +1865,71 @@ impl<'a> Checker<'a> {
             if selected.contains(fname) {
                 continue;
             }
-            let want = match *fname {
-                "status" => "Int",
-                "url" | "title" | "text" => "Str",
-                _ => continue,
+            let Some((_, want)) = auto.iter().find(|(f, _)| f == fname) else {
+                continue;
             };
             if !is_named(fty, want) {
                 return Err(self.err(
                     step,
-                    format!("`{into}.{fname}` takes the page's `{fname}`, so it must be {want}"),
+                    format!("`{into}.{fname}` takes the {what}'s `{fname}`, so it must be {want}"),
                 ));
             }
         }
-        Ok(BindTy::Row(into.to_string()))
+        Ok(Some(into.to_string()))
+    }
+
+    /// `loop::let(:as(x), text::score(:text(...)))`: a pure CPU score of one
+    /// Str. Unchecked model output is refused, so a score never carries an
+    /// ask's answer past its gate; the score itself is untainted.
+    fn check_score(&self, step: &LoopNode, scope: &Scope) -> Result<BindTy, String> {
+        if let Some(extra) = ["model", "from", "prefer"]
+            .iter()
+            .find(|p| step.prop(p).is_some())
+        {
+            return Err(self.err(
+                step,
+                format!(":{extra} belongs to `tensor::infer(...)`; `text::score` takes :text"),
+            ));
+        }
+        if step.prop("value").is_some() {
+            return Err(self.err(
+                step,
+                "takes :value or a nested `text::score(...)`, not both",
+            ));
+        }
+        let Some(text) = step.prop("text") else {
+            return Err(self.err(step, "`text::score` requires :text(...), the Str to score, e.g. `text::score(:text($page.text))`"));
+        };
+        let tainted = self.check_expr(step, scope, None, text)?;
+        let what = render_expr(text);
+        if tainted {
+            return Err(self.err(
+                step,
+                format!("`text::score` cannot score {what}: it is model output from loop::ask that has not passed a loop::gate or loop::approve; gate it first, or score what the loop read"),
+            ));
+        }
+        if let Expr::Var(name) = text {
+            if scope
+                .get(name)
+                .is_some_and(|b| !matches!(b.ty, BindTy::Typed(_) | BindTy::Value))
+            {
+                return Err(self.err(
+                    step,
+                    format!("`text::score` scores text, and `${name}` is a whole value; score one of its Str fields, e.g. `${name}.text`"),
+                ));
+            }
+        }
+        match self.infer_val_ty(scope, None, text) {
+            ValTy::Str => Ok(BindTy::Typed(ValTy::Num)),
+            ValTy::Unknown => Err(self.err(
+                step,
+                format!("`text::score` scores text, but the type of {what} is not known; pass a Str such as `$page.text`"),
+            )),
+            other => Err(self.err(
+                step,
+                format!("`text::score` scores text, but {what} is {}; pass a Str such as `$page.text`", other.display()),
+            )),
+        }
     }
 
     fn block_terminates(steps: &[LoopNode]) -> bool {
@@ -1849,10 +1994,16 @@ impl<'a> Checker<'a> {
             if step.prop("url").is_some() {
                 return Err(self.err(step, "`mcp::call` takes :server and :tool, not :url"));
             }
-            if let Some(extra) = ["into", "fields"].iter().find(|p| step.prop(p).is_some()) {
+            if let Some((extra, ops)) = SCRAPE_READ_OPTIONS
+                .iter()
+                .find(|(p, _)| *p != "select" && step.prop(p).is_some())
+            {
                 return Err(self.err(
                     step,
-                    format!(":{extra} only applies to `scrape::page`; an `mcp::call` result binds `text` and `data`"),
+                    format!(
+                        ":{extra} only applies to {}; an `mcp::call` result binds `text` and `data`",
+                        ops.iter().map(|o| format!("`{o}`")).collect::<Vec<_>>().join(", ")
+                    ),
                 ));
             }
             let Some(server) = step.string_prop("server") else {
@@ -1899,8 +2050,24 @@ impl<'a> Checker<'a> {
             if let Some(extra) = mcp_props.iter().find(|p| step.prop(p).is_some()) {
                 return Err(self.err(step, format!(":{extra} only applies to `mcp::call`")));
             }
+            for (option, ops) in SCRAPE_READ_OPTIONS {
+                if step.prop(option).is_some() && !ops.contains(&op) {
+                    let hint = if *option == "select" && op == "scrape::select" {
+                        "; `scrape::select` takes its selector as :css(\"...\")".to_string()
+                    } else {
+                        format!(
+                            "; it applies to {}",
+                            ops.iter()
+                                .map(|o| format!("`{o}`"))
+                                .collect::<Vec<_>>()
+                                .join(", ")
+                        )
+                    };
+                    return Err(self.err(step, format!(":{option} does not apply to `{op}`{hint}")));
+                }
+            }
             let Some(url) = step.prop("url") else {
-                return Err(self.err(step, "`scrape::page` requires :url(...)"));
+                return Err(self.err(step, format!("`{op}` requires :url(...)")));
             };
             self.check_expr(step, scope, None, url)?;
             if let Expr::String(u) = url {
@@ -1908,15 +2075,67 @@ impl<'a> Checker<'a> {
                     return Err(self.err(step, ":url must be an absolute http(s) URL"));
                 }
             }
-            if let Some(sel) = step.string_prop("select") {
-                validate_css_selector(sel).map_err(|e| {
-                    self.err(
-                        step,
-                        format!(":select(\"{sel}\") is not a supported CSS selector: {e}; dotted JSON paths apply to `mcp::call`"),
-                    )
-                })?;
+            for option in ["select", "css", "link_css"] {
+                if let Some(sel) = step.string_prop(option) {
+                    validate_css_selector(sel).map_err(|e| {
+                        let hint = if option == "select" {
+                            "; dotted JSON paths apply to `mcp::call`"
+                        } else {
+                            ""
+                        };
+                        self.err(
+                            step,
+                            format!(
+                                ":{option}(\"{sel}\") is not a supported CSS selector: {e}{hint}"
+                            ),
+                        )
+                    })?;
+                }
             }
-            self.check_page_into(step)?
+            match op {
+                "scrape::site" => {
+                    if step.prop("max").is_none() {
+                        return Err(self.err(
+                            step,
+                            format!("`scrape::site` requires :max(N), a hard cap on pages fetched (at most {MAX_LOOP_SITE_PAGES}), so the crawl is bounded and `silc build` can count it"),
+                        ));
+                    }
+                    self.check_max(step, "max", MAX_LOOP_SITE_PAGES)?;
+                    if step.prop("depth").is_some() {
+                        self.check_max(
+                            step,
+                            "depth",
+                            u64::from(crate::scrape_catalog::MAX_SITE_DEPTH),
+                        )?;
+                    }
+                    let item = match self.check_page_into(step, PAGE_INTO, "page")? {
+                        Some(c) => BindTy::Row(c),
+                        None => BindTy::Page,
+                    };
+                    BindTy::Items(Box::new(item))
+                }
+                "scrape::select" => {
+                    if step.string_prop("css").is_none() {
+                        return Err(self.err(step, "`scrape::select` requires :css(\"selector\")"));
+                    }
+                    if step.prop("max").is_none() {
+                        return Err(self.err(
+                            step,
+                            format!("`scrape::select` requires :max(N) (at most {MAX_LOOP_LIST}) so the list of matches is bounded"),
+                        ));
+                    }
+                    self.check_max(step, "max", MAX_LOOP_LIST)?;
+                    let item = match self.check_page_into(step, MATCH_INTO, "match")? {
+                        Some(c) => BindTy::Row(c),
+                        None => BindTy::Fields(MATCH_FIELDS),
+                    };
+                    BindTy::Items(Box::new(item))
+                }
+                _ => match self.check_page_into(step, PAGE_INTO, "page")? {
+                    Some(c) => BindTy::Row(c),
+                    None => BindTy::Page,
+                },
+            }
         };
 
         self.check_retry(step)?;
@@ -1970,7 +2189,7 @@ impl<'a> Checker<'a> {
                 Some((first_ty, _)) if *first_ty != ty => {
                     return Err(self.err(
                         step,
-                        "attempts must bind one shape; give every `scrape::page` attempt the same :into (or none)",
+                        "attempts must bind one shape; give every `scrape::*` attempt the same :into (or none)",
                     ));
                 }
                 Some(_) => {}
@@ -2013,17 +2232,20 @@ impl<'a> Checker<'a> {
         scope: &mut Scope,
         in_each: bool,
     ) -> Result<(), String> {
-        if step.name == "let" {
-            if let Some(op) = step.string_prop("op").filter(|op| *op != LOOP_EMBED_OP) {
-                return Err(self.err(
-                    step,
-                    format!("nests only `{LOOP_EMBED_OP}(...)`, not `{op}`; outside data goes through loop::read"),
-                ));
-            }
-        }
         self.check_props(step)?;
         match step.name.as_str() {
+            "let" if step.string_prop("op") == Some(LOOP_SCORE_OP) => {
+                let ty = self.check_score(step, scope)?;
+                let name = step.ident_prop("as").unwrap().to_string();
+                self.bind(step, scope, &name, Binding { ty, tainted: false })?;
+            }
             "let" => {
+                if step.prop("text").is_some() {
+                    return Err(self.err(
+                        step,
+                        ":text belongs to a nested `text::score(:text(...))`; a plain let takes :value",
+                    ));
+                }
                 if let Some((ty, tainted)) = self.check_let_embed(step, scope)? {
                     let name = step.ident_prop("as").unwrap().to_string();
                     return self.bind(
@@ -2179,10 +2401,11 @@ impl<'a> Checker<'a> {
                 let item_ty = match self.expr_ty(scope, list) {
                     BindTy::List(c) if !c.is_empty() => BindTy::Row(c),
                     BindTy::List(_) => BindTy::Value,
+                    BindTy::Items(item) => *item,
                     _ => {
                         return Err(self.err(
                             step,
-                            ":in must be a list binding (from loop::find or a list field)",
+                            ":in must be a list binding (from loop::find, scrape::site, scrape::select, or a list field)",
                         ));
                     }
                 };
@@ -2329,6 +2552,35 @@ impl<'a> Checker<'a> {
             }
         }
         Ok(())
+    }
+}
+
+/// Why a nested operation cannot sit in this loop node, or `None` when it may
+/// (or when the node's closed `:op` list reports it instead).
+fn misplaced_op(node: &str, op: &str) -> Option<String> {
+    let in_read = LOOP_READ_OPS.contains(&op);
+    let in_let = LOOP_LET_OPS.contains(&op);
+    match node {
+        "read" if in_read => None,
+        "let" if in_let => None,
+        _ if in_read => Some(format!(
+            "`{op}` is a read; inside a loop it must sit in loop::read, e.g. `loop::read(:as(x), {op}(...))`, so it is bounded and recorded for replay"
+        )),
+        _ if op == LOOP_SCORE_OP => Some(format!(
+            "`{op}` is not a read; bind it with `loop::let(:as(score), {op}(:text($page.text)))`"
+        )),
+        _ if in_let => Some(format!(
+            "`{op}` is not a read; bind it with `loop::let(:as(vec), {op}(:from($page.text)))`"
+        )),
+        _ if op.starts_with("scrape::") => Some(format!(
+            "`{op}` runs in pipelines only; inside a loop, read with scrape::page, scrape::site, scrape::render, or scrape::select in loop::read"
+        )),
+        "read" => None,
+        _ => Some(format!(
+            "`{op}` cannot be nested in loop::{node}; loop::read nests {} and loop::let nests {}",
+            LOOP_READ_OPS.join(", "),
+            LOOP_LET_OPS.join(", ")
+        )),
     }
 }
 
@@ -2532,7 +2784,7 @@ pub fn format_loop_cost_report(program: &Program) -> Option<String> {
             describe_loop_trigger(lp)
         ));
         out.push_str(&format!(
-            "  {:<width$}  model calls {} · effects {} (writes {}, notices {}) · approvals {} · reads {} · rows scanned {}\n",
+            "  {:<width$}  model calls {} · effects {} (writes {}, notices {}) · approvals {} · reads {} · scores {} · rows scanned {}\n",
             "",
             b.model_calls,
             b.effects(),
@@ -2540,6 +2792,7 @@ pub fn format_loop_cost_report(program: &Program) -> Option<String> {
             b.notices,
             b.approvals,
             b.reads,
+            b.scores,
             b.rows_scanned,
         ));
         if b.embeds > 0 {
@@ -2576,6 +2829,15 @@ fn collect_unchecked(node: &LoopNode, out: &mut Vec<String>) {
 
 pub fn loops_use_ask(program: &Program) -> bool {
     program.loops.iter().any(|l| l.contains_node("ask"))
+}
+
+/// Any loop has a `loop::read` of this operation, including fallback attempts.
+pub fn loops_use_read_op(program: &Program, op: &str) -> bool {
+    fn walk(node: &LoopNode, op: &str) -> bool {
+        (node.name == "read" && node.string_prop("op") == Some(op))
+            || node.children.iter().any(|c| walk(c, op))
+    }
+    program.loops.iter().any(|l| walk(&l.root, op))
 }
 
 /// Comparison operators the kernel evaluates with three-valued logic.

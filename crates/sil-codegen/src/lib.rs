@@ -640,6 +640,9 @@ fn emit_runnable(
     if graph.has_loops() {
         loop_lower::emit_loop_kernel(root, program, compiler_version, generated)?;
     }
+    if graph.needs_loop_browser() {
+        emit_loop_browser(root, compiler_version, generated)?;
+    }
     if graph.has_api() {
         emit_service_http(root, program, graph, schema_id, generated)?;
     }
@@ -964,6 +967,33 @@ fn emit_loop_command(
         (
             root.join("python/requirements.txt"),
             LLM_REQUIREMENTS.to_string(),
+        ),
+    ];
+    for (path, contents) in files {
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)
+                .map_err(|error| format!("create {}: {error}", parent.display()))?;
+        }
+        fs::write(&path, contents).map_err(|error| format!("write {}: {error}", path.display()))?;
+        generated.push(path);
+    }
+    Ok(())
+}
+
+/// Playwright worker the loop kernel runs for `scrape::render` reads.
+fn emit_loop_browser(
+    root: &Path,
+    compiler_version: &str,
+    generated: &mut Vec<PathBuf>,
+) -> Result<(), String> {
+    let files = [
+        (
+            root.join("python/browser_worker.py"),
+            SCRAPE_BROWSER_PY.replace("__COMPILER_VERSION__", compiler_version),
+        ),
+        (
+            root.join("python/scrape_requirements.txt"),
+            SCRAPE_REQUIREMENTS.to_string(),
         ),
     ];
     for (path, contents) in files {

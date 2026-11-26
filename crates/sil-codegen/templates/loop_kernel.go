@@ -21,7 +21,9 @@ import (
 	"math"
 	"net"
 	"net/http"
+	neturl "net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -150,6 +152,13 @@ type Step struct {
 
 	// Fields maps a contract field to its CSS selector on a page read.
 	Fields map[string]string `json:"fields"`
+
+	// scrape::select takes every match of CSS; scrape::site follows links
+	// matching LinkCSS up to Depth, stopping at Max pages.
+	CSS      string `json:"css"`
+	LinkCSS  string `json:"link_css"`
+	Depth    int    `json:"depth"`
+	SameHost bool   `json:"same_host"`
 }
 
 type NewField struct {
@@ -236,6 +245,8 @@ type Kernel struct {
 	asker    Asker
 	embedder Embedder
 	fetch    func(url string) (Page, error)
+	// render loads a page in the Playwright worker (scrape::render).
+	render func(url string) (Page, error)
 	mcp      func(server, tool string, args map[string]any, token string) (map[string]any, error)
 	// crash is a test hook called at effect checkpoints ("after_reserve").
 	crash func(point, path string)
@@ -258,6 +269,7 @@ func NewKernel(db *sql.DB, plan *Plan, plansDir string) (*Kernel, error) {
 		plans:    map[string]*Plan{plan.Hash: plan},
 		now:      time.Now,
 		fetch:    fetchPage,
+		render:   renderPage,
 		mcp:      mcpCall,
 		logf: func(format string, args ...any) {
 			fmt.Fprintf(os.Stderr, "silc loop: "+format+"\n", args...)
@@ -847,10 +859,13 @@ func (c *runCtx) step(st *Step, sc *scope, path string, inEach bool) outcome {
 	case "read":
 		raw, ok := c.recordedValue(path, "read")
 		if !ok {
-			if st.ReadOp == "mcp::call" {
+			switch st.ReadOp {
+			case "mcp::call":
 				c.progress("reading %s (%s %s)", st.As, st.ReadOp, st.Tool)
-			} else {
+			case "", "scrape::page":
 				c.progress("reading %s", st.As)
+			default:
+				c.progress("reading %s (%s)", st.As, st.ReadOp)
 			}
 			raw = c.record(path, "read", c.read(st, sc))
 		}
@@ -973,6 +988,16 @@ func (c *runCtx) step(st *Step, sc *scope, path string, inEach bool) outcome {
 		if waiting > 0 {
 			return outcome{s: sigSuspend}
 		}
+	case "score":
+		// Not recorded: the score is a pure function of text already recorded.
+		v, known := eval(st.From, sc)
+		text, isStr := v.(string)
+		if !known || !isStr {
+			sc.vars[st.As] = nil
+			c.progress("score %s unknown: its text is unknown", st.As)
+			return none
+		}
+		sc.vars[st.As] = scoreText(text)
 	case "embed":
 		// loop::let + tensor::infer. Not recorded: a replay recomputes the
 		// vector from the same (recorded) text. Never a model call.
@@ -1189,18 +1214,207 @@ func (c *runCtx) read(st *Step, sc *scope) map[string]any {
 	if !known || !isStr || !(strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://")) {
 		return map[string]any{"error": "url is unknown or not http(s)"}
 	}
+	switch st.ReadOp {
+	case "scrape::site":
+		return c.crawl(st, url)
+	case "scrape::render":
+		page, err := withRetry(st.Retry, url, c.k.render)
+		if err != nil {
+			return map[string]any{"error": err.Error()}
+		}
+		return shapePage(st, c.plan.Contracts[st.Into], page)
+	case "scrape::select":
+		page, err := withRetry(st.Retry, url, c.k.fetch)
+		if err != nil {
+			return map[string]any{"error": err.Error()}
+		}
+		return selectMatches(st, c.plan.Contracts[st.Into], page)
+	}
+	page, err := withRetry(st.Retry, url, c.k.fetch)
+	if err != nil {
+		return map[string]any{"error": err.Error()}
+	}
+	return shapePage(st, c.plan.Contracts[st.Into], page)
+}
+
+// withRetry calls get up to 1+retry times with a short backoff.
+func withRetry(retry int, url string, get func(string) (Page, error)) (Page, error) {
 	var lastErr error
-	for attempt := 0; attempt <= st.Retry; attempt++ {
-		page, err := c.k.fetch(url)
+	for attempt := 0; attempt <= retry; attempt++ {
+		page, err := get(url)
 		if err == nil {
-			return shapePage(st, c.plan.Contracts[st.Into], page)
+			return page, nil
 		}
 		lastErr = err
-		if attempt < st.Retry {
+		if attempt < retry {
 			time.Sleep(time.Duration(200*(attempt+1)) * time.Millisecond)
 		}
 	}
-	return map[string]any{"error": lastErr.Error()}
+	return Page{}, lastErr
+}
+
+// crawl is scrape::site: breadth-first from the start page, following links
+// that match LinkCSS (default a[href]) up to Depth levels (1 is the start
+// page only) and never fetching more than Max pages. Links are visited in
+// page order, without fragments, each URL once. The start page must load;
+// a later page that fails, or misses :select, is left out. The whole list
+// is one recorded read.
+func (c *runCtx) crawl(st *Step, start string) map[string]any {
+	linkSel := st.LinkCSS
+	if linkSel == "" {
+		linkSel = "a[href]"
+	}
+	links, err := cascadia.Compile(linkSel)
+	if err != nil {
+		return map[string]any{"error": fmt.Sprintf(":link_css %q: %v", linkSel, err)}
+	}
+	depth := st.Depth
+	if depth < 1 {
+		depth = 1
+	}
+	startURL, err := neturl.Parse(start)
+	if err != nil {
+		return map[string]any{"error": fmt.Sprintf("%s: %v", start, err)}
+	}
+	type queued struct {
+		url   string
+		level int
+	}
+	seen := map[string]bool{canonicalURL(startURL): true}
+	queue := []queued{{start, 1}}
+	pages := []any{}
+	fetched := 0
+	for len(queue) > 0 && fetched < st.Max {
+		next := queue[0]
+		queue = queue[1:]
+		fetched++
+		page, err := withRetry(st.Retry, next.url, c.k.fetch)
+		if err != nil {
+			if next.level == 1 {
+				return map[string]any{"error": err.Error()}
+			}
+			continue
+		}
+		if shaped := shapePage(st, c.plan.Contracts[st.Into], page); shaped["error"] == nil {
+			pages = append(pages, shaped["page"])
+		}
+		if next.level >= depth {
+			continue
+		}
+		doc, err := xhtml.Parse(strings.NewReader(page.HTML))
+		if err != nil {
+			continue
+		}
+		base, _ := neturl.Parse(page.URL)
+		for _, a := range cascadia.QueryAll(doc, links) {
+			href := attr(a, "href")
+			if href == "" || base == nil {
+				continue
+			}
+			u, err := base.Parse(href)
+			if err != nil || (u.Scheme != "http" && u.Scheme != "https") {
+				continue
+			}
+			if st.SameHost && !strings.EqualFold(u.Hostname(), startURL.Hostname()) {
+				continue
+			}
+			key := canonicalURL(u)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			queue = append(queue, queued{key, next.level + 1})
+		}
+	}
+	return map[string]any{"page": pages}
+}
+
+func canonicalURL(u *neturl.URL) string {
+	c := *u
+	c.Fragment = ""
+	c.RawFragment = ""
+	return c.String()
+}
+
+func attr(n *xhtml.Node, name string) string {
+	for _, a := range n.Attr {
+		if a.Key == name {
+			return strings.TrimSpace(a.Val)
+		}
+	}
+	return ""
+}
+
+// selectMatches is scrape::select: every element matching CSS, in page
+// order, up to Max. Each match has url (the page), text, and href (its own
+// href resolved against the page, or ""). With :into each match is a row:
+// same-named fields take those values and :fields selectors run inside the
+// match. No match is an empty list, not an error.
+func selectMatches(st *Step, contract []FieldSpec, page Page) map[string]any {
+	sel, err := cascadia.Compile(st.CSS)
+	if err != nil {
+		return map[string]any{"error": fmt.Sprintf(":css %q: %v", st.CSS, err)}
+	}
+	doc, err := xhtml.Parse(strings.NewReader(page.HTML))
+	if err != nil {
+		return map[string]any{"error": fmt.Sprintf("%s: parse html: %v", page.URL, err)}
+	}
+	base, _ := neturl.Parse(page.URL)
+	items := []any{}
+	for _, n := range cascadia.QueryAll(doc, sel) {
+		if len(items) >= st.Max {
+			break
+		}
+		href := attr(n, "href")
+		if href != "" && base != nil {
+			if u, err := base.Parse(href); err == nil {
+				href = u.String()
+			}
+		}
+		match := map[string]any{"url": page.URL, "text": nodeText(n), "href": href}
+		if st.Into == "" {
+			items = append(items, match)
+			continue
+		}
+		row := map[string]any{}
+		for _, f := range contract {
+			if css, ok := st.Fields[f.Name]; ok {
+				fsel, err := cascadia.Compile(css)
+				if err != nil {
+					return map[string]any{"error": fmt.Sprintf(":fields %s %q: %v", f.Name, css, err)}
+				}
+				if m := cascadia.Query(n, fsel); m != nil {
+					if v := nodeText(m); v != "" {
+						row[f.Name] = v
+					}
+				}
+				continue
+			}
+			if v, ok := match[f.Name]; ok {
+				row[f.Name] = v
+			}
+		}
+		items = append(items, row)
+	}
+	return map[string]any{"page": items}
+}
+
+// scoreText is text::score: the same CPU heuristic as the CPython score
+// processor, so a loop and a pipeline score one text alike.
+func scoreText(text string) float64 {
+	if text == "" {
+		return 0
+	}
+	length := float64(len([]rune(text)))
+	vowels := 0
+	for _, r := range strings.ToLower(text) {
+		switch r {
+		case 'a', 'e', 'i', 'o', 'u':
+			vowels++
+		}
+	}
+	score := math.Min(1, float64(vowels+1)/math.Max(8, length/12))
+	return math.RoundToEven(score*1e4) / 1e4
 }
 
 func (c *runCtx) schemaText(contract string) string {
@@ -2428,18 +2642,58 @@ func fetchPage(url string) (Page, error) {
 	if resp.StatusCode >= 400 {
 		return Page{}, fmt.Errorf("GET %s returned %d", url, resp.StatusCode)
 	}
-	text := string(body)
-	title := ""
-	if m := titleRe.FindStringSubmatch(text); m != nil {
-		title = strings.TrimSpace(html.UnescapeString(spaceRe.ReplaceAllString(m[1], " ")))
+	return pageFromHTML(url, resp.StatusCode, string(body), ""), nil
+}
+
+// pageFromHTML takes the title (unless given) and the tag-free text of body.
+func pageFromHTML(url string, status int, body, title string) Page {
+	if title == "" {
+		if m := titleRe.FindStringSubmatch(body); m != nil {
+			title = strings.TrimSpace(html.UnescapeString(spaceRe.ReplaceAllString(m[1], " ")))
+		}
 	}
-	text = scriptRe.ReplaceAllString(text, " ")
+	text := scriptRe.ReplaceAllString(body, " ")
 	text = tagRe.ReplaceAllString(text, " ")
 	text = strings.TrimSpace(spaceRe.ReplaceAllString(html.UnescapeString(text), " "))
 	if len(text) > 8000 {
 		text = text[:8000]
 	}
-	return Page{URL: url, Status: resp.StatusCode, Title: title, Text: text, HTML: string(body)}, nil
+	return Page{URL: url, Status: status, Title: title, Text: text, HTML: body}
+}
+
+// renderPage is scrape::render: the compiler's Playwright worker loads the
+// page in headless Chromium and prints its DOM as JSON.
+func renderPage(url string) (Page, error) {
+	worker := os.Getenv("SILC_SCRAPE_BROWSER_PY")
+	python := envOr("SILC_SCRAPE_PYTHON_BIN", "python3")
+	if worker == "" {
+		return Page{}, fmt.Errorf("scrape::render has no browser worker (SILC_SCRAPE_BROWSER_PY is unset; run `silc build`)")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
+	var stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, python, worker, "--url", url, "--json")
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if len(msg) > 400 {
+			msg = msg[len(msg)-400:]
+		}
+		return Page{}, fmt.Errorf("render %s: %v %s", url, err, msg)
+	}
+	var res struct {
+		URL   string `json:"url"`
+		Title string `json:"title"`
+		HTML  string `json:"html"`
+	}
+	if err := json.Unmarshal(out, &res); err != nil {
+		return Page{}, fmt.Errorf("render %s: decode worker output: %v", url, err)
+	}
+	if len(res.HTML) > 2<<20 {
+		res.HTML = res.HTML[:2<<20]
+	}
+	return pageFromHTML(url, 200, res.HTML, res.Title), nil
 }
 
 // shapePage applies :select and :into to a fetched page. :select narrows to

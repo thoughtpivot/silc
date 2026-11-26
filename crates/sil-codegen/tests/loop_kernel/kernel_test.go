@@ -4,7 +4,9 @@ package main
 // (plan.json) and the tests/fixtures/loop_digest.silc fixture, scheduled
 // (digest_plan.json) and as a command (command_plan.json), and the
 // tests/fixtures/loop_page_read.silc page reads (page_plan.json), and the
-// tests/fixtures/loop_embed.silc embedding step (loop_embed_plan.json). The Rust test
+// tests/fixtures/loop_embed.silc embedding step (loop_embed_plan.json), and
+// the tests/fixtures/loop_scrape_score.silc site, render, select, and score
+// steps (scrape_plan.json). The Rust test
 // `loop_kernel_replay_traces` copies this file, the kernel template, and the
 // plans into a temp module and runs `go test`.
 
@@ -1585,5 +1587,174 @@ func TestLoopEmbedStepFailsTheItemWithoutTheEmbedWorker(t *testing.T) {
 	}
 	if n := len(h.rows("incidents")); n != 0 {
 		t.Fatalf("no row may be written without its vector, got %d", n)
+	}
+}
+
+// ------------------------------------------- site, render, select, score (THO-579)
+
+const siteHome = `<html><head><title>Acme</title></head><body>
+<a href="/a">A</a> <a href="/a#top">A again</a> <a href="https://other.test/x">elsewhere</a>
+<a href="/b">B</a> <a href="/c">C</a> <a href="/d">D</a>
+<a class="release" href="/releases/2.0">v2.0</a> <a class="release" href="https://acme.test/releases/1.9">v1.9</a>
+</body></html>`
+
+type fakeRender struct {
+	html  map[string]string
+	calls []string
+}
+
+func (f *fakeRender) render(url string) (Page, error) {
+	f.calls = append(f.calls, url)
+	body, ok := f.html[url]
+	if !ok {
+		return Page{}, fmt.Errorf("render %s: no such page", url)
+	}
+	return pageFromHTML(url, 200, body, ""), nil
+}
+
+func newScrapeReads(t *testing.T, status string) (*harness, *fakePages, *fakeRender) {
+	t.Helper()
+	h := newBareHarness(t, "2026-10-02T15:00:00Z", "scrape_plan.json")
+	pages := &fakePages{html: map[string]string{
+		"https://acme.test/":  siteHome,
+		"https://acme.test/a": `<html><body><a href="/deep">deeper</a></body></html>`,
+		"https://acme.test/b": `<html><body>B</body></html>`,
+		"https://acme.test/c": `<html><body>C</body></html>`,
+		"https://acme.test/d": `<html><body>D</body></html>`,
+	}}
+	render := &fakeRender{html: map[string]string{
+		"https://acme.test/status": `<html><body><nav>menu</nav><main>` + status + `</main></body></html>`,
+	}}
+	h.k.fetch = pages.fetch
+	h.k.render = render.render
+	h.asker.replies = []string{`{"line":"Acme is steady"}`}
+	h.seed("sources", "acme", map[string]any{"name": "Acme", "url": "https://acme.test/", "status_url": "https://acme.test/status"})
+	return h, pages, render
+}
+
+func TestSiteRenderSelectAndScoreRecordOnceAndReplay(t *testing.T) {
+	h, pages, render := newScrapeReads(t, "All systems operational. Builds are green.")
+	h.runNow("SiteWatch", "req-1")
+	run := h.runsOf("SiteWatch")[0]
+	if run["outcome"] != "succeeded" {
+		t.Fatalf("run: %v", run)
+	}
+	notice := h.one("loop_notices")
+	if notice["text"] != "Acme: Acme is steady (4 pages, 2 releases, score 1)" {
+		t.Fatalf("site pages, select matches, and the score reach the notice: %v", notice)
+	}
+	wantFetches := []string{
+		"https://acme.test/", "https://acme.test/a", "https://acme.test/b", "https://acme.test/c",
+		"https://acme.test/",
+	}
+	if strings.Join(pages.calls, " ") != strings.Join(wantFetches, " ") {
+		t.Fatalf(":max(4) caps the crawl, fragments and other hosts are skipped, then select fetches once: %v", pages.calls)
+	}
+	if len(render.calls) != 1 {
+		t.Fatalf("one render, got %v", render.calls)
+	}
+	id := run["id"].(string)
+	if n := h.eventCount(id, "read"); n != 3 {
+		t.Fatalf("site, render, and select are one recorded read each, got %d", n)
+	}
+	if n := h.eventCount(id, "score"); n != 0 {
+		t.Fatalf("a score is recomputed, not recorded, got %d events", n)
+	}
+	var releases string
+	_ = h.db.QueryRow("SELECT value FROM loop_events WHERE run_id = ? AND kind = 'read' AND value LIKE '%releases/2.0%' AND value NOT LIKE '%\"title\"%'", id).Scan(&releases)
+	if !strings.Contains(releases, `"href":"https://acme.test/releases/2.0"`) || strings.Contains(releases, `"url"`) {
+		t.Fatalf("select rows keep the contract's fields with resolved hrefs: %s", releases)
+	}
+	if err := h.k.ResumeRun(id); err != nil {
+		t.Fatal(err)
+	}
+	if len(pages.calls) != 5 || len(render.calls) != 1 || h.asker.calls != 1 {
+		t.Fatalf("replay must not refetch, rerender, or reask: %d fetches, %d renders, %d asks", len(pages.calls), len(render.calls), h.asker.calls)
+	}
+	if n := len(h.rows("loop_notices")); n != 1 {
+		t.Fatalf("replay duplicated a notice: %d", n)
+	}
+}
+
+func TestScoreGateSkipsNoise(t *testing.T) {
+	h, _, _ := newScrapeReads(t, strings.Repeat("z", 120))
+	h.runNow("SiteWatch", "req-1")
+	if n := len(h.rows("loop_notices")); n != 0 {
+		t.Fatalf("a score of 0.1 must not pass `$quality > 0.1`: %v", h.rows("loop_notices"))
+	}
+}
+
+func TestRenderFailureRetriesThenFailsTheItem(t *testing.T) {
+	h, _, render := newScrapeReads(t, "fine")
+	render.html = map[string]string{}
+	h.runNow("SiteWatch", "req-1")
+	if run := h.runsOf("SiteWatch")[0]; run["outcome"] == "succeeded" {
+		t.Fatalf("a render that never loads must not succeed: %v", run)
+	}
+	if len(render.calls) != 3 {
+		t.Fatalf("render keeps the default :retry(2), want 3 attempts, got %d", len(render.calls))
+	}
+	if n := len(h.rows("loop_notices")); n != 0 {
+		t.Fatalf("no notice, got %d", n)
+	}
+}
+
+func TestCrawlSeedFailureFailsAndLaterFailuresDrop(t *testing.T) {
+	c := &runCtx{k: &Kernel{}, plan: &Plan{}}
+	pages := &fakePages{html: map[string]string{"https://acme.test/": siteHome}}
+	c.k.fetch = pages.fetch
+	res := c.crawl(&Step{Max: 10, Depth: 2, SameHost: true}, "https://acme.test/")
+	got, _ := res["page"].([]any)
+	if res["error"] != nil || len(got) != 1 {
+		t.Fatalf("missing linked pages drop out, the seed stays: %v", res)
+	}
+	if len(pages.calls) != 7 {
+		t.Fatalf("seed plus six same-host links, each once: %v", pages.calls)
+	}
+	res = c.crawl(&Step{Max: 10, Depth: 2}, "https://down.test/")
+	if res["error"] == nil {
+		t.Fatalf("a seed that fails fails the read: %v", res)
+	}
+	pages.calls = nil
+	c.crawl(&Step{Max: 10, Depth: 1}, "https://acme.test/")
+	if len(pages.calls) != 1 {
+		t.Fatalf(":depth(1) is the start page only: %v", pages.calls)
+	}
+	pages.calls = nil
+	c.crawl(&Step{Max: 20, Depth: 2, SameHost: false}, "https://acme.test/")
+	if !strings.Contains(strings.Join(pages.calls, " "), "https://other.test/x") {
+		t.Fatalf(":same_host(false) follows other hosts: %v", pages.calls)
+	}
+}
+
+func TestSelectMatchesCapsAndBindsMatchFields(t *testing.T) {
+	page := Page{URL: "https://acme.test/", HTML: siteHome}
+	res := selectMatches(&Step{CSS: "a", Max: 2}, nil, page)
+	items := res["page"].([]any)
+	if len(items) != 2 {
+		t.Fatalf(":max(2) caps matches: %v", items)
+	}
+	first := items[0].(map[string]any)
+	if first["url"] != "https://acme.test/" || first["text"] != "A" || first["href"] != "https://acme.test/a" {
+		t.Fatalf("match binds url, text, and resolved href: %v", first)
+	}
+	res = selectMatches(&Step{CSS: "table", Max: 5}, nil, page)
+	if items := res["page"].([]any); res["error"] != nil || len(items) != 0 {
+		t.Fatalf("no match is an empty list: %v", res)
+	}
+}
+
+func TestScoreTextMatchesThePythonProcessor(t *testing.T) {
+	cases := map[string]float64{
+		"":     0,
+		"zzzz": 0.125,
+		"All systems operational. Builds are green.": 1,
+		strings.Repeat("x", 500) + "aeiou":          0.1426,
+		"Ünïcode ааа straße":                        0.625,
+	}
+	for text, want := range cases {
+		if got := scoreText(text); got != want {
+			t.Fatalf("scoreText(%q) = %v, want %v", text, got, want)
+		}
 	}
 }

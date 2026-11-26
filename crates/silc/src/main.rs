@@ -431,6 +431,9 @@ fn compile_common(
         if graph.has_loops() {
             supervisor::build_loop_kernel(&lock, &output.root)?;
         }
+        if graph.needs_loop_browser() {
+            supervisor::build_scrape_python(&lock, &output.root)?;
+        }
         if graph.has_api() {
             supervisor::build_go_api_worker(&lock, &output.root)?;
         }

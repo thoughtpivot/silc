@@ -1,0 +1,60 @@
+# Compiler fixture: scrape::site, scrape::render, scrape::select, and
+# text::score inside one loop::each, next to loop::ask (THO-579). SiteWatch
+# crawls each source (capped at 4 pages), renders its status page, takes its
+# release links, scores the rendered text, asks for one line, and gates the
+# line and the score before it notifies.
+@version("0.7")
+
+contract Source {
+    has Str $.id;
+    has Str $.name;
+    has Str $.url;
+    has Str $.status_url;
+}
+
+contract Release {
+    has Str $.text;
+    has Str $.href;
+}
+
+contract Brief {
+    has Str $.line;
+}
+
+resource Sources for Source {
+    query list;
+    mutation create;
+}
+
+loop SiteWatch {
+    loop::flow(
+        loop::schedule(:cron("0 6 * * *"), :tz("UTC")),
+        loop::find(:as(sources), :from(Sources.list), :max(10)),
+        loop::each(:in($sources), :as(src), :max(10),
+            loop::read(:as(pages), :retry(1),
+                scrape::site(:url($src.url), :max(4), :depth(2))),
+            loop::read(:as(status),
+                scrape::render(:url($src.status_url), :select("main"))),
+            loop::read(:as(releases), :into(Release),
+                scrape::select(:url($src.url), :css("a.release"), :max(3))),
+            loop::let(:as(quality), text::score(:text($status.text))),
+            loop::ask(
+                :as(brief),
+                :into(Brief),
+                :from([$status.text, $releases]),
+                :prompt("One line on how {$src.name} is doing, from its status page and releases."),
+                loop::otherwise(loop::skip(:reason("no brief")))
+            ),
+            loop::gate(
+                :that($brief.line != "" && $quality > 0.1),
+                :reason("a readable status and a brief"),
+                loop::otherwise(loop::skip(:reason("status page reads as noise")))
+            ),
+            loop::notify(
+                :to("Watchers"),
+                :text("{$src.name}: {$brief.line} ({$pages.count} pages, {$releases.count} releases, score {$quality})"),
+                :key("{$src.id}:{$brief.line}")
+            )
+        )
+    )
+}

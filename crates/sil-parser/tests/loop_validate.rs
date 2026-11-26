@@ -378,9 +378,8 @@ fn reserved_loop_names() {
     assert!(err.contains("reserved"), "{err}");
 }
 
-#[test]
-fn ask_cannot_mix_with_text_score() {
-    let src = format!(
+fn score_processor_program(extra_processor: &str) -> String {
+    format!(
         r#"{PRELUDE}
 contract Msg {{
     has Str $.text;
@@ -394,16 +393,36 @@ app A {{
 processor Scorer {{
     method score(Msg $m) {{
         $m.text ==> text::score()
-    }}
+    }}{extra_processor}
 }}
 loop Chase {{
 {GOOD}
 }}
 "#
+    )
+}
+
+#[test]
+fn ask_shares_a_program_with_a_text_score_processor() {
+    let program = parse(&score_processor_program("")).unwrap();
+    program
+        .validate()
+        .expect("text::score and loop::ask coexist");
+    let graph = sil_core::infer_graph(&program).unwrap().unwrap();
+    assert_eq!(graph.processor_op, sil_core::ProcessorOp::Score);
+    assert!(graph.needs_llm(), "loop::ask still provisions silclm");
+}
+
+#[test]
+fn text_score_still_cannot_mix_with_llm_complete() {
+    let src = score_processor_program(
+        "\n    method reply(Msg $m) {\n        $m.text ==> llm::complete()\n    }",
     );
     let err = parse(&src).unwrap().validate().unwrap_err();
     assert!(
-        err.contains("cannot mix") && err.contains("text::score") && err.contains("loop::ask"),
+        err.contains("cannot mix")
+            && err.contains("llm::complete")
+            && err.contains("processor slot"),
         "{err}"
     );
 }
@@ -1528,7 +1547,7 @@ fn let_takes_a_value_or_one_embed() {
     );
     expect_embed_err(
         r#"loop::let(:as(vec), scrape::page(:url($dep.changelog)))"#,
-        &["nests only `tensor::infer(...)`", "loop::read"],
+        &["`scrape::page` is a read", "loop::read"],
     );
     expect_embed_err(
         r#"loop::let(:as(vec), :from($release.text))"#,
@@ -1540,7 +1559,7 @@ fn let_takes_a_value_or_one_embed() {
     );
     expect_embed_err(
         r#"loop::read(:as(vec), tensor::infer(:from($release.text)))"#,
-        &[":op must be one of scrape::page|mcp::call"],
+        &["`tensor::infer` is not a read", "loop::let"],
     );
 }
 
@@ -1580,6 +1599,194 @@ fn text_score_still_cannot_share_a_program_with_a_loop_embed() {
     let err = check_embed_src(&src).unwrap_err();
     assert!(
         err.contains("cannot mix text::score with tensor::infer"),
+        "{err}"
+    );
+}
+
+// ------------------------------------------- site, render, select, score (THO-579)
+
+fn check_scrape_fixture() -> sil_core::Program {
+    let program = parse(include_str!(
+        "../../sil-codegen/tests/fixtures/loop_scrape_score.silc"
+    ))
+    .expect("parse fixture");
+    program.validate().expect("validate fixture");
+    program
+}
+
+#[test]
+fn site_render_select_score_and_ask_share_one_each() {
+    let program = check_scrape_fixture();
+    let graph = sil_core::infer_graph(&program)
+        .expect("infer graph")
+        .expect("runnable graph");
+    assert!(graph.needs_llm(), "loop::ask still provisions the model");
+    assert!(
+        graph.needs_loop_browser(),
+        "scrape::render needs Playwright"
+    );
+}
+
+#[test]
+fn scrape_cost_report_counts_the_site_cap_and_lists_scores() {
+    let program = check_scrape_fixture();
+    let b = sil_core::loop_bounds(&program.loops[0]);
+    // Per item: site 4 pages × (1 + :retry(1)), render and select 1 + 2 retries.
+    assert_eq!(b.reads, 10 * (4 * 2 + 3 + 3));
+    assert_eq!(b.scores, 10);
+    assert_eq!(b.model_calls, 10 * 2, "scores are not model calls");
+    let report = sil_core::format_loop_cost_report(&program).unwrap();
+    assert!(
+        report.contains("model calls 20 ·") && report.contains("reads 140 · scores 10 ·"),
+        "{report}"
+    );
+}
+
+const SITE_READ: &str = r#"loop::read(:as(pages), scrape::site(:url($dep.changelog), :max(5)))"#;
+
+fn notify_after(text: &str) -> String {
+    format!(r#"loop::notify(:to("Maintainers"), :text("{text}"), :key("{{$dep.id}}"))"#)
+}
+
+#[test]
+fn scrape_reads_bind_lists_with_counts() {
+    check_page(&page_loop(SITE_READ, &notify_after("{$pages.count} pages"))).unwrap();
+    check_page(&page_loop(
+        r#"loop::read(:as(pages), scrape::site(:url($dep.changelog), :max(5), :depth(3), :same_host(false), :link_css("nav a"), :select("main")))"#,
+        r#"loop::each(:in($pages), :as(p), :max(5), loop::notify(:to("Maintainers"), :text("{$p.title}"), :key("{$p.url}")))"#,
+    ))
+    .unwrap();
+    check_page(&page_loop(
+        r#"loop::read(:as(links), scrape::select(:url($dep.changelog), :css("a.release"), :max(3)))"#,
+        r#"loop::each(:in($links), :as(l), :max(3), loop::notify(:to("Maintainers"), :text("{$l.text}"), :key("{$l.href}")))"#,
+    ))
+    .unwrap();
+    check_page(&page_loop(
+        r#"loop::read(:as(status), :into(Article), scrape::render(:url($dep.changelog), :select("main")))"#,
+        &notify_after("{$status.title}"),
+    ))
+    .unwrap();
+}
+
+#[test]
+fn scrape_site_requires_a_page_cap() {
+    expect_page_err(
+        &page_loop(
+            r#"loop::read(:as(pages), scrape::site(:url($dep.changelog)))"#,
+            &notify_after("x"),
+        ),
+        "`scrape::site` requires :max(N)",
+    );
+    expect_page_err(
+        &page_loop(
+            r#"loop::read(:as(pages), scrape::site(:url($dep.changelog), :max(500)))"#,
+            &notify_after("x"),
+        ),
+        "between 1 and 100",
+    );
+}
+
+#[test]
+fn scrape_select_requires_css_and_max() {
+    expect_page_err(
+        &page_loop(
+            r#"loop::read(:as(links), scrape::select(:url($dep.changelog), :max(3)))"#,
+            &notify_after("x"),
+        ),
+        ":css",
+    );
+    expect_page_err(
+        &page_loop(
+            r#"loop::read(:as(links), scrape::select(:url($dep.changelog), :css("a")))"#,
+            &notify_after("x"),
+        ),
+        ":max",
+    );
+}
+
+#[test]
+fn scrape_options_name_the_reads_they_apply_to() {
+    expect_page_err(
+        &page_loop(
+            r#"loop::read(:as(p), scrape::page(:url($dep.changelog), :depth(2)))"#,
+            &notify_after("x"),
+        ),
+        "`scrape::site`",
+    );
+    expect_page_err(
+        &page_loop(
+            r#"loop::read(:as(p), scrape::render(:url($dep.changelog), :css("a")))"#,
+            &notify_after("x"),
+        ),
+        "`scrape::select`",
+    );
+}
+
+#[test]
+fn scrape_ops_outside_loop_read_are_rejected() {
+    expect_page_err(
+        &page_loop(
+            r#"loop::let(:as(pages), scrape::site(:url($dep.changelog), :max(5)))"#,
+            &notify_after("x"),
+        ),
+        "`scrape::site` is a read; inside a loop it must sit in loop::read",
+    );
+    expect_page_err(
+        &page_loop(
+            r#"loop::read(:as(s), text::score(:text($dep.changelog)))"#,
+            &notify_after("x"),
+        ),
+        "`text::score` is not a read",
+    );
+}
+
+#[test]
+fn text_score_binds_a_number() {
+    check_page(&page_loop(
+        r#"loop::read(:as(page), scrape::page(:url($dep.changelog)))"#,
+        r#"loop::let(:as(quality), text::score(:text($page.text))),
+        loop::gate(:that($quality > 0.5), :reason("readable"), loop::otherwise(loop::skip(:reason("noise")))),
+        loop::notify(:to("Maintainers"), :text("{$quality}"), :key("{$dep.id}"))"#,
+    ))
+    .unwrap();
+    expect_page_err(
+        &page_loop(
+            r#"loop::read(:as(page), scrape::page(:url($dep.changelog)))"#,
+            r#"loop::let(:as(quality), text::score(:text($page))),
+        loop::notify(:to("Maintainers"), :text("x"), :key("{$dep.id}"))"#,
+        ),
+        "text::score",
+    );
+}
+
+#[test]
+fn text_score_cannot_score_unchecked_model_output() {
+    expect_page_err(
+        &page_loop(
+            r#"loop::ask(:as(draft), :into(Draft), :from($dep), :prompt("Draft"))"#,
+            r#"loop::let(:as(quality), text::score(:text($draft.text))),
+        loop::notify(:to("Maintainers"), :text("x"), :key("{$dep.id}"))"#,
+        ),
+        "`text::score` cannot score",
+    );
+    check_page(&page_loop(
+        r#"loop::ask(:as(draft), :into(Draft), :from($dep), :prompt("Draft"))"#,
+        r#"loop::gate(:that($draft.text != ""), :reason("never empty")),
+        loop::let(:as(quality), text::score(:text($draft.text))),
+        loop::notify(:to("Maintainers"), :text("{$quality}"), :key("{$dep.id}"))"#,
+    ))
+    .unwrap();
+}
+
+#[test]
+fn scrape_pipelines_still_cannot_share_a_program_with_loops() {
+    let src = format!(
+        "{PRELUDE}{PAGE_PRELUDE}\nservice Grab {{\n  method run() {{\n    target_url ==> scrape::page(:depth(1))\n  }}\n}}\nloop Watch {{\n{}\n}}\n",
+        page_loop(SITE_READ, &notify_after("x"))
+    );
+    let err = parse(&src).unwrap().validate().unwrap_err();
+    assert!(
+        err.contains("inside a loop, put scrape::page, scrape::site"),
         "{err}"
     );
 }

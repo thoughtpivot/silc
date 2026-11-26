@@ -266,9 +266,9 @@ if any run failed.
 - `loop::schedule` — options: `cron`, `tz`, `catch_up?`; children: none
 - `loop::manual` — options: none; children: none
 - `loop::on_mutation` — options: `resource`, `mutation`; children: none
-- `loop::let` — options: `as`, `value?`, `op?`, `model?`, `from?`, `prefer?`; children: none
+- `loop::let` — options: `as`, `value?`, `op?`, `model?`, `from?`, `prefer?`, `text?`; children: none
 - `loop::find` — options: `as`, `from`, `where?`, `order?`, `desc?` (flag), `max?`, `one?` (flag); children: none
-- `loop::read` — options: `as`, `into?`, `op`, `url?`, `server?`, `tool?`, `args?`, `auth_env?`, `select?`, `fields?`, `retry?`; children: none
+- `loop::read` — options: `as`, `into?`, `op`, `url?`, `server?`, `tool?`, `args?`, `auth_env?`, `select?`, `fields?`, `css?`, `depth?`, `max?`, `same_host?`, `link_css?`, `retry?`; children: none
 - `loop::fallback` — options: `as`, `accept`; children: `read`, `otherwise`
 - `loop::ask` — options: `as`, `into`, `prompt`, `from?`, `retry?`; children: `otherwise`
   - `:from($a, $b)` passes several values and equals `:from([$a, $b])`. The model sees one JSON object labelled by binding path (`a`, `b`, `kb.data`), so a prompt can refer to each by name. A comma list is valid only on `loop::ask :from`; other options take one expression.
@@ -295,9 +295,11 @@ Rules the compiler enforces:
 - Reserved bindings: `$today` and `$now` (loop time zone), `$event` (trigger data), `$calendar` (`today`, `weekday`, `last7_start`, `last7_end`, `next7_end`).
 - `loop::fallback` tries two or more `loop::read` attempts in order (same operation, no `:as` on the attempts) and binds the first result for which `:accept` is true, written over the fallback's own `:as` (`:accept($page.status == 200 && $page.text != "")`). A failed fetch, or a false or unknown `:accept`, tries the next attempt; when none is accepted the required `otherwise` runs and ends in `stop`, `fail`, or `skip`. `:retry` on one read repeats that read; `fallback` tries a different one. `silc build` counts every attempt.
 - `loop::read(:op("mcp::call"), :server("https://…/mcp"), :tool("name"), :args(Contract.new(...)), :auth_env("TOKEN_VAR"), :select("records.parsed"))` calls one MCP tool; the result is `$x.text` and `$x.data`. Tokens come from the environment, never from source.
+- Inside a loop, `scrape::page`, `scrape::site`, `scrape::render`, and `scrape::select` sit in `loop::read`, so each fetch is bounded and recorded once; a replay never refetches. `scrape::render` loads the page in headless Chromium. `scrape::site(:url(...), :max(N))` crawls same-host links (`:depth`, default 2, where 1 is the start page; `:same_host(false)`; `:link_css`) and needs `:max` (at most 100 pages); it binds a list of pages, each `url`, `title`, `text`, `status`. `scrape::select(:url(...), :css("a.release"), :max(N))` binds a list of matches, each `url`, `text`, `href`. `:select` and `:into` shape each page as on `scrape::page`; `$list.count` counts either list.
+- `loop::let(:as(score), text::score(:text($page.text)))` binds a number from 0 to 1, computed by the kernel and not a model call. It cannot score `loop::ask` output until a `gate` or `approve` checks it.
 - Run now in `/loops` starts `manual` and `schedule` loops. A loop never overlaps itself.
 - A loop command cannot use `loop::approve` (nobody is there to answer); use `loop::gate`, or add an `app` to get the `/loops` inbox.
-- `silc build` prints worst-case model calls, effects, approvals, and reads per run.
+- `silc build` prints worst-case model calls, effects, approvals, reads, and scores per run. A `scrape::site` read counts its `:max` pages, times `1 + :retry`.
 
 ## Valid patterns
 
@@ -471,8 +473,9 @@ processor Assistant {
 }
 ```
 
-`text::score` and `llm::complete` cannot both appear in one program. Each needs
-exactly one processor. SQLite persistence is synthesized by the compiler — do
+`text::score` and `llm::complete` cannot both appear in one program: each needs
+the one processor. A `text::score` processor may share a program with
+`loop::ask`, `scrape::*`, and `doc::extract`. SQLite persistence is synthesized by the compiler — do
 **not** declare `sink`, `ipc::*`, or `store::*`.
 
 ### API-only service
@@ -517,8 +520,7 @@ Document upload + extract uses **`doc::extract`** with **`ui::file_input`**
 (ADR-011). Declare `$upload ==> doc::extract(:into(Document))` plus a
 `resource … for Document`. The compiler synthesizes multipart `POST /upload`,
 Python-native extract (PDF/DOCX/ODT/MD/TXT/HTML — no Pandoc), and SQLite rows.
-Original file bytes are discarded after extract. Do not mix `doc::*` with
-`text::score`.
+Original file bytes are discarded after extract.
 
 Pipeline-only programs use `scrape::page ==> scrape::extract`, then
 `tensor::tokenize(:model("minilm-l6-v2")) ==> tensor::infer(:prefer(CPU))`.
@@ -555,10 +557,10 @@ Compiler-owned (do not invent alternatives):
 3. Closed enums (`:variant`, `:tone`, `:size`) reject unknown tokens.
 4. Resource `query` bindings must reference real resource query methods.
 5. Do not mix `text::score` and `llm::complete`.
-6. Do not mix `scrape::*` with `text::score`. Scrape pipelines may use
-   `llm::complete` for grounded SilcLM summaries.
-7. Do not mix `doc::*` with `text::score`. Document extract needs
-   `:into(Contract)` plus a matching `resource`.
+6. Scrape pipelines may use `llm::complete` for grounded SilcLM summaries.
+   A program with a `loop` cannot also declare `scrape::*` pipelines; inside a
+   loop, put `scrape::*` reads in `loop::read`.
+7. Document extract needs `:into(Contract)` plus a matching `resource`.
 8. Do not mix executable and stub-only operations in one runnable graph.
 9. Default ports: web `18088`, terminal `18023`, API `8080`. Override with
    `SILC_HTTP_PORT` / `SILC_TERMINAL_PORT` / service `:port` as needed.
@@ -588,4 +590,4 @@ Compiler-owned (do not invent alternatives):
 - Resource: `Documents for Document` (title, headings, body, tables, filename, mime, format, char_count).
 - Service: `$upload ==> doc::extract(:into(Document))` — Bun multipart `/upload` + Python extract; originals discarded.
 - Do not call `Documents.create` from submit — `submit()` posts multipart and the compiler stores the row.
-- Do not mix `doc::*` with `text::score`; never invent Pandoc/OCR paths in `.silc`.
+- Never invent Pandoc/OCR paths in `.silc`.

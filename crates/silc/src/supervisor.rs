@@ -188,6 +188,15 @@ pub fn build_loop_kernel(lock: &RuntimeLock, runtime_root: &Path) -> Result<Path
     Ok(out)
 }
 
+/// Playwright worker script and the CPython that runs it, for loop
+/// `scrape::render` reads (built by `build_scrape_python`).
+fn loop_browser_paths(output: &EmitResult) -> (PathBuf, PathBuf) {
+    (
+        output.root.join("python/browser_worker.py"),
+        output.root.join("python/.venv-scrape/bin/python"),
+    )
+}
+
 /// Run the loop kernel and restart it if it exits, until `stop` is set.
 fn supervise_loop_kernel(
     output: &EmitResult,
@@ -207,6 +216,11 @@ fn supervise_loop_kernel(
     let socket = socket.to_path_buf();
     let db_path = db_path.to_path_buf();
     let embed_socket = embed_socket.map(Path::to_path_buf);
+    let browser = output
+        .graph
+        .as_ref()
+        .filter(|g| g.needs_loop_browser())
+        .map(|_| loop_browser_paths(output));
     let slot: Arc<Mutex<Option<Child>>> = Arc::new(Mutex::new(None));
     let spawn = {
         let bin = bin.clone();
@@ -220,6 +234,10 @@ fn supervise_loop_kernel(
                 .stderr(Stdio::inherit());
             if let Some(path) = &embed_socket {
                 cmd.env("SILC_EMBED_SOCKET", path);
+            }
+            if let Some((worker, python)) = &browser {
+                cmd.env("SILC_SCRAPE_BROWSER_PY", worker)
+                    .env("SILC_SCRAPE_PYTHON_BIN", python);
             }
             cmd.spawn()
         }
@@ -1150,6 +1168,12 @@ pub fn run_loop_command(output: &EmitResult, lock: &RuntimeLock) -> Result<(), S
             .stderr(Stdio::inherit());
         if graph.needs_embed_worker() {
             kernel_cmd.env("SILC_EMBED_SOCKET", &embed_socket);
+        }
+        if graph.needs_loop_browser() {
+            let (worker, python) = loop_browser_paths(output);
+            kernel_cmd
+                .env("SILC_SCRAPE_BROWSER_PY", worker)
+                .env("SILC_SCRAPE_PYTHON_BIN", python);
         }
         let mut kernel = kernel_cmd
             .spawn()

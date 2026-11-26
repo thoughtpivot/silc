@@ -56,7 +56,8 @@ extract. Only structured fields + metadata land in the resource table.
 
 ### Mutual exclusions
 
-- Do not mix `doc::*` with `text::score` in one program.
+- `doc::*` and a `text::score` processor may share a program (0.8.0,
+  [ADR-020](ADR-020-loop-scrape-and-score-steps.md)).
 - `doc::extract` requires `:into(Contract)` and a `resource … for Contract`.
 - Scrape (`scrape::*`) and document extract may coexist; they are separate
   ingress paths (`/scrape` vs `/upload`).

@@ -1089,12 +1089,16 @@ impl Parser {
             )
     }
 
-    /// `scrape::page(...)` or `mcp::call(...)` nested inside `loop::read`, or
-    /// `tensor::infer(...)` nested inside `loop::let`. The checker decides
-    /// which node takes which operation.
+    /// `scrape::*(...)` or `mcp::call(...)` nested inside `loop::read`, or
+    /// `tensor::infer(...)` or `text::score(...)` nested inside `loop::let`.
+    /// The checker decides which node takes which operation.
     fn at_nested_op(&self) -> bool {
         let ns = match self.peek() {
-            Some(Token::Ident(n)) if n == "scrape" || n == "mcp" || n == "tensor" => true,
+            Some(Token::Ident(n))
+                if n == "scrape" || n == "mcp" || n == "tensor" || n == "text" =>
+            {
+                true
+            }
             _ => false,
         };
         ns && matches!(
@@ -1198,7 +1202,7 @@ impl Parser {
                 }
             } else {
                 return Err(self.error_here(
-                    "expected `:option(...)`, `loop::node(...)`, or a nested operation (`scrape::page(...)` or `mcp::call(...)` in loop::read, `tensor::infer(...)` in loop::let)",
+                    "expected `:option(...)`, `loop::node(...)`, or a nested operation (`scrape::*(...)` or `mcp::call(...)` in loop::read, `tensor::infer(...)` or `text::score(...)` in loop::let)",
                 ));
             }
         }

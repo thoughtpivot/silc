@@ -29,6 +29,7 @@ root [README](../README.md).
 | [017](ADR-017-ui-embed.md) | `ui::embed` dual-surface URL viewport | Accepted | Sandboxed iframe on web; card fallback on terminal; does not relax ADR-012 |
 | [018](ADR-018-files-capability.md) | Sysop-shared files (`files` + `ui::file_browser`) | Accepted | `/files/list` + `/files/download`; folders zip via pinned CPython |
 | [019](ADR-019-vran-language-into-loop.md) | Vran 0.1 language folded into `loop::*` | Accepted | Maps the vran-oss draft onto the closed catalog. `loop::fallback` shipped in 0.8.0 (unreleased); the other proposed additions are not shipped |
+| [020](ADR-020-loop-scrape-and-score-steps.md) | `scrape::*` reads and `text::score` inside loops | Accepted | 0.8.0 (unreleased): `scrape::site` (capped), `scrape::render`, and `scrape::select` in `loop::read`; `loop::let(:as(x), text::score(:text(...)))` |
 
 ### Partial supersession (0.4.0)
 

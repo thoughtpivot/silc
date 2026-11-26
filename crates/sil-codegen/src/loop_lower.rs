@@ -428,10 +428,27 @@ fn lower_read_options(step: &LoopNode, put: &mut impl FnMut(&str, serde_json::Va
         "read_op",
         json!(step.string_prop("op").unwrap_or("scrape::page")),
     );
-    for key in ["server", "tool", "auth_env", "select"] {
+    for key in ["server", "tool", "auth_env", "select", "css", "link_css"] {
         if let Some(s) = step.string_prop(key) {
             put(key, json!(s));
         }
+    }
+    match step.string_prop("op") {
+        Some("scrape::site") => {
+            put("max", json!(step.number_prop("max").unwrap_or(0)));
+            put(
+                "depth",
+                json!(step
+                    .number_prop("depth")
+                    .unwrap_or(u64::from(sil_core::scrape_catalog::DEFAULT_SITE_DEPTH))),
+            );
+            put(
+                "same_host",
+                json!(!matches!(step.prop("same_host"), Some(Expr::Bool(false)))),
+            );
+        }
+        Some("scrape::select") => put("max", json!(step.number_prop("max").unwrap_or(0))),
+        _ => {}
     }
     if let Some(e) = step.prop("args") {
         put("args", lower_expr(e));
@@ -456,6 +473,13 @@ fn lower_read_options(step: &LoopNode, put: &mut impl FnMut(&str, serde_json::Va
 
 fn lower_step(program: &Program, step: &LoopNode, path: &str) -> serde_json::Value {
     use serde_json::json;
+    if step.name == "let" && step.string_prop("op") == Some("text::score") {
+        let mut v = json!({"op": "score", "path": path, "as": step.ident_prop("as")});
+        if let Some(text) = step.prop("text") {
+            v["from"] = lower_expr(text);
+        }
+        return v;
+    }
     let mut v = json!({"op": step.name, "path": path});
     let obj = v.as_object_mut().unwrap();
     let mut put = |k: &str, val: serde_json::Value| {
@@ -715,6 +739,9 @@ pub fn lower_loop_plan(program: &Program, compiler_version: &str) -> serde_json:
             // Only loops that embed carry the count, so other plans keep their hash.
             if b.embeds > 0 {
                 bounds["embeds"] = json!(b.embeds);
+            }
+            if b.scores > 0 {
+                bounds["scores"] = json!(b.scores);
             }
             json!({
                 "name": lp.name,

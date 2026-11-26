@@ -47,6 +47,10 @@ fn command_program() -> sil_core::Program {
     parse_valid(&source.replace(DIGEST_SCHEDULE, "loop::manual(),"))
 }
 
+fn scrape_score_program() -> sil_core::Program {
+    parse_valid(include_str!("fixtures/loop_scrape_score.silc"))
+}
+
 fn page_read_program() -> sil_core::Program {
     parse_valid(include_str!("fixtures/loop_page_read.silc"))
 }
@@ -93,6 +97,34 @@ fn page_read_lowers_select_into_and_fields() {
     let bare = &plan["loops"][1]["steps"][1]["steps"][0];
     assert_eq!(bare["into"], "Article");
     assert!(bare.get("fields").is_none(), "{bare}");
+}
+
+#[test]
+fn scrape_score_lowers_site_render_select_and_score() {
+    let plan = lower_loop_plan(&scrape_score_program(), "test");
+    let body = &plan["loops"][0]["steps"][1]["steps"];
+    let site = &body[0];
+    assert_eq!(site["read_op"], "scrape::site", "{site}");
+    assert_eq!(site["max"], 4);
+    assert_eq!(site["depth"], 2);
+    assert_eq!(site["same_host"], true, ":same_host defaults on");
+    assert_eq!(site["retry"], 1);
+    let render = &body[1];
+    assert_eq!(render["read_op"], "scrape::render");
+    assert_eq!(render["select"], "main");
+    let select = &body[2];
+    assert_eq!(select["read_op"], "scrape::select");
+    assert_eq!(select["css"], "a.release");
+    assert_eq!(select["max"], 3);
+    assert_eq!(select["into"], "Release");
+    let score = &body[3];
+    assert_eq!(score["op"], "score", "{score}");
+    assert_eq!(score["as"], "quality");
+    assert_eq!(score["from"]["field"], "text");
+    let bounds = &plan["loops"][0]["bounds"];
+    assert_eq!(bounds["reads"], 140);
+    assert_eq!(bounds["scores"], 10);
+    assert_eq!(bounds["model_calls"], 20);
 }
 
 fn temp_dir(label: &str) -> PathBuf {
@@ -263,6 +295,13 @@ fn loop_kernel_replay_traces() {
     std::fs::write(
         dir.join("page_plan.json"),
         serde_json::to_string_pretty(&lower_loop_plan(&page, "test")).unwrap(),
+    )
+    .unwrap();
+
+    let scrape = synthesize_loop_surface(&scrape_score_program()).expect("synthesize scrape");
+    std::fs::write(
+        dir.join("scrape_plan.json"),
+        serde_json::to_string_pretty(&lower_loop_plan(&scrape, "test")).unwrap(),
     )
     .unwrap();
 
