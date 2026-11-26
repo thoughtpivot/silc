@@ -1,0 +1,67 @@
+#!/usr/bin/env silc
+# ArticleIngest: every weekday at 07:00, scrape each source, embed it, store the vector.
+@version("0.8")
+
+subset Uri of Str where { .starts-with("http") }
+subset Emb384 of Vec[num32; 384];
+
+contract Source {
+    has Str $.id;
+    has Uri $.url;
+}
+
+contract Article {
+    has Str $.title;
+    has Str $.text;
+}
+
+contract ArticlePayload {
+    has UUID $.id;
+    has Uri $.url;
+    has Str $.raw_content;
+    has Emb384 $.vector_embedding;
+    has Str $.day;
+}
+
+resource Sources for Source {
+    query list;
+    mutation create;
+}
+
+resource Articles for ArticlePayload {
+    query list;
+    mutation create;
+}
+
+loop ArticleIngest {
+    loop::flow(
+        loop::schedule(:cron("0 7 * * 1-5"), :tz("America/Detroit"), :catch_up("4h")),
+        loop::find(:as(sources), :from(Sources.list), :max(40)),
+        loop::each(:in($sources), :as(src), :max(40),
+            loop::read(:as(article), :into(Article),
+                scrape::page(:url($src.url), :select("article"))),
+            loop::gate(
+                :that($article.text != ""),
+                :reason("embed only pages with readable text"),
+                loop::otherwise(loop::skip(:reason("page had no text")))
+            ),
+            loop::let(:as(vec),
+                tensor::infer(:model("minilm-l6-v2"), :from($article.text))),
+            loop::write(
+                :to(Articles.create),
+                :key("article:{$src.url}:{$today}"),
+                :value(ArticlePayload.new(
+                    :url($src.url),
+                    :raw_content($article.text),
+                    :vector_embedding($vec),
+                    :day($today)
+                ))
+            )
+        ),
+        loop::notify(
+            :to("ops"),
+            :text("ArticleIngest embedded {$sources.count} sources"),
+            :key("articleingest:{$today}")
+        )
+    )
+}
