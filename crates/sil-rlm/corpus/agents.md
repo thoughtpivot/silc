@@ -1,9 +1,10 @@
 <!-- BEGIN SILC_AGENTS_TEMPLATE -->
 # Silc project guidance for AI tools
 
-This directory is a **Silc 0.7.0** project. Silc (said like “silk”) is an
-independent intent language with a Raku-inspired surface and a local Rust
-compiler. Edit `.silc` source only (not `.raku` / `.sil`).
+This directory is a **Silc** project; the `@version` pragma in its sources
+names the language release. Silc (said like “silk”) is an independent intent
+language with a Raku-inspired surface and a local Rust compiler. Edit `.silc`
+source only (not `.raku` / `.sil`).
 
 **Never** hand-edit `.runtime/` or `.silc/runtimes.lock.json`. Those are
 compiler-owned outputs.
@@ -45,7 +46,7 @@ silc main.silc | pbcopy       # a loop command: run once, result on stdout, exit
 Treat compiler diagnostics as authoritative. Prefer `silc build` after each
 meaningful edit. Stop and report limits instead of inventing substrates.
 
-## Silc 0.7.0 authoring model
+## Silc authoring model
 
 | Construct | Role |
 | --- | --- |
@@ -490,7 +491,7 @@ Wire handlers with `:on(click(handler))`, `:on(submit(handler))`, navigation
 with `ui::nav_item(:to("/path"))`, collections with `for $.items -> $item { … }`,
 and conditionals with `when expr { … }`.
 
-## Runnable operations (0.7.0)
+## Runnable operations
 
 Author-facing executable operations today (registry in `sil-core`):
 
@@ -524,7 +525,7 @@ Pipeline-only programs use `scrape::page ==> scrape::extract`, then
 Persistence is synthesized. Their contract must carry `raw_content` and
 `vector_embedding: Emb384`, where `subset Emb384 of Vec[num32; 384]`. Run them
 with `silc run main.silc --input-json '{"url":"https://…"}'`. CUDA and
-arbitrary tensor models/shapes are not executable in 0.7.0.
+arbitrary tensor models/shapes are not executable.
 
 Stub-only namespaces (parse/route/emit, do not run): `http`, `html`,
 `numpy`, `pandas`, `ws`, `sys`, `schema`, `payload`, `json`, plus non-registry

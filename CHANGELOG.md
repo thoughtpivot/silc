@@ -41,6 +41,16 @@ Entries before 0.5.0 are reconstructed from the commit history.
   write `@version("0.8")` and build on every 0.8.x compiler. `silc init`,
   the examples, and the assist corpus write the short form.
   `sil_core::LANGUAGE_VERSION` holds the major.minor.
+- Diagnostics, hover docs, generated stubs and model prompts name the release
+  as `sil_core::SILC_RELEASE` ("Silc 0.8" on 0.8.x) instead of a hard-coded
+  "Silc 0.7.0" (THO-580). This covers the "not executable" messages, the
+  parser's unsupported-syntax errors, the runtime-mechanics rejection and the
+  silclm prompts. Messages about when something was removed keep their
+  historical version. The `silc init` templates, example `AGENTS.md` files and
+  the assist corpus no longer name a release in prose. A conformance test
+  fails on any new `Silc X.Y[.Z]` literal in crate sources, templates or the
+  corpus outside an allow-list of historical messages. Docs cite
+  `registry::executable_ops()` instead of the removed `EXECUTABLE_OPS`.
 
 ### Planned
 

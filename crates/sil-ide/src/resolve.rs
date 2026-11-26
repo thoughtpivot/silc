@@ -1455,7 +1455,7 @@ fn md(kind: &str, name: &str, body: &str, footer: Option<&str>) -> String {
         out.push_str("\n\n");
         out.push_str(f);
     }
-    out.push_str("\n\n---\n*Silc 0.7.0*");
+    out.push_str(&format!("\n\n---\n*{}*", sil_core::silc_release()));
     out
 }
 

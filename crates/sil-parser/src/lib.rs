@@ -1,4 +1,4 @@
-//! Recursive-descent parser for Silc 0.7.0 grammar.
+//! Recursive-descent parser for the Silc grammar.
 
 use sil_core::{
     App, CompField, Component, Contract, EmitDecl, EventBinding, Expr, Field, FilesDecl, Game,
@@ -107,9 +107,10 @@ impl Parser {
                     "processor",
                 )?,
                 Some(Token::Sink) => {
-                    return Err(self.error_here(
-                        "author `sink` declarations are not supported in Silc 0.7.0; remove the sink — persistence is synthesized from the processor",
-                    ))
+                    return Err(self.error_here(&format!(
+                        "author `sink` declarations are not supported in {}; remove the sink — persistence is synthesized from the processor",
+                        sil_core::silc_release()
+                    )))
                 }
                 Some(Token::Task) => {
                     return Err(self.error_here(
@@ -187,13 +188,15 @@ impl Parser {
             })
             .unwrap_or("contract");
         if kind == "task" {
-            return self.error_here(
-                "legacy `class` declarator is not supported in Silc 0.7.0; `task` was removed — declare a `service` and route by the operation",
-            );
+            return self.error_here(&format!(
+                "legacy `class` declarator is not supported in {}; `task` was removed — declare a `service` and route by the operation",
+                sil_core::silc_release()
+            ));
         }
         let replacement = format!("{kind} {name} {{ ... }}");
         self.error_here(&format!(
-            "legacy `class` declarator is not supported in Silc 0.7.0; use `{replacement}`"
+            "legacy `class` declarator is not supported in {}; use `{replacement}`",
+            sil_core::silc_release()
         ))
     }
 
@@ -830,9 +833,10 @@ impl Parser {
                     seeds.push(self.parse_resource_seed(&contract)?);
                 }
                 Some(Token::Has) => {
-                    return Err(self.error_here(
-                        "resource metadata fields are not supported in Silc 0.7.0; use `resource Name for Contract` and capability declarations (`query list;`)",
-                    ));
+                    return Err(self.error_here(&format!(
+                        "resource metadata fields are not supported in {}; use `resource Name for Contract` and capability declarations (`query list;`)",
+                        sil_core::silc_release()
+                    )));
                 }
                 _ => return Err(self.error_here("expected `query`, `mutation`, `seed`, or `}`")),
             }
@@ -906,9 +910,10 @@ impl Parser {
 
         if matches!(self.peek(), Some(Token::LParen)) || matches!(self.peek(), Some(Token::LBrace))
         {
-            return Err(self.error_here(
-                "resource method bodies are not supported in Silc 0.7.0; declare capabilities only (e.g. `query list;` / `mutation create;`)",
-            ));
+            return Err(self.error_here(&format!(
+                "resource method bodies are not supported in {}; declare capabilities only (e.g. `query list;` / `mutation create;`)",
+                sil_core::silc_release()
+            )));
         }
         Err(self.error_here("expected `;` after resource capability name"))
     }
@@ -964,9 +969,10 @@ impl Parser {
                     });
                 }
                 Some(Token::Method) => {
-                    return Err(self.error_here(
-                        "app `method serve()` is not supported in Silc 0.7.0; declare routes only — dual-surface web/terminal serving is synthesized by the compiler",
-                    ));
+                    return Err(self.error_here(&format!(
+                        "app `method serve()` is not supported in {}; declare routes only — dual-surface web/terminal serving is synthesized by the compiler",
+                        sil_core::silc_release()
+                    )));
                 }
                 _ => return Err(self.error_here("expected `route`, `files`, or `}`")),
             }
@@ -2250,7 +2256,10 @@ app Demo { route "/" => Page; }
     fn rejects_author_sink_with_migration_diagnostic() {
         let err = parse("sink Db is storage(SQLite) {}").unwrap_err();
         assert!(err.message.contains("sink"), "error: {err}");
-        assert!(err.message.contains("0.7.0"), "error: {err}");
+        assert!(
+            err.message.contains(sil_core::silc_release()),
+            "error: {err}"
+        );
     }
 
     #[test]
