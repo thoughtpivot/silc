@@ -3,7 +3,7 @@
 # crawls each source (capped at 4 pages), renders its status page, takes its
 # release links, scores the rendered text, asks for one line, and gates the
 # line and the score before it notifies.
-@version("0.7")
+@version("0.8")
 
 contract Source {
     has Str $.id;

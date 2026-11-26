@@ -4,7 +4,14 @@ All notable changes to Silc are documented here.
 Silc remains pre-1.0; this project follows SemVer 0.x with Conventional Commits.
 Entries before 0.5.0 are reconstructed from the commit history.
 
-## Unreleased — planned for 0.8.0
+## 0.8.0 — 2026-11-26
+
+Silc 0.8.0 makes the two loops on
+[silc.thoughtpivot.com](https://silc.thoughtpivot.com), UpstreamWatch and
+ArticleIngest, compile and run (THO-551). Loops can now embed text, find the
+nearest rows, read pages into typed rows, try reads in order, crawl, render
+and score, and ask the model about several bindings at once. Sources write
+`@version("0.8")`.
 
 ### Added
 
@@ -16,11 +23,11 @@ Entries before 0.5.0 are reconstructed from the commit history.
   kept out of `loop_events` and recomputed on replay.
 - `query nearest;` on resources and `query $.hits = R.nearest($.needle, k);`
   in components: cosine ranking with sqlite-vec, best first, `k` an integer
-  literal up to 10000. A blank needle returns no rows.
+  literal up to 10000. A blank needle returns no rows (THO-132).
 - Embedding models declare their dimension, and `vector_embedding` must match
   it. `minilm-l6-v2` (384, CPU) stays the default; `nomic-embed-text` (768) and
   `text-embedding-3-small` (1536) are served through an OpenAI-compatible
-  `/embeddings` endpoint.
+  `/embeddings` endpoint (THO-132).
 - Embedding step inside loops (THO-552,
   [ADR-014](docs/ADR-014-loop-subject.md) amendment):
   `loop::let(:as(vec), tensor::infer(:model("minilm-l6-v2"), :from($release.text)))`
@@ -32,7 +39,36 @@ Entries before 0.5.0 are reconstructed from the commit history.
   model across loops and tensor feeds. Embeds are recomputed on replay (the
   vector never enters `loop_events`), never call silclm, and get their own
   `embeds` line in the `silc build` cost report, separate from model calls.
-  The site's UpstreamWatch and ArticleIngest embedding lines now validate.
+- Nearest-match `loop::find` (THO-553).
+  `loop::find(:as(seen), :max(5), :from(Incidents.nearest(:to($vec))))` ranks
+  the rows of a resource with `query nearest;` by cosine similarity to `$vec`,
+  best first. The Go loop kernel sends the vector to the CPython embed
+  worker's `/nearest`, which ranks with sqlite-vec in the app database; it is
+  not a model call. `$vec` must be a vector of the stored dimension, `:max`
+  (or `:one`) is required and capped at 10000, and `:order` and `:desc` are
+  rejected. `:where` filters the `:max` nearest rows and fails closed. The
+  rows are recorded for replay like any `loop::find`; vectors are not. The
+  cost report counts `:max` rows scanned per call.
+- Page reads in loops (THO-554). `scrape::page(:select("css"))` narrows the
+  page to the first matching element, and `loop::read(:into(Contract))` binds
+  a typed row, so `$release.version` type-checks. Page-named fields take the
+  page's values, `:fields(Contract.new(:field("css")))` fills the rest, and an
+  unmatched field is unknown. Both work on `loop::fallback` attempts, which
+  must share one `:into`. The Go loop kernel now depends on cascadia and
+  `golang.org/x/net/html`.
+- Multi-value `:from` on `loop::ask`, so one question can read several
+  bindings (THO-555). `:from($release, $seen)` is the same plan as
+  `:from([$release, $seen])`. The model receives one JSON object labelled by
+  binding path (`release`, `seen`). That labelling also applies to existing
+  `:from([$a, $b])` lists of two or more bindings, which were sent as a bare
+  JSON array. A comma list on any other option is a parse error that points to
+  the bracket form.
+- `loop::fallback`: two or more `loop::read` attempts in order, with
+  `:accept` and a required terminating `loop::otherwise`. The first attempt
+  whose result satisfies `:accept` (false or unknown does not) binds `:as`;
+  each attempt is recorded for replay, and the cost report counts every
+  attempt (THO-559 Part 1,
+  [ADR-019](docs/ADR-019-vran-language-into-loop.md)).
 - `scrape::site`, `scrape::render`, and `scrape::select` reads and
   `text::score` inside loops (THO-579,
   [ADR-020](docs/ADR-020-loop-scrape-and-score-steps.md)). `loop::read` takes
@@ -47,30 +83,22 @@ Entries before 0.5.0 are reconstructed from the commit history.
   a `scrape::site` without `:max`, and a score of unchecked `loop::ask` output
   are compile errors. The cost report counts a site read as its page cap times
   `1 + :retry`, and lists scores apart from model calls.
+- The site's UpstreamWatch and ArticleIngest loops are fixtures:
+  `crates/silc/tests/fixtures/upstream_watch.silc` and
+  `crates/silc/tests/fixtures/article_ingest.silc` (THO-551). The
+  `pipeline_e2e` tests build both, check their cost reports, and run each loop
+  once on CPython against a local page: ArticleIngest stores a 384-d MiniLM
+  vector, and UpstreamWatch embeds the changelog, finds the nearest incident,
+  asks silclm, and gates.
 
 ### Changed
 
-- `text::score` may share a program with `loop::ask`, `scrape::*`, and
-  `doc::extract` (THO-579). `text::score` × `llm::complete` stays banned
-  because both take the one processor slot, and loops still may not declare
-  `scrape::*` pipelines; both messages now say why.
-
-- `llm::complete` (and `loop::ask`) may share a program with `tensor::infer`,
-  and loops may embed: the LocalModel × Embedding and Loop × Embedding
-  compatibility rules are removed. `text::score` × `tensor::infer` and
-  `loop` × `scrape::*` stay banned.
-- In app and loop programs `tensor::infer` no longer takes the processor slot
-  and no longer needs `scrape::page`, `scrape::extract`, one service, or a
-  `raw_content` field. Scrape-only programs keep the pipeline behaviour.
-- The `:prefer(CUDA)` diagnostic names the compiler's major.minor release
-  instead of a hard-coded version.
 - `@version` matches the compiler on major.minor, not the exact version
-  (THO-558). Sources write `@version("0.7")`, and `0.7.0` or any `0.7.x` is
+  (THO-558). Sources write `@version("0.8")`, and `0.8.0` or any `0.8.x` is
   also accepted, so a patch release no longer changes any program, example,
   or fixture. Another major or minor still gets the migrate diagnostic, and a
-  0.5.0 source still lists its renamed kernel nodes. From 0.8.0, programs
-  write `@version("0.8")` and build on every 0.8.x compiler. `silc init`,
-  the examples, and the assist corpus write the short form.
+  0.5.0 source still lists its renamed kernel nodes. `silc init`, the
+  examples, and the assist corpus write the short form.
   `sil_core::LANGUAGE_VERSION` holds the major.minor.
 - Diagnostics, hover docs, generated stubs and model prompts name the release
   as `sil_core::SILC_RELEASE` ("Silc 0.8" on 0.8.x) instead of a hard-coded
@@ -82,20 +110,35 @@ Entries before 0.5.0 are reconstructed from the commit history.
   fails on any new `Silc X.Y[.Z]` literal in crate sources, templates or the
   corpus outside an allow-list of historical messages. Docs cite
   `registry::executable_ops()` instead of the removed `EXECUTABLE_OPS`.
+- `loop::write` and every other `Contract.new(...)` in a loop compare each
+  field value with the field's declared type, through `subset` refinements
+  such as `Emb384`. A `Str` into an `Int` or vector field, a wrong-dimension
+  vector, or a value of unknown type is rejected at validation with a message
+  naming the field, the expected type, and the found type. Nothing coerces
+  (THO-578).
+- `llm::complete` (and `loop::ask`) may share a program with `tensor::infer`,
+  and loops may embed: the LocalModel × Embedding and Loop × Embedding
+  compatibility rules are removed (THO-132). `text::score` × `tensor::infer`
+  and `loop` × `scrape::*` stay banned.
+- `text::score` may share a program with `loop::ask`, `scrape::*`, and
+  `doc::extract` (THO-579). `text::score` × `llm::complete` stays banned
+  because both take the one processor slot, and loops still may not declare
+  `scrape::*` pipelines; both messages now say why.
+- In app and loop programs `tensor::infer` no longer takes the processor slot
+  and no longer needs `scrape::page`, `scrape::extract`, one service, or a
+  `raw_content` field. Scrape-only programs keep the pipeline behaviour.
+- The `:prefer(CUDA)` diagnostic names the compiler's major.minor release
+  instead of a hard-coded version.
+- `llama-cpp-python` is pinned at 0.3.38, up from 0.3.7, which no longer
+  compiles on current toolchains (`unknown type name 'uint32_t'`). The
+  generated-app calls (`Llama(...)`, `create_chat_completion`, `__call__`) are
+  unchanged, and the CI `<cstdint>` compiler-flag workaround is removed
+  (THO-560).
+- `sil-ide` and `sil-lsp` stay at 0.7.1; they are not published.
 
-### Planned
+### Fixed
 
-These are the next source changes, tracked in Linear. `loop::fallback`, the
-`Contract.new` type check, multi-value `:from` on `loop::ask`, page-read
-`:select` / `:into`, nearest-match `loop::find`, the version match above, and
-the THO-560 items below are implemented on `main`; the rest is not yet.
-
-- Implemented: `llama-cpp-python` is pinned at 0.3.38, up from 0.3.7, which no
-  longer compiles on current toolchains (`unknown type name 'uint32_t'`).
-  Minimum: `llama-cpp-python` 0.3.38. The generated-app calls (`Llama(...)`,
-  `create_chat_completion`, `__call__`) are unchanged, and the CI
-  `<cstdint>` compiler-flag workaround is removed (THO-560).
-- Implemented: model programs build on hosts that have gcc/g++ but no clang.
+- Model programs build on hosts that have gcc/g++ but no clang (THO-560).
   The python-build-standalone CPython bakes `CC=clang` into its `sysconfig`,
   so the source build failed with "Silc install of compiler-pinned
   llama-cpp-python failed". Silc now installs a prebuilt wheel when one
@@ -103,47 +146,13 @@ the THO-560 items below are implemented on `main`; the rest is not yet.
   with an explicit `CC`/`CXX`: yours if set, else clang, else gcc/g++, else
   cc/c++. With no compiler it stops early, names the missing tool, and says
   how to install it. `SILC_LLAMA_CPP_SOURCE=1` forces the source build. CI
-  gains a gcc-only job that builds a model example (THO-560).
-- **Implemented:** `loop::fallback`: two or more `loop::read` attempts in
-  order, with `:accept` and a required terminating `loop::otherwise`. The first
-  attempt whose result satisfies `:accept` (false or unknown does not) binds
-  `:as`; each attempt is recorded for replay, and the cost report counts every
-  attempt (THO-559 Part 1,
-  [ADR-019](docs/ADR-019-vran-language-into-loop.md)).
-- Deferred out of 0.8.0: citations on `loop::ask`, where an answer is accepted
-  only when each quote occurs in a cited source (THO-559 Part 2), and per-field
-  gate approval (THO-556).
-- Multi-value `:from` on `loop::ask`, so one question can read several
-  bindings (THO-555, on main). `:from($release, $seen)` is the same plan as
-  `:from([$release, $seen])`. The model receives one JSON object labelled by
-  binding path (`release`, `seen`). That labelling also applies to existing
-  `:from([$a, $b])` lists of two or more bindings, which were sent as a bare
-  JSON array. A comma list on any other option is a parse error that points to
-  the bracket form.
-- `loop::write` and every other `Contract.new(...)` in a loop now compare each
-  field value with the field's declared type, through `subset` refinements
-  such as `Emb384`. A `Str` into an `Int` or vector field, a wrong-dimension
-  vector, or a value of unknown type is rejected at validation with a message
-  naming the field, the expected type, and the found type. Nothing coerces
-  (THO-578).
-- **Implemented:** nearest-match `loop::find` (THO-553).
-  `loop::find(:as(seen), :max(5), :from(Incidents.nearest(:to($vec))))` ranks
-  the rows of a resource with `query nearest;` by cosine similarity to `$vec`,
-  best first. The Go loop kernel sends the vector to the CPython embed
-  worker's `/nearest`, which ranks with sqlite-vec in the app database; it is
-  not a model call. `$vec` must be a vector of the stored dimension, `:max`
-  (or `:one`) is required and capped at 10000, and `:order` and `:desc` are
-  rejected. `:where` filters the `:max` nearest rows and fails closed. The
-  rows are recorded for replay like any `loop::find`; vectors are not. The
-  cost report counts `:max` rows scanned per call.
-- **Implemented:** page reads in loops (THO-554).
-  `scrape::page(:select("css"))` narrows the page to the first matching
-  element, and `loop::read(:into(Contract))` binds a typed row, so
-  `$release.version` type-checks. Page-named fields take the page's values,
-  `:fields(Contract.new(:field("css")))` fills the rest, and an unmatched
-  field is unknown. Both work on `loop::fallback` attempts, which must share
-  one `:into`. The Go loop kernel now depends on cascadia and
-  `golang.org/x/net/html`.
+  gains a gcc-only job that builds a model example.
+
+### Deferred
+
+- Citations on `loop::ask`, where an answer is accepted only when each quote
+  occurs in a cited source (THO-559 Part 2), and per-field gate approval
+  (THO-556) are not in 0.8.0.
 
 ## 0.7.0 — 2026-11-25
 

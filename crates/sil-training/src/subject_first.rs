@@ -478,7 +478,7 @@ mod tests {
 
     #[test]
     fn current_subject_first_source_checks_directly() {
-        let source = r#"@version("0.7")
+        let source = r#"@version("0.8")
 contract Note { has Str $.text; }
 component Page {
     method render() { ui::page(ui::heading(:text("Hi"))) }

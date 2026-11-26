@@ -182,7 +182,7 @@ workflows, records, simulations, and decisions—while Silc handles the rest.
 
 ## How it looks in practice
 
-Examples below are Silc 0.7.0 source. GitHub fences use `raku` for highlighting
+Examples below are Silc 0.8.0 source. GitHub fences use `raku` for highlighting
 only. The surface is **Raku-inspired**, not Raku-compatible. Source files are
 `.silc` only.
 
@@ -198,7 +198,7 @@ scene, asset, physics, camera, and entity kernel available to VDC and simulation
 programs.
 
 ```raku
-@version("0.7")
+@version("0.8")
 
 scene Arena {
     scene::scene(:title("MEGASTRUCTURE"), :renderer(webgpu), :target_fps(90),
@@ -232,7 +232,7 @@ From [`examples/core/pipelineApp`](examples/core/pipelineApp/) — no UI app req
 intent file becomes a Bun/CPython/Go ingestion graph.
 
 ```raku
-@version("0.7")
+@version("0.8")
 
 subset Uri of Str where { .starts-with("http") }
 subset Emb384 of Vec[num32; 384];
@@ -283,7 +283,7 @@ scorer. Dual-surface web/terminal serving and SQLite persistence are
 **synthesized**.
 
 ```raku
-@version("0.7")
+@version("0.8")
 
 contract Note {
     has Str $.author;
@@ -511,7 +511,7 @@ See [`examples/README.md`](examples/README.md).
 
 ---
 
-## What ships today (0.7.0)
+## What ships today (0.8.0)
 
 Silc is **pre-1.0**. Release 0.4.0 made the product rule explicit: authors
 declare intent; the compiler synthesizes runtime mechanics
@@ -563,9 +563,12 @@ See [ADR-012](docs/ADR-012-webgpu-game-subject.md) for the full design.
 `loop Name { loop::flow(...) }` declares work that runs on its own beside an
 `app`: a cron schedule in an explicit time zone, Run now, or a resource
 mutation starts a run. Steps come from a closed `loop::*` catalog: find rows,
-read outside data (`scrape::page`, or one MCP tool with `mcp::call`), ask
-silclm for a typed contract, gate, branch, iterate with a bound, approve, and
-write or notify exactly once per key.
+read outside data (`scrape::page`, `scrape::site`, `scrape::select`,
+`scrape::render`, or one MCP tool with `mcp::call`), try reads in order with
+`loop::fallback`, embed text with `loop::let` and `tensor::infer`, find the
+nearest rows with `loop::find(:from(R.nearest(:to($vec))))`, ask silclm for a
+typed contract from one or more bindings, gate, branch, iterate with a bound,
+approve, and write or notify exactly once per key.
 
 ```silc
 loop OneThingToday {
@@ -586,7 +589,12 @@ Gates fail closed, model output must pass a gate or approval before an effect,
 and `silc build` prints the worst-case model calls, effects, and reads per run.
 A compiler-owned Go kernel records every outside input and model answer, so a
 run resumed after a crash or an approval replays instead of redoing work. See
-[ADR-014](docs/ADR-014-loop-subject.md).
+[ADR-014](docs/ADR-014-loop-subject.md). The two loops on
+[silc.thoughtpivot.com](https://silc.thoughtpivot.com), UpstreamWatch and
+ArticleIngest, are checked in as
+[`upstream_watch.silc`](crates/silc/tests/fixtures/upstream_watch.silc) and
+[`article_ingest.silc`](crates/silc/tests/fixtures/article_ingest.silc), and CI
+builds and runs both on CPython.
 
 ### Executable operations
 
@@ -600,7 +608,8 @@ Author-facing operations that run today:
 
 - Broader pipeline namespaces (`http::*`, `html::*`, `numpy::*`, `pandas::*`, …)
   are stub-only: they parse/route/emit but do not execute
-- Tensor path is CPU-only MiniLM → exactly 384 normalized `num32` values
+- Embeddings run on CPU in the CPython embed worker: `minilm-l6-v2` (384
+  normalized `num32` values) by default, or an OpenAI-compatible endpoint
 - IPC ABI v1 is schema-tagged JSON in mmap (not typed zero-copy views)
 - No self-contained `silc bundle` deployment artifact yet
 - Assist is experimental; fine-tuned assist weights are not shipped

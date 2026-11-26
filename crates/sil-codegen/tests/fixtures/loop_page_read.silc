@@ -3,7 +3,7 @@
 # article's first <h2>. ArticleRead uses the bare :into form, so title and
 # text come from the page. ReleaseFallback tries the changelog's <article>,
 # then its <main>, inside loop::fallback.
-@version("0.7")
+@version("0.8")
 
 contract Dependency {
     has Str $.id;

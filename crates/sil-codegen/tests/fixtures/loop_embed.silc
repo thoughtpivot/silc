@@ -3,7 +3,7 @@
 # minilm-l6-v2 model, and writes the vector into an Emb384 field of a
 # `query nearest` resource. Replay recomputes the vector from the recorded
 # read; it is never written to the event log.
-@version("0.7")
+@version("0.8")
 
 subset Emb384 of Vec[num32; 384];
 
