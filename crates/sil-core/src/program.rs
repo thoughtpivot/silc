@@ -40,10 +40,44 @@ fn collect_renamed_kernel(node: &crate::game::GameNode, out: &mut Vec<String>) {
     }
 }
 
+/// The Silc language version: the compiler's major.minor.
+///
+/// Sources write this in `@version(...)`. Patch releases do not change the
+/// language, so it never carries a patch number.
+pub const LANGUAGE_VERSION: &str = concat!(
+    env!("CARGO_PKG_VERSION_MAJOR"),
+    ".",
+    env!("CARGO_PKG_VERSION_MINOR")
+);
+
+/// `(major, minor)` of a `X.Y` or `X.Y.Z` version string.
+fn major_minor(version: &str) -> Option<(u64, u64)> {
+    let parts: Vec<&str> = version.split('.').collect();
+    if !(2..=3).contains(&parts.len()) {
+        return None;
+    }
+    let mut nums = Vec::with_capacity(parts.len());
+    for part in &parts {
+        if part.is_empty() || !part.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        nums.push(part.parse::<u64>().ok()?);
+    }
+    Some((nums[0], nums[1]))
+}
+
 impl Program {
-    pub fn validate_source_version(&self, expected: &str) -> Result<(), String> {
+    /// Check the source's `@version` against `compiler` (a `X.Y.Z` crate
+    /// version). Major and minor must match; the patch is ignored, so a 0.7
+    /// program compiles on every 0.7.x compiler.
+    pub fn validate_source_version(&self, compiler: &str) -> Result<(), String> {
+        let compiler_mm = major_minor(compiler);
+        let expected = match compiler_mm {
+            Some((major, minor)) => format!("{major}.{minor}"),
+            None => compiler.to_string(),
+        };
         match self.version.as_deref() {
-            Some(actual) if actual == expected => Ok(()),
+            Some(actual) if compiler_mm.is_some() && major_minor(actual) == compiler_mm => Ok(()),
             Some("0.5.0") => {
                 let renamed = self.renamed_kernel_nodes();
                 if renamed.is_empty() {
@@ -788,7 +822,90 @@ mod tests {
         let err = program.validate_source_version("0.7.1").unwrap_err();
         assert_eq!(
             err,
-            "source declares Silc 0.5.0; migrate to `@version(\"0.7.1\")`"
+            "source declares Silc 0.5.0; migrate to `@version(\"0.7\")`"
+        );
+    }
+
+    fn declaring(version: &str) -> Program {
+        Program {
+            version: Some(version.into()),
+            ..Program::default()
+        }
+    }
+
+    #[test]
+    fn same_minor_sources_pass_on_any_patch_compiler() {
+        for source in ["0.8", "0.8.0", "0.8.1", "0.8.3", "0.8.12"] {
+            for compiler in ["0.8.0", "0.8.1", "0.8.2", "0.8.9"] {
+                assert_eq!(
+                    declaring(source).validate_source_version(compiler),
+                    Ok(()),
+                    "source {source} on compiler {compiler}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn other_minor_or_major_sources_fail_with_migrate_diagnostic() {
+        for source in ["0.7", "0.7.0", "0.7.1", "0.9", "0.9.0", "1.8.0"] {
+            let err = declaring(source)
+                .validate_source_version("0.8.2")
+                .unwrap_err();
+            assert_eq!(
+                err,
+                format!("source declares Silc {source}; migrate to `@version(\"0.8\")`")
+            );
+        }
+    }
+
+    #[test]
+    fn malformed_versions_are_rejected() {
+        for source in ["0", "0.8.", "0.8.0.1", "v0.8", "0.8.x", "", "0.8-rc1"] {
+            let err = declaring(source)
+                .validate_source_version("0.8.0")
+                .unwrap_err();
+            assert!(
+                err.contains("migrate to `@version(\"0.8\")`"),
+                "{source}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn missing_version_asks_for_major_minor() {
+        let err = Program::default()
+            .validate_source_version("0.8.4")
+            .unwrap_err();
+        assert_eq!(err, "source is missing a version; add `@version(\"0.8\")`");
+    }
+
+    #[test]
+    fn version_0_5_0_keeps_renamed_nodes_on_a_0_8_compiler() {
+        let program = Program {
+            version: Some("0.5.0".into()),
+            games: vec![Game {
+                name: "Arena".into(),
+                span: Span::default(),
+                root: node("game", "scene", vec![node("game", "entity", vec![])]),
+            }],
+            ..Program::default()
+        };
+        let err = program.validate_source_version("0.8.0").unwrap_err();
+        assert_eq!(
+            err,
+            "source declares Silc 0.5.0; migrate to `@version(\"0.8\")`. Renamed nodes: `game::scene` → `scene::scene`; `game::entity` → `scene::entity`"
+        );
+    }
+
+    #[test]
+    fn language_version_is_crate_major_minor() {
+        let crate_version = env!("CARGO_PKG_VERSION");
+        let (major, minor) = major_minor(crate_version).unwrap();
+        assert_eq!(LANGUAGE_VERSION, format!("{major}.{minor}"));
+        assert_eq!(
+            declaring(LANGUAGE_VERSION).validate_source_version(crate_version),
+            Ok(())
         );
     }
 }

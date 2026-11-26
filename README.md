@@ -197,7 +197,7 @@ scene, asset, physics, camera, and entity kernel available to VDC and simulation
 programs.
 
 ```raku
-@version("0.7.1")
+@version("0.7")
 
 scene Arena {
     scene::scene(:title("MEGASTRUCTURE"), :renderer(webgpu), :target_fps(90),
@@ -231,7 +231,7 @@ From [`examples/core/pipelineApp`](examples/core/pipelineApp/) — no UI app req
 intent file becomes a Bun/CPython/Go ingestion graph.
 
 ```raku
-@version("0.7.1")
+@version("0.7")
 
 subset Uri of Str where { .starts-with("http") }
 subset Emb384 of Vec[num32; 384];
@@ -282,7 +282,7 @@ scorer. Dual-surface web/terminal serving and SQLite persistence are
 **synthesized**.
 
 ```raku
-@version("0.7.1")
+@version("0.7")
 
 contract Note {
     has Str $.author;

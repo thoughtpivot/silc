@@ -4,7 +4,7 @@
 use sil_parser::parse;
 
 const PRELUDE: &str = r#"
-@version("0.7.1")
+@version("0.7")
 contract Rfi {
     has Str $.id;
     has Str $.status;
@@ -772,7 +772,7 @@ fn fallback_inside_each_multiplies_attempts() {
 }
 
 const TYPED_PRELUDE: &str = r#"
-@version("0.7.1")
+@version("0.7")
 subset Emb384 of Vec[num32; 384];
 subset Emb768 of Vec[num32; 768];
 contract Src {
@@ -1203,7 +1203,7 @@ fn fallback_attempts_take_select_and_one_shared_into() {
 }
 
 const INTO_TYPED_PRELUDE: &str = r#"
-@version("0.7.1")
+@version("0.7")
 contract Dep { has Str $.id; has Str $.changelog; }
 contract Release { has Str $.version; has Str $.text; }
 contract Hit { has Str $.title; has Int $.status; }

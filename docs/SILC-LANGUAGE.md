@@ -33,12 +33,16 @@ are generated into
 ## 2. Program structure
 
 ```silc
-@version("0.7.1")
+@version("0.7")
 
 <declaration>*
 ```
 
-- `@version("…")` is required and must equal the compiler version exactly.
+- `@version("…")` is required. It names the language version as major.minor
+  (`@version("0.7")`) and matches every compiler with the same major and
+  minor; the patch is ignored, because patch releases do not change the
+  language. `@version("0.7.0")` or any other `0.7.x` is also accepted. A
+  different major or minor is rejected with a migration diagnostic.
 - Declarations may appear in any order. Names share one namespace: no two
   declarations of any kind may share a name.
 - A program is one of a small number of **shapes**, decided by which roots and
@@ -349,26 +353,28 @@ Resolved by 0.7.0 (the 0.6.0 changes, now stable):
 7. Kernel nodes are `scene::`. Gameplay nodes are `game::`. The root is `scene`; `game` is a one-release alias.
 8. Author `sink`, `App.serve`, and discarded component pipelines are gone.
 
-0.7.0 adds no language surface. The one source change is the required exact
-`@version("0.7.1")`. A program that declares any other version is rejected with
-a migration diagnostic.
+0.7.0 adds no language surface. Its one source change was a required
+`@version` that had to equal the compiler version exactly.
+
+`@version` now matches on major.minor (THO-558): sources write
+`@version("0.7")`, and every 0.7.x compiler accepts them. A program that
+declares another major or minor is rejected with a migration diagnostic. From
+0.8.0, programs write `@version("0.8")` and build on every 0.8.x compiler.
 
 Planned for 0.8.0 (see the Unreleased list in
 [CHANGELOG.md](../CHANGELOG.md) and
 [ADR-019](ADR-019-vran-language-into-loop.md)). `loop::fallback` and
 multi-value `:from` are implemented on `main`; the rest is not:
 
-1. `@version` matches on major.minor, so a `0.8.x` program builds on any
-   `0.8` compiler (THO-558).
-2. `loop::fallback`: ordered `loop::read` attempts, kept when a condition
+1. `loop::fallback`: ordered `loop::read` attempts, kept when a condition
    holds, with a terminating `loop::otherwise` (THO-559, Part 1; implemented,
    see section 8).
-3. Citations on `loop::ask`, accepted only when each quote occurs in a cited
+2. Citations on `loop::ask`, accepted only when each quote occurs in a cited
    source (THO-559, Part 2; deferred, not in 0.8.0).
-4. Multi-value `:from` on `loop::ask`: `:from($release, $seen)` equals
+3. Multi-value `:from` on `loop::ask`: `:from($release, $seen)` equals
    `:from([$release, $seen])`, and the model sees an object labelled by
    binding path (THO-555, on main).
-5. Loop embeddings and nearest-neighbor `loop::find` (THO-551 to THO-555).
+4. Loop embeddings and nearest-neighbor `loop::find` (THO-551 to THO-555).
    Page-read `:into` plus `:select` on `loop::read` is implemented on main
    (THO-554).
 

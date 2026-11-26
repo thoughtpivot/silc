@@ -33,13 +33,21 @@ Entries before 0.5.0 are reconstructed from the commit history.
   `raw_content` field. Scrape-only programs keep the pipeline behaviour.
 - The `:prefer(CUDA)` diagnostic names the compiler's major.minor release
   instead of a hard-coded version.
+- `@version` matches the compiler on major.minor, not the exact version
+  (THO-558). Sources write `@version("0.7")`, and `0.7.0` or any `0.7.x` is
+  also accepted, so a patch release no longer changes any program, example,
+  or fixture. Another major or minor still gets the migrate diagnostic, and a
+  0.5.0 source still lists its renamed kernel nodes. From 0.8.0, programs
+  write `@version("0.8")` and build on every 0.8.x compiler. `silc init`,
+  the examples, and the assist corpus write the short form.
+  `sil_core::LANGUAGE_VERSION` holds the major.minor.
 
 ### Planned
 
 These are the next source changes, tracked in Linear. `loop::fallback`, the
 `Contract.new` type check, multi-value `:from` on `loop::ask`, page-read
-`:select` / `:into`, and the THO-560
-items below are implemented on `main`; the rest is not yet.
+`:select` / `:into`, the version match above, and the THO-560 items below
+are implemented on `main`; the rest is not yet.
 
 - Implemented: `llama-cpp-python` is pinned at 0.3.38, up from 0.3.7, which no
   longer compiles on current toolchains (`unknown type name 'uint32_t'`).
@@ -55,8 +63,6 @@ items below are implemented on `main`; the rest is not yet.
   cc/c++. With no compiler it stops early, names the missing tool, and says
   how to install it. `SILC_LLAMA_CPP_SOURCE=1` forces the source build. CI
   gains a gcc-only job that builds a model example (THO-560).
-- `@version` accepts a major.minor match, so a `0.8.x` program builds on any
-  `0.8` compiler instead of requiring the exact patch version (THO-558).
 - **Implemented:** `loop::fallback`: two or more `loop::read` attempts in
   order, with `:accept` and a required terminating `loop::otherwise`. The first
   attempt whose result satisfies `:accept` (false or unknown does not) binds

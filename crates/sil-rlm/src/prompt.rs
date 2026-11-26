@@ -29,7 +29,7 @@ To store your draft program, reply with the COMPLETE program for the task in a <
 
 <silc>
 #!/usr/bin/env silc
-@version("0.7.1")
+@version("0.7")
 ... the full program you wrote for the task, adapted from corpus examples ...
 </silc>
 
