@@ -1298,3 +1298,55 @@ func TestNearestStepRanksThroughEmbedderAndSkipsBlankNeedles(t *testing.T) {
 		t.Fatalf("blank needle should return no rows, got %v", got)
 	}
 }
+
+
+
+func TestAskFromSeveralBindingsIsLabelledByName(t *testing.T) {
+	sc := &scope{vars: map[string]any{
+		"release": map[string]any{"version": "1.2"},
+		"seen":    []any{"a", "b"},
+		"kb":      map[string]any{"data": "notes"},
+	}}
+	list := func(items ...Expr) *Expr { return &Expr{K: "list", Items: items} }
+	v := func(name string) Expr { return Expr{K: "var", Name: name} }
+	member := Expr{K: "member", Base: &Expr{K: "var", Name: "kb"}, Field: "data"}
+
+	got := askContext(list(v("release"), v("seen")), sc)
+	if got != `{"release":{"version":"1.2"},"seen":["a","b"]}` {
+		t.Fatalf("labelled context: %s", got)
+	}
+	got = askContext(list(v("release"), member, v("release")), sc)
+	if got != `{"release":{"version":"1.2"},"kb.data":"notes","release#2":{"version":"1.2"}}` {
+		t.Fatalf("paths and repeats: %s", got)
+	}
+	if got := askContext(list(v("seen")), sc); got != `[["a","b"]]` {
+		t.Fatalf("a one-element list stays a list: %s", got)
+	}
+	if got := askContext(&Expr{K: "var", Name: "release"}, sc); got != `{"version":"1.2"}` {
+		t.Fatalf("single binding is unchanged: %s", got)
+	}
+}
+
+func TestAskFromSeveralBindingsKeepsEveryLabelInTheSlot(t *testing.T) {
+	long := make([]any, 0, 400)
+	for i := 0; i < 400; i++ {
+		long = append(long, fmt.Sprintf("row-%03d-%s", i, strings.Repeat("x", 40)))
+	}
+	sc := &scope{vars: map[string]any{"a": long, "b": []any{"keep-1", "keep-2"}}}
+	e := &Expr{K: "list", Items: []Expr{{K: "var", Name: "a"}, {K: "var", Name: "b"}}}
+	got := askContext(e, sc)
+	if len(got) > maxAskContext {
+		t.Fatalf("context is %d bytes, over %d", len(got), maxAskContext)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(got), &decoded); err != nil {
+		t.Fatalf("trimmed context is not valid JSON: %v", err)
+	}
+	if b, _ := decoded["b"].([]any); len(b) != 2 {
+		t.Fatalf("the short binding must survive trimming: %v", decoded["b"])
+	}
+	a, _ := decoded["a"].([]any)
+	if len(a) == 0 || a[len(a)-1] != long[399] {
+		t.Fatalf("trimming drops the oldest rows first")
+	}
+}

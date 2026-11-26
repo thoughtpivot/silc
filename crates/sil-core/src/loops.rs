@@ -210,7 +210,7 @@ pub const LOOP_NODE_CATALOG: &[LoopNodeSpec] = &[
             lp("as", LoopPropKind::Ident, true, "Binding name for the typed answer."),
             lp("into", LoopPropKind::Ident, true, "Contract the answer must match, e.g. `Reminder`."),
             lp("prompt", LoopPropKind::Template, true, "Instruction for the model; may use `{$name.field}` placeholders."),
-            lp("from", LoopPropKind::Expr, false, "Context value given to the model, e.g. `$rfi`."),
+            lp("from", LoopPropKind::Expr, false, "Context given to the model, e.g. `$rfi`. Several values: `:from($release, $seen)` (same as `:from([$release, $seen])`); the model sees one JSON object labelled by binding path, e.g. `release` and `seen`."),
             lp("retry", LoopPropKind::Number, false, "Retries when the answer does not match the contract (default 1, max 10)."),
         ],
         children: LoopChildPolicy::AnyOf(&["otherwise"]),

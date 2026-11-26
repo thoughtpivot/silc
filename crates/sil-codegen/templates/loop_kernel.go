@@ -1207,19 +1207,7 @@ func (c *runCtx) ask(st *Step, sc *scope) map[string]any {
 	}
 	context := ""
 	if st.From != nil {
-		v, _ := eval(st.From, sc)
-		b, _ := json.Marshal(v)
-		context = string(b)
-		if list, isList := v.([]any); isList {
-			for len(list) > 1 && len(context) > maxAskContext {
-				list = trimOldest(list)
-				b, _ = json.Marshal(list)
-				context = string(b)
-			}
-		}
-		if len(context) > maxAskContext {
-			context = context[:maxAskContext]
-		}
+		context = askContext(st.From, sc)
 	}
 	req := AskRequest{
 		Loop:    c.lp.Name,
@@ -1241,6 +1229,111 @@ func (c *runCtx) ask(st *Step, sc *scope) map[string]any {
 		lastErr = verr.Error()
 	}
 	return map[string]any{"ok": false, "error": lastErr}
+}
+
+// askContext renders :from for silclm. A list of two or more plain bindings
+// (`:from($a, $b)` or `:from([$a, $b])`, one plan) is sent as a JSON object
+// labelled by binding path, so the prompt can refer to `release` and `seen`.
+// Any other value is sent as its own JSON, unchanged.
+func askContext(from *Expr, sc *scope) string {
+	if labels, ok := askLabels(from); ok {
+		values := make([]any, len(from.Items))
+		for i := range from.Items {
+			values[i], _ = eval(&from.Items[i], sc)
+		}
+		return renderLabelled(labels, values)
+	}
+	v, _ := eval(from, sc)
+	b, _ := json.Marshal(v)
+	context := string(b)
+	if list, isList := v.([]any); isList {
+		for len(list) > 1 && len(context) > maxAskContext {
+			list = trimOldest(list)
+			b, _ = json.Marshal(list)
+			context = string(b)
+		}
+	}
+	if len(context) > maxAskContext {
+		context = context[:maxAskContext]
+	}
+	return context
+}
+
+func askLabels(e *Expr) ([]string, bool) {
+	if e.K != "list" || len(e.Items) < 2 {
+		return nil, false
+	}
+	labels := make([]string, len(e.Items))
+	seen := map[string]int{}
+	for i := range e.Items {
+		label, ok := bindingPath(&e.Items[i])
+		if !ok {
+			return nil, false
+		}
+		seen[label]++
+		if n := seen[label]; n > 1 {
+			label = fmt.Sprintf("%s#%d", label, n)
+		}
+		labels[i] = label
+	}
+	return labels, true
+}
+
+func bindingPath(e *Expr) (string, bool) {
+	switch e.K {
+	case "var":
+		return e.Name, true
+	case "member":
+		base, ok := bindingPath(e.Base)
+		if !ok {
+			return "", false
+		}
+		return base + "." + e.Field, true
+	}
+	return "", false
+}
+
+// renderLabelled keeps source order and splits maxAskContext across the
+// values by trimming the oldest rows of the largest list first, so a long
+// first binding cannot push the later ones out of the slot.
+func renderLabelled(labels []string, values []any) string {
+	render := func() string {
+		var sb strings.Builder
+		sb.WriteByte('{')
+		for i, label := range labels {
+			if i > 0 {
+				sb.WriteByte(',')
+			}
+			k, _ := json.Marshal(label)
+			v, _ := json.Marshal(values[i])
+			sb.Write(k)
+			sb.WriteByte(':')
+			sb.Write(v)
+		}
+		sb.WriteByte('}')
+		return sb.String()
+	}
+	out := render()
+	for len(out) > maxAskContext {
+		largest, size := -1, 0
+		for i, v := range values {
+			if list, ok := v.([]any); ok && len(list) > 1 {
+				b, _ := json.Marshal(list)
+				if len(b) > size {
+					largest, size = i, len(b)
+				}
+			}
+		}
+		if largest < 0 {
+			break
+		}
+		values[largest] = trimOldest(values[largest].([]any))
+		out = render()
+	}
+	if len(out) > maxAskContext {
+		out = out[:maxAskContext]
+	}
+	return out
 }
 
 // maxAskContext keeps one ask inside a 16KiB IPC slot after JSON escaping.

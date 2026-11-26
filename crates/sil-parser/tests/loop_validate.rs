@@ -888,3 +888,75 @@ fn write_accepts_correctly_typed_values() {
     check_typed("Row.new(:id(\"fixed\"), :n(3))").unwrap();
     check_typed("Row.new(:id(\"{$x.id}:{$x.url}\"), :n($x.hits))").unwrap();
 }
+
+fn ask_from(from: &str) -> String {
+    format!(
+        r#"loop::flow(
+    loop::manual(),
+    loop::find(:as(release), :from(Rfis.list), :max(10)),
+    loop::find(:as(seen), :from(Notes.list), :max(10)),
+    loop::ask(:as(draft), :into(Draft), :retry(2), :from({from}), :prompt("Compare the release with what was seen")),
+    loop::gate(:that($draft.text != ""), :reason("never write an empty note")),
+    loop::write(:to(Notes.create), :key("watch:{{$today}}"), :value(Note.new(:rfi("watch"), :text($draft.text))))
+)"#
+    )
+}
+
+#[test]
+fn ask_from_accepts_a_comma_list_of_bindings() {
+    check(&ask_from("$release, $seen")).unwrap();
+    check(&ask_from("$release, $seen, $release.count")).unwrap();
+    check(&ask_from("[$release, $seen]")).unwrap();
+}
+
+#[test]
+fn ask_from_comma_list_desugars_to_the_bracket_list() {
+    let comma = parse(&format!(
+        "{PRELUDE}\nloop Chase {{\n{}\n}}\n",
+        ask_from("$release, $seen")
+    ))
+    .unwrap();
+    let bracket = parse(&format!(
+        "{PRELUDE}\nloop Chase {{\n{}\n}}\n",
+        ask_from("[$release, $seen]")
+    ))
+    .unwrap();
+    let from = |p: &sil_core::Program| {
+        p.loops[0]
+            .steps()
+            .iter()
+            .find(|s| s.name == "ask")
+            .and_then(|s| s.prop("from"))
+            .cloned()
+            .unwrap()
+    };
+    assert_eq!(from(&comma), from(&bracket));
+    assert!(matches!(from(&comma), sil_core::Expr::List(items) if items.len() == 2));
+}
+
+#[test]
+fn ask_from_rejects_an_unknown_binding_in_either_position() {
+    expect_err(&ask_from("$release, $missing"), "$missing");
+    expect_err(&ask_from("$missing, $seen"), "$missing");
+    expect_err(&ask_from("[$release, $missing]"), "$missing");
+    expect_err(&ask_from("[$missing, $seen]"), "$missing");
+}
+
+#[test]
+fn comma_list_is_only_valid_on_ask_from() {
+    let other_option = GOOD.replace(":max(50)", ":max(50, 60)");
+    let err = check(&other_option).unwrap_err();
+    assert!(
+        err.contains("only valid on `loop::ask :from`") && err.contains("bracket form"),
+        "{err}"
+    );
+    let other_node = GOOD.replace(
+        ":where($.status == \"open\")",
+        ":where($.status == \"open\", 1)",
+    );
+    let err = check(&other_node).unwrap_err();
+    assert!(err.contains("only valid on `loop::ask :from`"), "{err}");
+    let other_ask_option = GOOD.replace(":into(Draft)", ":into(Draft, Note)");
+    let err = check(&other_ask_option).unwrap_err();
+    assert!(err.contains("only valid on `loop::ask :from`"), "{err}");
+}

@@ -36,9 +36,9 @@ Entries before 0.5.0 are reconstructed from the commit history.
 
 ### Planned
 
-These are the next source changes, tracked in Linear. `loop::fallback` and the
-`Contract.new` type check, and the THO-560 items below are implemented on
-`main`; the rest is not yet.
+These are the next source changes, tracked in Linear. `loop::fallback`, the
+`Contract.new` type check, multi-value `:from` on `loop::ask`, and the THO-560
+items below are implemented on `main`; the rest is not yet.
 
 - Implemented: `llama-cpp-python` is pinned at 0.3.38, up from 0.3.7, which no
   longer compiles on current toolchains (`unknown type name 'uint32_t'`).
@@ -66,7 +66,12 @@ These are the next source changes, tracked in Linear. `loop::fallback` and the
   only when each quote occurs in a cited source (THO-559 Part 2), and per-field
   gate approval (THO-556).
 - Multi-value `:from` on `loop::ask`, so one question can read several
-  bindings.
+  bindings (THO-555, on main). `:from($release, $seen)` is the same plan as
+  `:from([$release, $seen])`. The model receives one JSON object labelled by
+  binding path (`release`, `seen`). That labelling also applies to existing
+  `:from([$a, $b])` lists of two or more bindings, which were sent as a bare
+  JSON array. A comma list on any other option is a parse error that points to
+  the bracket form.
 - `loop::write` and every other `Contract.new(...)` in a loop now compare each
   field value with the field's declared type, through `subset` refinements
   such as `Emb384`. A `Str` into an `Int` or vector field, a wrong-dimension

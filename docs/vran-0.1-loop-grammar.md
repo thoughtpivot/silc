@@ -50,7 +50,7 @@ Status values:
 | `read` | `loop::read` | Kept |
 | `ask` `returns`, `retry`, and `else` | `loop::ask` `:into`, `:retry`, and `loop::otherwise` | Kept |
 | `ask` single-value `from` | `loop::ask` `:from` | Kept |
-| `ask` multi-value `from` | `loop::ask` `:from` with several bindings | Planned 0.8.0 |
+| `ask` multi-value `from` | `loop::ask` `:from` with several bindings | On main for 0.8.0 (THO-555) |
 | `ask` `cite` | citations on `loop::ask` (deferred out of 0.8.0, THO-559 Part 2) | Planned |
 | `ask` `using` (model choice) | none; the model is silclm | Dropped |
 | `let` | `loop::let` | Kept |
